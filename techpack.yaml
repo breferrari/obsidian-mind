@@ -1,0 +1,93 @@
+schemaVersion: 1
+identifier: obsidian-mind
+displayName: Obsidian Mind
+description: Claude Code vault setup for Obsidian — skills, session hooks, and vault scaffolding
+version: "1.0.0"
+author: Brenno Ferrari
+
+components:
+  # ── Dependencies ──────────────────────────────────────────────────────
+  - id: homebrew
+    displayName: Homebrew
+    description: macOS package manager
+    type: brewPackage
+    shell: '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    doctorChecks:
+      - type: commandExists
+        name: Homebrew
+        section: Dependencies
+        command: brew
+
+  - id: node
+    description: JavaScript runtime
+    dependencies: [homebrew]
+    brew: node
+
+  - id: gh
+    description: GitHub CLI
+    dependencies: [homebrew]
+    brew: gh
+
+  - id: jq
+    description: JSON processor (used by session hook)
+    dependencies: [homebrew]
+    brew: jq
+
+  - id: defuddle-cli
+    displayName: Defuddle CLI
+    description: Web page to markdown extraction CLI
+    type: configuration
+    dependencies: [node]
+    shell: "npm install -g defuddle-cli"
+    doctorChecks:
+      - type: commandExists
+        name: Defuddle CLI
+        section: Dependencies
+        command: defuddle
+
+  - id: obsidian
+    description: Obsidian App
+    dependencies: [homebrew]
+    brew: obsidian
+
+  # ── Plugins ─────────────────────────────────────────────────────────────
+  - id: plugin-obsidian-skills
+    displayName: obsidian-skills
+    description: Obsidian-flavored markdown, CLI, canvas, bases, and defuddle skills
+    plugin: "obsidian@kepano/obsidian-skills"
+
+  # ── Hook ──────────────────────────────────────────────────────────────
+  - id: vault-file-listing
+    description: Lists vault files on every session start for Claude context
+    isRequired: true
+    dependencies: [jq]
+    hookEvent: SessionStart
+    hook:
+      source: hooks/vault-file-listing.sh
+      destination: vault-file-listing.sh
+
+  # ── Gitignore ─────────────────────────────────────────────────────────
+  - id: gitignore
+    description: Ignores Obsidian runtime state and Claude local settings
+    isRequired: true
+    gitignore:
+      - .obsidian/workspace.json
+      - .obsidian/workspace-mobile.json
+      - .obsidian/plugins/*/data.json
+      - .obsidian/graph.json
+      - .claude/settings.local.json
+      - .claude/.mcs-project
+
+templates:
+  - sectionIdentifier: vault-manual
+    contentFile: templates/vault-manual.md
+
+configureProject:
+  script: scripts/scaffold-vault.sh
+
+supplementaryDoctorChecks:
+  - type: commandExists
+    name: "Obsidian CLI"
+    section: Dependencies
+    command: obsidian
+    fixCommand: "open -a Obsidian"
