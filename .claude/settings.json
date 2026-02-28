@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "find \"$CLAUDE_PROJECT_DIR\" -not -path '*/.git/*' -not -path '*/.obsidian/*' -not -path '*/.claude/*' -not -path '*/.claude-plugin/*' -not -name '.DS_Store' -not -name '.gitignore' -type f | sed \"s|$CLAUDE_PROJECT_DIR/||\" | sort",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

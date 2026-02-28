@@ -1,0 +1,11 @@
+# Obsidian
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/plugins/*/data.json
+
+# OS
+.DS_Store
+.Trash/
+
+# Claude Code (local settings are personal)
+.claude/settings.local.json
