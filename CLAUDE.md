@@ -170,6 +170,6 @@ Claude Code memory for session-level preferences. Vault memories for knowledge t
 - Don't configure git hooks or auto-commit unless the user asks. Sync is handled outside Claude.
 - When asked to "remember" something, write to the relevant memory topic note (not `Memories.md` itself) with a link to context.
 - Prefer Obsidian CLI over filesystem when Obsidian is running.
-- Follow obsidian-skills conventions for all Obsidian file types.
+- **Always invoke Obsidian skills via the Skill tool** before doing vault work. Load `obsidian-markdown` when creating/editing `.md` files. Load `obsidian-cli` when running vault commands. Load `obsidian-bases` or `json-canvas` when working with those file types. Skills provide conventions and reference material — don't rely on memory alone.
 - Always check for and suggest connections between notes.
 - Every note must have a `description` field (~150 chars). Claude fills this automatically. Enables scanning without reading full contents.
