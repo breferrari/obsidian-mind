@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Count characters in a markdown section (useful for review tools with character limits)
 # Usage: charcount.sh <file> <section> [subsection]
 # Examples:

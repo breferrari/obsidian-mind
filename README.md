@@ -111,7 +111,7 @@ Five lifecycle hooks handle routing automatically:
 
 **Weekly**: Run `/vault-audit` to catch orphan notes, broken links, and stale content.
 
-**Review season**: Run `/review-brief` and get a structured review prep document with all the evidence already linked.
+**Review season**: Run `/review-brief manager` and get a structured review prep document with all the evidence already linked.
 
 ---
 

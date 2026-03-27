@@ -1,6 +1,12 @@
 ---
+name: review-fact-checker
 description: "Verify every factual claim in a review draft against vault sources. Returns verified/unverified/flagged claims."
-tools: ["Read", "Grep", "Glob", "Bash"]
+tools: Read, Grep, Glob, Bash
+model: sonnet
+maxTurns: 30
+skills:
+  - obsidian-markdown
+  - qmd
 ---
 
 # Review Fact-Checker

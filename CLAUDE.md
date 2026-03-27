@@ -248,7 +248,7 @@ Beyond tags, use these frontmatter properties to enable search and Bases views:
 
 ## Memory System
 
-**All project memories live in the vault.** The `~/.claude/` MEMORY.md is an auto-loaded index that points to vault locations. Never create new memory files in `~/.claude/` for this project.
+**All project memories live in the vault.** The `~/.claude/` MEMORY.md is an auto-loaded index that points to vault locations. The `~/.claude/` MEMORY.md is the only file that should exist there -- it is an auto-loaded index. Never create additional memory files in that directory.
 
 | System | Location | Purpose |
 |--------|----------|---------|
@@ -259,7 +259,7 @@ When asked to "remember" something:
 1. Find or create the appropriate `brain/` topic note (Gotchas, Patterns, Key Decisions, etc.)
 2. Add the knowledge there with a wikilink to context
 3. Update `brain/Memories.md` index if a new topic note was created
-4. Do NOT create files in `~/.claude/projects/.../memory/` -- they are not version-controlled
+4. Do NOT create additional files in `~/.claude/projects/.../memory/` beyond MEMORY.md -- they are not version-controlled
 
 ## Agent Guidelines
 
