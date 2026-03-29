@@ -19,6 +19,11 @@ def main():
         sys.exit(0)
     # Normalize path separators for cross-platform matching (Windows uses backslashes)
     normalized = file_path.replace("\\", "/")
+    # Skip dotfiles, templates, thinking, and root template files (not vault notes)
+    basename = os.path.basename(normalized)
+    root_files = {"README.md", "CHANGELOG.md", "CONTRIBUTING.md", "CLAUDE.md"}
+    if basename in root_files:
+        sys.exit(0)
     if any(skip in normalized for skip in [".claude/", ".obsidian/", "templates/", "thinking/"]):
         sys.exit(0)
 
