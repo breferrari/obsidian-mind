@@ -53,13 +53,15 @@ Glob all `.md`, `.base`, `.canvas` files and binary files (images, PDFs) in the 
 
 | Source matches | Action | Target |
 |----------------|--------|--------|
-| `infrastructure` glob (but check `.claude/commands/`, `.claude/agents/`, `.claude/scripts/` for user additions FIRST — MERGE takes precedence) | **SKIP** | Template already has latest |
-| `scaffold` path with real content | **REPLACE** | Same path in target |
-| `scaffold` path with stub-only content | **SKIP** | Template stub is fine |
-| `user_content_roots` glob | **COPY** | Same relative path |
+| `infrastructure` glob (but check exceptions below FIRST — MERGE takes precedence over SKIP) | **SKIP** | Template already has latest |
+| `.gitignore` | **MERGE** | Keep template rules, append any user-added entries, log before/after diff |
+| `bases/**` | **MERGE** | Keep template Bases, preserve user-added Bases, log conflicts for review |
 | `.claude/commands/` not in template | **MERGE** | `.claude/commands/` (user addition) |
 | `.claude/agents/` not in template | **MERGE** | `.claude/agents/` (user addition) |
 | `.claude/scripts/` not in template | **MERGE** | `.claude/scripts/` (user addition) |
+| `scaffold` path with real content | **REPLACE** | Same path in target |
+| `scaffold` path with stub-only content | **SKIP** | Template stub is fine |
+| `user_content_roots` glob | **COPY** | Same relative path |
 | `.obsidian/` config files | **CONFIG** | `.obsidian/` (see config merge rules) |
 | Binary files in user content roots | **COPY** | Same relative path |
 | Everything else | **SKIP** | Log as skipped |

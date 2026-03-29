@@ -215,11 +215,15 @@ For each file in the approved plan:
 - Copy to target `.claude/` directory
 - Flag them in the migration log as user additions
 
+**Root `.gitignore`**:
+- Keep the target (template) `.gitignore` as the base
+- Read the source `.gitignore` and append any user-added entries not already covered by the template's rules
+- Log a before/after diff in the migration log
+
 **.obsidian/ config**:
 - Copy: `app.json`, `appearance.json`, `community-plugins.json`, `core-plugins.json`, `hotkeys.json`
 - Copy plugin folders (but NOT `data.json` files inside them — those are gitignored and contain local state)
 - SKIP: `workspace.json`, `workspace-mobile.json`, `graph.json` (ephemeral session state)
-- Merge `.gitignore`: keep template's broader patterns, add any user-specific entries
 
 **Binary files** (images, PDFs, attachments):
 - Copy as-is to the same relative path in the target vault
