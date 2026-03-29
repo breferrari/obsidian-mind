@@ -343,7 +343,6 @@ When adding or modifying commands, agents, hooks, or vault structure in this tem
 - New command/agent appears in ALL tables (CLAUDE.md + README + Skills.md)
 - `vault-manifest.json` version is bumped
 - CHANGELOG has the new version entry
-- No company-specific or sensitive information in any file (this is a public repo)
 - All infrastructure paths in the manifest actually exist (`ls` each non-glob path)
 
 ## Rules
