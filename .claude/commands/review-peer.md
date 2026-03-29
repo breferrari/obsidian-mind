@@ -39,7 +39,7 @@ Be explicit about this in the review text. Never overclaim visibility.
 
 ### 3. Draft
 
-For each section, draft within your tool's character limit. Use `.claude/scripts/charcount.sh` to verify.
+For each section, draft within your tool's character limit. Use `.claude/scripts/charcount.sh <file> "<section>" "" <limit>` to verify.
 
 **Project feedback** (per project):
 - Lead with your relationship to the work ("worked alongside daily" vs "less direct visibility")
@@ -70,7 +70,7 @@ For each section, draft within your tool's character limit. Use `.claude/scripts
 
 Run these before presenting the draft:
 
-- [ ] All sections within your tool's character limit (use `charcount.sh <file> "<section>"`)
+- [ ] All sections within your tool's character limit (use `charcount.sh <file> "<section>" "" <limit>`)
 - [ ] No PR numbers (e.g., #21579) — describe what was done instead
 - [ ] No line counts (e.g., +4,743/-3,362) — these look like an audit
 - [ ] No "weekend work visible in timestamps" — don't track when people work

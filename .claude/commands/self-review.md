@@ -35,7 +35,7 @@ Read in order:
 
 ### 2. Draft Projects
 
-For each submitted project (within your tool's character limit):
+For each submitted project (within your tool's character limit, e.g. 1000 chars):
 - Open with your role and scope
 - Cover impact dimensions: what was delivered, quality of execution, process efficiency, complexity handled
 - Include specific evidence: numbers should be factual (PR counts, team size, timeline)
@@ -81,7 +81,7 @@ Before finalizing, review the full picture:
 
 ### 6. Quality Checks
 
-- [ ] All sections within your tool's character limit (use `.claude/scripts/charcount.sh <file> "<section>" [subsection]`)
+- [ ] All sections within your tool's character limit (use `.claude/scripts/charcount.sh <file> "<section>" "" <limit>`)
 - [ ] Watch for special characters (em-dashes, en-dashes) — some review tools count these as multiple characters
 - [ ] Every factual claim backed by vault evidence
 - [ ] No fabricated decisions ("chose X over Y" when Y was never considered)
