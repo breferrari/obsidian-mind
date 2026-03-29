@@ -38,7 +38,6 @@
     "perf/brag/",
     "perf/evidence/",
     "perf/h*-*/",
-    "perf/probation/",
     "perf/competencies/*.md",
     "brain/*.md",
     "reference/"

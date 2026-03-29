@@ -325,6 +325,27 @@ Five lifecycle hooks in `.claude/settings.json`:
 | PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
 | Stop | End of every session | Lightweight checklist reminder: archive, update indexes, check orphans. For thorough review, use `/wrap-up` instead. |
 
+## Template Development Checklist
+
+When adding or modifying commands, agents, hooks, or vault structure in this template, **all of these files must stay in sync**:
+
+| File | What to update |
+|------|---------------|
+| `CLAUDE.md` | Command table, agent table, vault structure table, counts (commands/agents), root files rule |
+| `README.md` | Command table, agent table, vault structure diagram, counts, relevant sections |
+| `brain/Skills.md` | Command tables (by category), subagents table, usage notes, workflows if affected |
+| `CHANGELOG.md` | New version entry at top with Added/Changed/Fixed sections |
+| `vault-manifest.json` | Version number, infrastructure globs, scaffold paths, frontmatter schemas, version fingerprints |
+| `bases/*.base` | If new properties or note types are added, update relevant Base views |
+
+**Before creating a PR**, verify:
+- Counts match everywhere (commands, agents)
+- New command/agent appears in ALL tables (CLAUDE.md + README + Skills.md)
+- `vault-manifest.json` version is bumped
+- CHANGELOG has the new version entry
+- No company-specific or sensitive information in any file (this is a public repo)
+- All infrastructure paths in the manifest actually exist (`ls` each non-glob path)
+
 ## Rules
 
 - Never modify `.obsidian/` config files unless explicitly asked.

@@ -7,8 +7,8 @@ formulas:
 properties:
   file.name:
     displayName: Incident
-  irp:
-    displayName: IRP Ticket
+  ticket:
+    displayName: Ticket
   severity:
     displayName: Severity
   role:
@@ -25,7 +25,7 @@ views:
     order:
       - file.name
       - date
-      - irp
+      - ticket
       - severity
       - role
       - status
