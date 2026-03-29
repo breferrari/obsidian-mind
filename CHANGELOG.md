@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.3 — 2026-03-29
+
+### Added
+- `/vault-upgrade` command — import and migrate content from an existing Obsidian vault (any version of obsidian-mind or arbitrary vaults). Detects source version via fingerprints, classifies notes, transforms frontmatter, fixes wikilinks, rebuilds indexes. Supports `--dry-run`.
+- `vault-migrator` subagent — classifies files (tiered heuristics: structural → frontmatter → content → fallback) and executes approved migration plans. Two modes: classification and execution.
+- `vault-manifest.json` — declares template version, infrastructure vs user content boundaries, frontmatter schemas, version fingerprints, and field aliases. Enables version detection and targeted migrations.
+
+### Changed
+- CLAUDE.md: added `/vault-upgrade` command and `vault-migrator` agent, updated counts (14→15 commands, 8→9 agents)
+- README: added "Upgrading" section explaining the migration workflow
+- `brain/Skills.md`: added `/vault-upgrade` to Maintenance category and `vault-migrator` to subagents table
+
 ## v3.2.1 — 2026-03-29
 
 ### Fixed

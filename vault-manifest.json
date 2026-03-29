@@ -1,0 +1,82 @@
+{
+  "template": "obsidian-mind",
+  "version": "3.3.0",
+  "released": "2026-03-29",
+  "infrastructure": [
+    "CLAUDE.md",
+    "Home.md",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    ".gitignore",
+    ".claude/**",
+    ".claude-plugin/**",
+    "templates/**",
+    "bases/**",
+    "vault-manifest.json",
+    "brain/Skills.md",
+    "perf/competencies/README.md",
+    "thinking/README.md"
+  ],
+  "scaffold": {
+    "brain/North Star.md": "Personal goals — replace if source has real content",
+    "brain/Memories.md": "Memory index — replace if source has entries beyond template stubs",
+    "brain/Key Decisions.md": "Decision log — replace if non-empty",
+    "brain/Patterns.md": "Observed patterns — replace if non-empty",
+    "brain/Gotchas.md": "Known gotchas — replace if non-empty",
+    "work/Index.md": "Work notes MOC — replace if has real entries",
+    "org/People & Context.md": "People MOC — replace if has real entries",
+    "perf/Brag Doc.md": "Brag doc index — replace if has entries"
+  },
+  "user_content_roots": [
+    "work/active/",
+    "work/archive/",
+    "work/incidents/",
+    "work/1-1/",
+    "org/people/",
+    "org/teams/",
+    "perf/brag/",
+    "perf/evidence/",
+    "perf/h*-*/",
+    "perf/probation/",
+    "perf/competencies/*.md",
+    "brain/*.md",
+    "reference/"
+  ],
+  "version_fingerprints": {
+    "v1": {
+      "exists": ["claude/Memories.md"],
+      "missing": ["brain/", "bases/"]
+    },
+    "v2": {
+      "exists": ["brain/", "bases/", "Home.md"],
+      "missing": [".claude/agents/"]
+    },
+    "v3.0": {
+      "exists": [".claude/agents/", ".claude/scripts/"],
+      "missing": [".claude/agents/review-fact-checker.md"]
+    },
+    "v3.1": {
+      "exists": [".claude/agents/review-fact-checker.md"],
+      "missing": [".claude/commands/humanize.md"]
+    },
+    "v3.2": {
+      "exists": [".claude/commands/humanize.md", ".claude/commands/weekly.md"],
+      "missing": ["vault-manifest.json"]
+    },
+    "v3.3": {
+      "exists": ["vault-manifest.json"]
+    }
+  },
+  "frontmatter_required": {
+    "global": ["description", "tags"],
+    "work-note": ["date", "status", "quarter"],
+    "incident": ["date", "status", "quarter", "ticket", "severity", "role"],
+    "person": ["date", "title"],
+    "team": ["date"],
+    "1-1": ["date", "quarter"]
+  },
+  "field_aliases": {
+    "ticket": ["irp", "incident-id", "ticket-id"]
+  }
+}

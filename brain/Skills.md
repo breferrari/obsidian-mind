@@ -48,6 +48,7 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 | Command | Purpose |
 |---------|---------|
 | `/vault-audit` | Deep structural audit — indexes, frontmatter, links, Bases, folder placement, stale context |
+| `/vault-upgrade` | Import content from an existing vault — detects version, classifies notes, transforms frontmatter, rebuilds indexes |
 | `/project-archive` | Move completed project from `work/active/` to `work/archive/YYYY/`, update all indexes |
 
 ## Usage Notes
@@ -72,6 +73,7 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 
 **Maintenance:**
 - `/vault-audit` should be run at the end of substantial sessions — catches stale indexes and mixed context
+- `/vault-upgrade` imports content from an existing vault (older obsidian-mind or any Obsidian vault). Detects version, classifies notes, transforms frontmatter, fixes wikilinks, rebuilds indexes. Use `--dry-run` to preview.
 - `/project-archive` handles the active/ → archive/ move with index updates
 
 ## Subagents
@@ -86,6 +88,7 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 | `slack-archaeologist` | Full Slack reconstruction — reads every message, thread, profile, produces unified timeline | `/incident-capture` |
 | `vault-librarian` | Deep vault maintenance — orphan detection, broken links, frontmatter validation, stale notes | `/vault-audit` |
 | `review-fact-checker` | Verify every claim in a review draft against vault sources | `/self-review`, `/review-peer` |
+| `vault-migrator` | Classify, transform, and migrate content from a source vault | `/vault-upgrade` |
 
 Subagents run in isolated context windows via `.claude/agents/`. They don't pollute the main conversation.
 

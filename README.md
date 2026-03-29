@@ -134,6 +134,7 @@ Defined in `.claude/commands/`. Run them in any Claude Code session.
 | `/self-review` | Write your self-assessment for review season — projects, competencies, principles |
 | `/review-peer` | Write a peer review — projects, principles, performance summary |
 | `/vault-audit` | Audit indexes, links, orphans, stale context |
+| `/vault-upgrade` | Import content from an existing vault — version detection, classification, migration |
 | `/project-archive` | Move a completed project from active/ to archive/, update indexes |
 
 ---
@@ -152,6 +153,7 @@ Specialized agents that run in isolated context windows. They handle heavy opera
 | `slack-archaeologist` | Full Slack reconstruction — every message, thread, profile | `/incident-capture` |
 | `vault-librarian` | Deep vault maintenance — orphans, broken links, stale notes | `/vault-audit` |
 | `review-fact-checker` | Verify every claim in a review draft against vault sources | `/self-review`, `/review-peer` |
+| `vault-migrator` | Classify, transform, and migrate content from a source vault | `/vault-upgrade` |
 
 > [!NOTE]
 > Subagents are defined in `.claude/agents/`. You can add your own for domain-specific workflows.
@@ -189,6 +191,35 @@ The `bases/` folder contains database views that query your notes' frontmatter p
 | Templates | Quick access to all templates |
 
 `Home.md` embeds these views, making it the vault's dashboard.
+
+---
+
+## 🔄 Upgrading
+
+Already using an older version of obsidian-mind (or any Obsidian vault)? The `/vault-upgrade` command migrates your content into the latest template:
+
+```bash
+# 1. Clone the latest obsidian-mind
+git clone https://github.com/breferrari/obsidian-mind.git ~/new-vault
+
+# 2. Open it in Claude Code
+cd ~/new-vault && claude
+
+# 3. Run the upgrade pointing to your old vault
+/vault-upgrade ~/my-old-vault
+```
+
+Claude will:
+1. **Detect** your vault version (v1–v3.2, or identify it as a non-obsidian-mind vault)
+2. **Inventory** every file — classify as user content, scaffold, infrastructure, or uncategorized
+3. **Present a migration plan** — you see exactly what will be copied, transformed, and skipped
+4. **Execute** after your approval — transforms frontmatter, fixes wikilinks, rebuilds indexes
+5. **Validate** — checks for orphans, broken links, missing frontmatter
+
+Your old vault is **never modified**. Use `--dry-run` to preview the plan without executing.
+
+> [!NOTE]
+> Works with any Obsidian vault, not just obsidian-mind. For non-obsidian-mind vaults, Claude reads each note and classifies it semantically — routing work notes, people, incidents, 1:1s, and decisions to the right folders.
 
 ---
 
@@ -255,8 +286,8 @@ thinking/               Scratchpad for drafts — promote findings, then delete
 templates/              Obsidian templates with YAML frontmatter
 
 .claude/
-  commands/             14 slash commands
-  agents/               8 subagents
+  commands/             15 slash commands
+  agents/               9 subagents
   scripts/              Hook scripts + charcount.sh utility
   skills/               Obsidian + QMD skills
   settings.json         5 hooks configuration
