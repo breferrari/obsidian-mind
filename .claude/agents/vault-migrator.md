@@ -80,7 +80,7 @@ Report the detected shape to the parent command so it can include it in the plan
 | Zettelkasten: `Literature/` or `Sources/` | Reference | `reference/` |
 | Daily notes: `daily/`, `journal/`, `Daily Notes/` | Journal entries — classify by content | Varies (work/1-1/, thinking/) |
 | Inbox: `Inbox/`, `Unsorted/`, `_inbox/` | Unprocessed | `thinking/migrate-review/` |
-| Attachments: `attachments/`, `assets/`, `images/`, `files/` | Binary assets | `attachments/` (preserve structure) |
+| Attachments: `attachments/`, `assets/`, `images/`, `files/` | Binary assets | Same relative path in target vault (preserve folder structure) |
 | MOC files: `MOC - *.md`, `Index - *.md`, `Map of *.md` | Index / navigation | Evaluate as scaffold replacements |
 
 **Filename patterns:**
@@ -202,7 +202,9 @@ For each file in the approved plan:
    - Apply the rename map for any files that changed names between versions
    - Obsidian resolves by filename, so most links survive folder moves without changes
 4. **Write** to the target location specified in the plan
-5. **Log** the operation: source path, target path, transformations applied, content hash (SHA-256 of final content)
+5. **Log** the operation: source path, target path, transformations applied, and both:
+   - `source_content_hash`: SHA-256 of the original source file content (used for idempotency SKIP/FLAG decisions on re-runs)
+   - `final_content_hash`: SHA-256 of the fully transformed content written to the target
 
 ### Step 3: Handle Special Cases
 
@@ -222,7 +224,7 @@ For each file in the approved plan:
 
 **.obsidian/ config**:
 - Copy: `app.json`, `appearance.json`, `community-plugins.json`, `core-plugins.json`, `hotkeys.json`
-- Copy plugin folders (but NOT `data.json` files inside them — those are gitignored and contain local state)
+- Copy plugin folders, including their `data.json` files (these are gitignored so they stay untracked by Git, but they contain meaningful local plugin configuration that should be preserved)
 - SKIP: `workspace.json`, `workspace-mobile.json`, `graph.json` (ephemeral session state)
 
 **Binary files** (images, PDFs, attachments):

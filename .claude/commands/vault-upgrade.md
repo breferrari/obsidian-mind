@@ -80,10 +80,12 @@ Detect scaffold "real content" by checking if the file has more than 5 lines of 
 
 **Idempotency check:**
 
-If `brain/Migration Log.md` exists in the target vault, read it and extract content hashes. For each source file, compute its hash and compare:
-- Hash matches existing target file → **SKIP** (already migrated, unchanged)
-- Source hash differs from log → **FLAG** (source modified since last migration — ask user)
-- No entry in log → process normally (new file)
+If `brain/Migration Log.md` exists in the target vault, read it and extract the recorded hashes. Each log entry stores both a **source hash** (original file content) and a **final hash** (transformed content written to target).
+
+On re-run, compute the **source hash** for each source file and compare against the logged source hash:
+- Source hash matches for the same source path → **SKIP** (already migrated, unchanged)
+- Entry exists but source hash differs → **FLAG** (source modified since last migration — ask user)
+- No entry for this source path → process normally (new file)
 
 ### 3. Present Migration Plan
 

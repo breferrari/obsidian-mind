@@ -252,6 +252,13 @@ qmd update && qmd embed
 
 ```
 Home.md                 Vault entry point — embedded Base views, quick links
+CLAUDE.md               Operating manual — Claude reads this every session
+vault-manifest.json     Template metadata — version, structure, schemas
+CHANGELOG.md            Version history
+CONTRIBUTING.md         Template development checklist
+README.md               Product documentation
+LICENSE                 MIT license
+
 bases/                  Dynamic database views (Work Dashboard, Incidents, People, etc.)
 
 work/
