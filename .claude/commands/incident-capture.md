@@ -93,7 +93,7 @@ For existing people notes:
 - `perf/Brag Doc.md` — add to relevant quarter with competency links
 - `perf/brag/QN YYYY.md` — add detailed brag entry
 
-### 7. Prepare IRP Draft (if applicable)
+### 7. Prepare Incident Report Draft (if applicable)
 
 If you are or may become the post-mortem manager:
 - Check the post-mortem template at `reference/Incident Response Process.md`

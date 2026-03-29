@@ -77,6 +77,6 @@
     "1-1": ["date", "quarter"]
   },
   "field_aliases": {
-    "ticket": ["irp", "incident-id", "ticket-id"]
+    "ticket": ["incident-id", "ticket-id"]
   }
 }

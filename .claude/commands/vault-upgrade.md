@@ -103,7 +103,7 @@ Files found: 87
 Transformations:
   - 23 notes missing 'quarter' field (will derive from date)
   - 12 notes missing 'description' field (will generate)
-  - 3 notes with 'irp' field → rename to 'ticket'
+  - 3 notes with alias field → normalize to 'ticket'
   - 1 v1 monolith Memories.md → split into topic files
 ```
 

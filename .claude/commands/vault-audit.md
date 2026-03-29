@@ -55,7 +55,7 @@ For each note type, verify required properties:
 
 **Incident notes** (`work/incidents/`):
 - Required: `date`, `quarter`, `description`, `tags: [work-note, incident]`
-- Required for main incident notes: `irp`, `severity`, `role`, `status`
+- Required for main incident notes: `ticket`, `severity`, `role`, `status`
 
 **Person notes** (`org/people/`):
 - Required: `date`, `title`, `description`, `tags: [person]`

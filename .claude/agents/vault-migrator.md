@@ -103,7 +103,7 @@ Parse YAML frontmatter first. If no frontmatter exists, scan the first 20 lines 
 |--------|---------------|
 | `tags` contains `person` or `people` | Person → `org/people/` |
 | `tags` contains `team` | Team → `org/teams/` |
-| `tags` contains `incident` or has `severity`/`irp`/`ticket` field | Incident → `work/incidents/` |
+| `tags` contains `incident` or has `severity`/`ticket` field | Incident → `work/incidents/` |
 | `tags` contains `work-note` or `project` and `status: active` | Active work → `work/active/` |
 | `tags` contains `work-note` or `project` and `status: completed`/`done` | Archived work → `work/archive/YYYY/` |
 | `tags` contains `competency` or `skill` | Competency → `perf/competencies/` |
@@ -193,7 +193,7 @@ For each file in the approved plan:
      - `quarter`: derive from date (month 1-3 = Q1, 4-6 = Q2, 7-9 = Q3, 10-12 = Q4, format `Q1-YYYY`)
      - `tags`: infer from classification + folder placement if missing. Merge with any inline tags extracted.
      - `status`: `active` if going to `work/active/`, `completed` if going to `work/archive/`
-   - Normalize field aliases non-destructively: if the note has `irp:` and no `ticket:`, copy the value into `ticket:` while preserving the original `irp:` field (per manifest `field_aliases`). Do not remove alias fields — this preserves zero data loss guarantees.
+   - Normalize field aliases non-destructively: if the note has an alias field (e.g., `incident-id:`) and no `ticket:`, copy the value into `ticket:` while preserving the original field (per manifest `field_aliases`). Do not remove alias fields — this preserves zero data loss guarantees.
    - Convert tags from string to YAML array if needed
    - Deduplicate tags
 3. **Fix links**:
