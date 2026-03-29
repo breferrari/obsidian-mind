@@ -9,10 +9,12 @@ Import and migrate content from an existing Obsidian vault into this obsidian-mi
 ```
 /vault-upgrade <path-to-source-vault>
 /vault-upgrade <path-to-source-vault> --dry-run
+/vault-upgrade --source <path-to-source-vault>
+/vault-upgrade --source <path-to-source-vault> --dry-run
 ```
 
 **Arguments**:
-- `<path-to-source-vault>` — absolute or relative path to the vault to migrate FROM
+- `<path-to-source-vault>` — absolute or relative path to the vault to migrate FROM (positional or via `--source`)
 - `--dry-run` — generate the migration plan without executing it (saves to `thinking/`)
 
 ## Subagents
@@ -51,7 +53,7 @@ Glob all `.md`, `.base`, `.canvas` files and binary files (images, PDFs) in the 
 
 | Source matches | Action | Target |
 |----------------|--------|--------|
-| `infrastructure` glob | **SKIP** | Template already has latest |
+| `infrastructure` glob (but check `.claude/commands/`, `.claude/agents/`, `.claude/scripts/` for user additions FIRST — MERGE takes precedence) | **SKIP** | Template already has latest |
 | `scaffold` path with real content | **REPLACE** | Same path in target |
 | `scaffold` path with stub-only content | **SKIP** | Template stub is fine |
 | `user_content_roots` glob | **COPY** | Same relative path |

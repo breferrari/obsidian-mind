@@ -193,7 +193,7 @@ For each file in the approved plan:
      - `quarter`: derive from date (month 1-3 = Q1, 4-6 = Q2, 7-9 = Q3, 10-12 = Q4, format `Q1-YYYY`)
      - `tags`: infer from classification + folder placement if missing. Merge with any inline tags extracted.
      - `status`: `active` if going to `work/active/`, `completed` if going to `work/archive/`
-   - Normalize field aliases: if the note has `irp:` rename to `ticket:` (per manifest `field_aliases`)
+   - Normalize field aliases non-destructively: if the note has `irp:` and no `ticket:`, copy the value into `ticket:` while preserving the original `irp:` field (per manifest `field_aliases`). Do not remove alias fields — this preserves zero data loss guarantees.
    - Convert tags from string to YAML array if needed
    - Deduplicate tags
 3. **Fix links**:

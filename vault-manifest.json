@@ -69,7 +69,7 @@
     }
   },
   "frontmatter_required": {
-    "global": ["description", "tags"],
+    "global": ["date", "description", "tags"],
     "work-note": ["date", "status", "quarter"],
     "incident": ["date", "status", "quarter", "ticket", "severity", "role"],
     "person": ["date", "title"],
