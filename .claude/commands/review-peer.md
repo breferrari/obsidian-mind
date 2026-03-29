@@ -10,9 +10,11 @@ Write a peer review for a colleague on your company's review tool. Produces proj
 
 ## Context: Review System
 
-- **Peers give comments only** — no scores. Manager + Coach give scores.
-- **Calibration** happens at the organizational level — managers + People Partners review aggregate ratings.
-- **Review tool fields**: per-project feedback (1000 chars), principles (1000 chars each), Strengths (1000 chars), Areas of Development (1000 chars), Confidential Comment (1000 chars, optional — manager-only).
+Adapt to your company's review system. Common patterns:
+
+- **Peers give comments only** — typically no scores. Manager gives scores.
+- **Calibration** may happen at a broader organizational level.
+- **Common review fields**: per-project feedback, principles, Strengths, Areas of Development, Confidential Comment (manager-only). Check your tool's character limits.
 
 ## Workflow
 
@@ -37,7 +39,7 @@ Be explicit about this in the review text. Never overclaim visibility.
 
 ### 3. Draft
 
-For each section, draft within 1000 chars. Use `.claude/scripts/charcount.sh` to verify.
+For each section, draft within your tool's character limit. Use `.claude/scripts/charcount.sh` to verify.
 
 **Project feedback** (per project):
 - Lead with your relationship to the work ("worked alongside daily" vs "less direct visibility")
@@ -68,7 +70,7 @@ For each section, draft within 1000 chars. Use `.claude/scripts/charcount.sh` to
 
 Run these before presenting the draft:
 
-- [ ] All sections under 1000 chars (use `charcount.sh <file> "<section>"`)
+- [ ] All sections within your tool's character limit (use `charcount.sh <file> "<section>"`)
 - [ ] No PR numbers (e.g., #21579) — describe what was done instead
 - [ ] No line counts (e.g., +4,743/-3,362) — these look like an audit
 - [ ] No "weekend work visible in timestamps" — don't track when people work

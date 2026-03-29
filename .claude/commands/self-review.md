@@ -12,10 +12,12 @@ Default cycle: current review period.
 
 ## Context: Review System
 
-- **Three evaluation axes**: Impact (Volume/Quality/Efficiency/Complexity), Competencies (current level / next level per competency), Principles (your company's defined principles)
-- **Rating scale**: Below / Meet / Above for Impact and Principles. Yes/No/Don't Know for competency criteria.
-- **Who reads this**: Manager (may have limited context), Coach, Calibration panel (senior managers + People Partners who don't know you)
-- **Your self-assessment is the anchor** — especially when the manager is new. If you say Meet, they have no reason to push Above.
+Adapt this to your company's review system. Common patterns:
+
+- **Evaluation axes**: Impact (what was delivered), Competencies (skill demonstration at level), Principles (culture/values alignment). Customize the specific dimensions and terminology.
+- **Rating scale**: Common scales include Below/Meet/Above or 1-5. Configure per your org.
+- **Audience**: Typically your manager, possibly a calibration panel. Understand who reads this and tailor detail accordingly.
+- **Your self-assessment sets the anchor** — especially when the manager is new or has limited context.
 
 ## Workflow
 
@@ -33,13 +35,13 @@ Read in order:
 
 ### 2. Draft Projects
 
-For each submitted project (1000 chars, no dashes):
+For each submitted project (within your tool's character limit):
 - Open with your role and scope
-- Hit all four Impact dimensions without naming them: what was delivered (Volume), how good it was (Quality), how the process was managed (Efficiency), whether scope expanded (Complexity)
+- Cover impact dimensions: what was delivered, quality of execution, process efficiency, complexity handled
 - Include specific evidence: numbers should be factual (PR counts, team size, timeline)
 - End with outcome or significance
 
-Rate each project Meet or Above. Decide all ratings at the end together — calibrate the full picture before committing.
+Decide all ratings at the end together — calibrate the full picture before committing.
 
 ### 3. Draft Competencies
 
@@ -48,7 +50,7 @@ For each competency, decide current level (Yes/No) and next level (Yes/No):
 - Check each sub-criterion: is there concrete evidence?
 - If saying Yes to next level, every sub-criterion should be defensible — missing the primary criterion undermines credibility
 
-Draft 1000-char text per YES answer:
+Draft text per YES answer (within your tool's character limit):
 - **Competency texts are NOT project descriptions** — the project section already covers WHAT. Competency texts cover HOW you applied the skill.
 - Lead with behaviors and decisions, not deliverables
 - Reference the previous cycle baseline: "Previously Meet, this period X" shows trajectory
@@ -57,7 +59,7 @@ Draft 1000-char text per YES answer:
 
 ### 4. Draft Principles
 
-For each principle (1000 chars):
+For each principle (within your tool's character limit):
 - Reference the previous cycle baseline and any specific growth feedback
 - Lead with the strongest evidence
 - If the rating changed from last cycle, make the growth explicit
@@ -79,8 +81,8 @@ Before finalizing, review the full picture:
 
 ### 6. Quality Checks
 
-- [ ] All sections under 1000 chars (use `.claude/scripts/charcount.sh <file> "<section>" [subsection]`)
-- [ ] No dashes (em-dashes, en-dashes) — some review tools count these differently
+- [ ] All sections within your tool's character limit (use `.claude/scripts/charcount.sh <file> "<section>" [subsection]`)
+- [ ] Watch for special characters (em-dashes, en-dashes) — some review tools count these as multiple characters
 - [ ] Every factual claim backed by vault evidence
 - [ ] No fabricated decisions ("chose X over Y" when Y was never considered)
 - [ ] No self-undermining language in next-level YES texts ("not yet at yearly scope")
@@ -104,12 +106,10 @@ Flag and fix anything that doesn't pass.
 Save draft to `thinking/review-drafts.md` for copy-pasting.
 After submission, promote to `perf/<cycle>/Self-Review.md`.
 
-## Lessons Learned
+## Tips
 
-These come from past review cycles and should be applied going forward:
-
-1. **Strategic Meet only works when the assessor has independent context.** With a new manager, your self-assessment IS the anchor. Don't undersell.
-2. **Charcount early and often.** Use the script after every draft, not after pasting into the review tool.
-3. **The "no dashes" rule exists** because some review tools may count special characters differently.
-4. **Peer reviews feed into your competency ratings.** What peers write about you is visible to the manager. What you write about peers builds your reputation as a thoughtful evaluator.
-5. **Fact-check before submitting.** Plan mode for verification has caught fabricated architectural decisions, references that shouldn't be in a review, and date claims where the days of the week were wrong.
+1. **Your self-assessment anchors the conversation** — especially with a new manager who lacks independent context.
+2. **Check character counts early and often.** Use the charcount script after every draft, not after pasting.
+3. **Watch special characters** — some review tools count em-dashes and en-dashes as multiple characters.
+4. **Peer reviews feed into your ratings.** What peers write about you is visible. What you write about peers builds your reputation as a thoughtful evaluator.
+5. **Fact-check before submitting.** Plan mode for verification catches fabricated claims, wrong dates, and references that shouldn't appear in a review.

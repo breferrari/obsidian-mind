@@ -8,7 +8,7 @@ Deep scan a peer's GitHub PRs for performance review preparation. Produces a str
 /peer-scan <name> <github-username> <repo> [period]
 ```
 
-Example: `/peer-scan "Jane Doe" jdoe example-repo "Oct 2025 - Mar 2026"`
+Example: `/peer-scan "Jane Doe" jdoe example-repo "Jan 2025 - Jun 2025"`
 
 ## Workflow
 
@@ -25,7 +25,7 @@ Example: `/peer-scan "Jane Doe" jdoe example-repo "Oct 2025 - Mar 2026"`
 3. **Produce structured analysis** with these sections:
    - **PR count by month** — table showing velocity trends
    - **Projects/themes** — group PRs by project area with descriptions of what was built
-   - **Quality signals** — review comments, change requests, approval patterns, reverts, SonarQube
+   - **Quality signals** — review comments, change requests, approval patterns, reverts, static analysis findings
    - **Notable contributions** — architectural decisions, complex fixes, test coverage, cross-team impact
    - **Growth signals** — scope expansion over time, leadership evidence
    - **Full PR table** — every PR with number, title, date, additions, deletions, state

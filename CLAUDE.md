@@ -146,7 +146,7 @@ Use `thinking/` for drafts, reasoning, and analysis before writing final notes. 
    - Claude operational context -- `brain/`
    - Codebase knowledge -- `reference/`
    - Drafts -- `thinking/`
-   - Vault root: `Home.md`, `CLAUDE.md`, `vault-manifest.json`, `CHANGELOG.md`, `README.md`, `LICENSE`, `.gitignore`. No user notes at root.
+   - Vault root: `Home.md`, `CLAUDE.md`, `vault-manifest.json`, `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, `LICENSE`, `.gitignore`. No user notes at root.
 4. **Name files descriptively.** Use the note title as filename.
 
 ### Note Types
@@ -157,7 +157,7 @@ Use `thinking/` for drafts, reasoning, and analysis before writing final notes. 
 | Incident | `work/incidents/` | Ticket number or descriptive title | Context, Root Cause, Timeline, Impact, Analysis, Related |
 | 1:1 note | `work/1-1/` | `<Person> YYYY-MM-DD.md` | Key Takeaways, Action Items, Quotes, What to Watch, Related |
 | PR analysis | `perf/evidence/` | `<Person> PRs - <Period>.md` | PR Count, Projects, Quality, Growth, Full Table |
-| Review brief | `perf/<cycle>/` | `H1 2026 Review Brief.md` | Arc, Impact, Competencies, Documentation Trail |
+| Review brief | `perf/<cycle>/` | `<Cycle> Review Brief.md` | Arc, Impact, Competencies, Documentation Trail |
 | Person note | `org/people/` | Full name | Role & Team, Relationship, Key Moments, Notes |
 | Team note | `org/teams/` | Team name | Members, Scope, Interactions |
 | Competency | `perf/competencies/` | Competency name | Definition, level criteria, Evidence (via backlinks) |
@@ -234,7 +234,7 @@ Use tags in frontmatter (not inline):
 - **Index**: `index`, `moc`
 - **Status** (frontmatter field): `active`, `completed`, `archived`, `proposed`, `accepted`, `deprecated`
 - **Team** (frontmatter field on people + work notes): your team names, e.g. `Backend`, `Platform`, `Mobile`
-- **Cycle** (frontmatter field on review-related notes): `h1-2026`, `h2-2025`, etc.
+- **Cycle** (frontmatter field on review-related notes): `h2-2024`, `h1-2025`, etc.
 - **Person** (frontmatter field on evidence notes): full name of the person
 - **Project**: as needed, e.g. `project/auth-refactor`
 
@@ -242,7 +242,7 @@ Use tags in frontmatter (not inline):
 
 Beyond tags, use these frontmatter properties to enable search and Bases views:
 
-- `cycle: h1-2026` -- find all review material for a cycle
+- `cycle: h2-2024` -- find all review material for a cycle
 - `person: "Jane Smith"` -- find all evidence related to a person
 - `team: Backend` -- find all notes related to a team
 - `status: active` -- find active projects
@@ -324,26 +324,6 @@ Five lifecycle hooks in `.claude/settings.json`:
 | PostToolUse | After writing `.md` | Validates frontmatter, checks for wikilinks, verifies folder placement |
 | PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
 | Stop | End of every session | Lightweight checklist reminder: archive, update indexes, check orphans. For thorough review, use `/wrap-up` instead. |
-
-## Template Development Checklist
-
-When adding or modifying commands, agents, hooks, or vault structure in this template, **all of these files must stay in sync**:
-
-| File | What to update |
-|------|---------------|
-| `CLAUDE.md` | Command table, agent table, vault structure table, counts (commands/agents), root files rule |
-| `README.md` | Command table, agent table, vault structure diagram, counts, relevant sections |
-| `brain/Skills.md` | Command tables (by category), subagents table, usage notes, workflows if affected |
-| `CHANGELOG.md` | New version entry at top with Added/Changed/Fixed sections |
-| `vault-manifest.json` | Version number, infrastructure globs, scaffold paths, frontmatter schemas, version fingerprints |
-| `bases/*.base` | If new properties or note types are added, update relevant Base views |
-
-**Before creating a PR**, verify:
-- Counts match everywhere (commands, agents)
-- New command/agent appears in ALL tables (CLAUDE.md + README + Skills.md)
-- `vault-manifest.json` version is bumped
-- CHANGELOG has the new version entry
-- All infrastructure paths in the manifest actually exist (`ls` each non-glob path)
 
 ## Rules
 

@@ -9,8 +9,8 @@ Generate a performance review context transfer document from vault data. Support
 ```
 
 Examples:
-- `/review-brief manager "Q4 2025 + Q1 2026"`
-- `/review-brief peers "Q4 2025 + Q1 2026"`
+- `/review-brief manager "Q3 2024 + Q4 2024"`
+- `/review-brief peers "Q3 2024 + Q4 2024"`
 
 ## Subagent
 
@@ -23,7 +23,7 @@ Launch the subagent first to gather raw material, then use its output to write t
 ### 1. Gather Data
 
 Read these vault sources:
-- `perf/h1-2026/H1 2026 Review Brief.md` (or current private brief) — full context
+- `perf/<cycle>/Review Brief.md` (or current private brief) — full context
 - `perf/Brag Doc.md` — quarterly highlights
 - `perf/brag/Q*.md` — quarterly detail notes for the period
 - `perf/evidence/Your PRs - *.md` — PR data
@@ -34,15 +34,15 @@ Read these vault sources:
 ### 2. Generate Content
 
 **For manager audience:**
-- Frame for a PO, not an engineer — outcome language, not technical jargon
+- Frame for a non-technical audience — outcome language, not technical jargon
 - Include: The Arc (narrative), Impact at a Glance (table), Impact Details (per project), Competency Highlights (with baselines), Documentation Trail
-- Replace technical terms: "deadlock" → "timing conflict", "data race" → "concurrency issue", etc.
+- Simplify technical terms for your audience's background
 - No wikilinks — use plain text or markdown links to external resources
-- Include all Confluence, Jira, GitHub, error tracking, Slack references
+- Include all documentation, task tracker, repository, error tracking, and communication references
 
 **For peer audience:**
-- Can be more technical but still PO-friendly (peers write reviews that go to manager)
-- Organize by project (matches your org's review tool structure)
+- Can be more technical but still accessible (peers write reviews that go to manager)
+- Organize by project (a common review tool structure)
 - Include "Other things worth mentioning" for non-project work
 - Casual tone — "jog your memory", "no pressure to cover everything"
 - No competency section — that's for the manager
@@ -65,5 +65,5 @@ Read these vault sources:
 - NEVER include: sensitive interpersonal details, 1:1 talking points, peer selection strategy, personal strategic notes in shared versions
 - Always maintain a private version with full context
 - When updating, update BOTH private + shared versions
-- Manager version: no wikilinks, PO language, professional formatting
-- Peer version: project-focused, same PO-friendly language
+- Manager version: no wikilinks, non-technical language, professional formatting
+- Peer version: project-focused, accessible language

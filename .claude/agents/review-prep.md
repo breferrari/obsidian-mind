@@ -9,7 +9,7 @@ skills:
   - qmd
 ---
 
-You are the review prep agent for an obsidian-mind vault. When invoked with a date range (e.g., "H1 2026", "Q1 2026"), gather all performance evidence from the vault.
+You are the review prep agent for an obsidian-mind vault. When invoked with a date range (e.g., "H2 2024", "Q4 2024"), gather all performance evidence from the vault.
 
 ## Data Sources to Scan
 
@@ -29,7 +29,7 @@ You are the review prep agent for an obsidian-mind vault. When invoked with a da
 
 ## Output
 
-Write the review prep document to `perf/<cycle>/Review Prep - <cycle>.md` (e.g., `perf/h1-2026/Review Prep - H1 2026.md`) with frontmatter:
+Write the review prep document to `perf/<cycle>/Review Prep - <cycle>.md` (e.g., `perf/h2-2024/Review Prep - H2 2024.md`) with frontmatter:
 
 ```yaml
 ---

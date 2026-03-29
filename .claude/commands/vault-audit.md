@@ -33,7 +33,7 @@ Verify the vault matches the expected layout:
 - `org/teams/` contains only notes tagged `team`
 - `templates/` contains only template files (with `{{placeholders}}`)
 - `thinking/` is clean (no leftover drafts that should have been promoted)
-- Nothing unexpected at vault root (allowed: `Home.md`, `CLAUDE.md`, `vault-manifest.json`, `CHANGELOG.md`, `README.md`, `LICENSE`, `.gitignore` — no user notes)
+- Nothing unexpected at vault root (allowed: `Home.md`, `CLAUDE.md`, `vault-manifest.json`, `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, `LICENSE`, `.gitignore` — no user notes)
 
 ### 2. Check Indexes
 

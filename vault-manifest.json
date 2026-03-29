@@ -7,6 +7,7 @@
     "Home.md",
     "README.md",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "LICENSE",
     ".gitignore",
     ".claude/**",
@@ -74,8 +75,5 @@
     "person": ["date", "title"],
     "team": ["date"],
     "1-1": ["date", "quarter"]
-  },
-  "field_aliases": {
-    "ticket": ["incident-id", "ticket-id"]
   }
 }

@@ -95,8 +95,8 @@ For existing people notes:
 
 ### 7. Prepare Incident Report Draft (if applicable)
 
-If you are or may become the post-mortem manager:
-- Check the post-mortem template at `reference/Incident Response Process.md`
+If you are or may lead the post-mortem:
+- Check your org's post-mortem template (add it to `reference/` if you have one)
 - Create `work/incidents/TICKET-XXXX Post-Mortem Draft.md` following your org's post-mortem template
 - Include: Executive Summary, Narrative Timeline (4-column), 5 Whys analysis, Action Items table
 
@@ -105,7 +105,7 @@ If you are or may become the post-mortem manager:
 After capturing, suggest:
 - "Want me to prepare the incident ticket fields?" (Points of Time, Impact, RCA)
 - "Want me to draft a message for the incident channel?"
-- "Want me to create an FE/iOS root cause analysis document?"
+- "Want me to create a root cause analysis document?"
 - "Should I run `/vault-audit` to verify everything links properly?"
 
 ## Important
