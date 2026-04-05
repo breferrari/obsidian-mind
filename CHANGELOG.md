@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.4.1 — 2026-04-05
+
+### Fixed
+- `classify-message.py`: hook output missing required `hookEventName` field — caused Claude Code to show "hook error" on every prompt
+- `validate-write.py`: same missing `hookEventName` field in PostToolUse output
+- Both scripts: added `OSError` to stdin exception handling, wrapped `main()` in top-level `try/except` for resilience
+- `settings.json`: bumped classify-message timeout 10s → 15s
+
 ## v3.4 — 2026-04-05
 
 ### Added

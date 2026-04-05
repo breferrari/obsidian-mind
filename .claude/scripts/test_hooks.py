@@ -343,6 +343,7 @@ class TestClassifyIntegration(unittest.TestCase):
         self.assertEqual(rc, 0)
         data = json.loads(stdout)
         self.assertIn("hookSpecificOutput", data)
+        self.assertEqual(data["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
         self.assertIn("DECISION", data["hookSpecificOutput"]["additionalContext"])
 
     def test_valid_json_no_signal(self):
@@ -449,7 +450,9 @@ class TestValidateWriteIntegration(unittest.TestCase):
         path = self._make_md("No frontmatter here\n" + "x" * 300)
         stdout, _, rc = self._run(path)
         self.assertEqual(rc, 0)
-        self.assertIn("Missing YAML frontmatter", stdout)
+        data = json.loads(stdout)
+        self.assertEqual(data["hookSpecificOutput"]["hookEventName"], "PostToolUse")
+        self.assertIn("Missing YAML frontmatter", data["hookSpecificOutput"]["additionalContext"])
 
     def test_missing_tags(self):
         path = self._make_md("---\ndate: 2026-04-05\ndescription: test\n---\n# Note\n" + "[[Link]] " + "x" * 300)
