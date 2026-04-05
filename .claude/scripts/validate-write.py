@@ -8,7 +8,7 @@ from pathlib import Path
 def main():
     try:
         input_data = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError, EOFError, OSError):
+    except (ValueError, EOFError, OSError):
         sys.exit(0)
 
     tool_input = input_data.get("tool_input")

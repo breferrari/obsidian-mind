@@ -172,7 +172,7 @@ def classify(prompt: str) -> list:
 def main():
     try:
         input_data = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError, EOFError, OSError):
+    except (ValueError, EOFError, OSError):
         sys.exit(0)
 
     prompt = input_data.get("prompt", "")
