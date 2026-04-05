@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.4 — 2026-04-05
+
+### Added
+- `classify-message.py`: native CJK classification patterns (Japanese, Korean, Simplified Chinese) for all 7 signal categories — pure CJK messages now trigger routing hints
+- `classify-message.py`: English inflection coverage — `deciding`, `shipping`, `launching`, `completing`, `releasing`, `deploying`, `achieving`, `merging`, `rolling out` now detected
+- `test_hooks.py`: unittest suite for `classify-message.py` and `validate-write.py` (72 tests, <1s) — covers English, CJK, inflections, overlaps, false positives, type safety, integration
+
 ## v3.3.1 — 2026-04-05
 
 ### Fixed
