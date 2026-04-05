@@ -18,7 +18,7 @@
           {
             "type": "command",
             "command": "bash .claude/scripts/find-python.sh .claude/scripts/classify-message.py",
-            "timeout": 10
+            "timeout": 15
           }
         ]
       }

@@ -172,7 +172,7 @@ def classify(prompt: str) -> list:
 def main():
     try:
         input_data = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError, EOFError):
+    except (json.JSONDecodeError, ValueError, EOFError, OSError):
         sys.exit(0)
 
     prompt = input_data.get("prompt", "")
@@ -188,6 +188,7 @@ def main():
         hints = "\n".join(f"- {s}" for s in signals)
         output = {
             "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
                 "additionalContext": (
                     "Content classification hints (act on these if the user's message contains relevant info):\n"
                     + hints
@@ -201,4 +202,7 @@ def main():
     sys.exit(0)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        sys.exit(0)

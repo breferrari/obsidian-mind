@@ -8,7 +8,7 @@ from pathlib import Path
 def main():
     try:
         input_data = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError, EOFError):
+    except (json.JSONDecodeError, ValueError, EOFError, OSError):
         sys.exit(0)
 
     tool_input = input_data.get("tool_input")
@@ -65,6 +65,7 @@ def main():
         hint_list = "\n".join(f"  - {w}" for w in warnings)
         output = {
             "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
                 "additionalContext": f"Vault hygiene warnings for `{basename}`:\n{hint_list}\nFix these before moving on."
             }
         }
@@ -74,4 +75,7 @@ def main():
     sys.exit(0)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        sys.exit(0)
