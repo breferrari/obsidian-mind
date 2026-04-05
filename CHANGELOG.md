@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.3.1 — 2026-04-05
+
+### Fixed
+- `classify-message.py`: crash (rc=1) when `prompt` is non-string type (int, None, bool, list) — now validates type before processing
+- `classify-message.py`: missing detection patterns — added `1-1`, `praised`, `win`, `mentioned the`, `mentioned a` to classifiers
+- `classify-message.py`: changed `list[str]` return annotation to `list` for Python 3.8 compatibility
+- `validate-write.py`: crash (rc=1) when `tool_input` is null or `file_path` is non-string — now validates types before processing
+- `validate-write.py`: translated READMEs (README.ja.md, README.zh-CN.md, etc.) were validated as vault notes — now skipped
+- `settings.json`: removed `MultiEdit` from PostToolUse matcher (not a valid Claude Code tool name)
+- `settings.json`: removed unsupported `matcher` field from Stop hook (Stop event does not support matchers)
+- `settings.json`: added `compact` to SessionStart matcher (hook was not firing after context compaction)
+- `settings.json`: added `stop_hook_active` re-entry guard to Stop hook (prevents infinite loop when Claude acts on checklist output)
+
 ## v3.3 — 2026-03-29
 
 ### Added

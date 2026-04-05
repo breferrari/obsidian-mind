@@ -8,11 +8,16 @@ from pathlib import Path
 def main():
     try:
         input_data = json.load(sys.stdin)
-    except (json.JSONDecodeError, EOFError):
+    except (json.JSONDecodeError, ValueError, EOFError):
         sys.exit(0)
 
-    tool_input = input_data.get("tool_input", {})
+    tool_input = input_data.get("tool_input")
+    if not isinstance(tool_input, dict):
+        sys.exit(0)
+
     file_path = tool_input.get("file_path", "")
+    if not isinstance(file_path, str) or not file_path:
+        sys.exit(0)
 
     # Only validate markdown files in the vault, skip dotfiles and templates
     if not file_path.endswith(".md"):
@@ -23,6 +28,9 @@ def main():
     basename = os.path.basename(normalized)
     root_files = {"README.md", "CHANGELOG.md", "CONTRIBUTING.md", "CLAUDE.md"}
     if basename in root_files:
+        sys.exit(0)
+    # Also skip translated READMEs (README.ja.md, README.zh-CN.md, etc.)
+    if basename.startswith("README.") and basename.endswith(".md"):
         sys.exit(0)
     if any(skip in normalized for skip in [".claude/", ".obsidian/", "templates/", "thinking/"]):
         sys.exit(0)
@@ -54,7 +62,6 @@ def main():
         sys.exit(0)
 
     if warnings:
-        basename = os.path.basename(file_path)
         hint_list = "\n".join(f"  - {w}" for w in warnings)
         output = {
             "hookSpecificOutput": {
