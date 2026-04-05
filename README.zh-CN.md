@@ -85,6 +85,41 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ---
 
+## 🚀 快速开始
+
+1. 克隆此仓库（或使用它作为 **GitHub 模板**）
+2. 将文件夹作为 **Obsidian 仓库** 打开
+3. 在 设置 → 通用 中启用 **Obsidian CLI**（需要 Obsidian 1.12+）
+4. 在仓库目录中运行 **`claude`**
+5. 在 **`brain/North Star.md`** 中填写你的目标——这将为每次会话定下基调
+6. 开始谈论工作
+
+### 可选：QMD 语义搜索
+
+用于在仓库中进行语义搜索（即使笔记标题是 "Redis Migration ADR"，也能找到 "我们关于缓存做了什么决策"）：
+
+```bash
+npm install -g @tobilu/qmd
+qmd collection add . --name vault --mask "**/*.md"
+qmd context add qmd://vault "Engineer's work vault: projects, decisions, incidents, people, reviews, architecture"
+qmd update && qmd embed
+```
+
+> [!NOTE]
+> 如果没有安装 QMD，一切仍然正常运作——Claude 会回退到 Obsidian CLI 和 grep。
+
+---
+
+## 📋 环境要求
+
+- [Obsidian](https://obsidian.md) 1.12+（支持 CLI）
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- Python 3（用于钩子脚本）
+- Git（用于版本历史）
+- [QMD](https://github.com/tobi/qmd)（可选，用于语义搜索）
+
+---
+
 ## ⚙️ 工作原理
 
 **文件夹按用途组织，链接按含义组织。** 一个笔记存放在一个文件夹中（它的归属），但链接到许多笔记（它的上下文）。Claude 维护这个图谱——自动将工作笔记链接到人员、决策和能力项。当绩效评估季到来时，每个能力项笔记上的反向链接就是现成的证据链。一个没有链接的笔记就是一个 bug。
@@ -203,60 +238,6 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ---
 
-## 🔄 升级
-
-已经在使用旧版本的 obsidian-mind（或其他 Obsidian 仓库）？`/vault-upgrade` 命令可以将你的内容迁移到最新模板：
-
-```bash
-# 1. 克隆最新版 obsidian-mind
-git clone https://github.com/breferrari/obsidian-mind.git ~/new-vault
-
-# 2. 在 Claude Code 中打开
-cd ~/new-vault && claude
-
-# 3. 运行升级命令，指向你的旧仓库
-/vault-upgrade ~/my-old-vault
-```
-
-Claude 将会：
-1. **检测** 你的仓库版本（v1–v3.2，或识别为非 obsidian-mind 仓库）
-2. **盘点** 每个文件——分类为用户内容、脚手架、基础设施或未分类
-3. **展示迁移计划**——你可以确切看到哪些内容将被复制、转换和跳过
-4. **经你批准后执行**——转换 frontmatter、修复 wikilinks、重建索引
-5. **验证**——检查孤立笔记、断开链接、缺失的 frontmatter
-
-你的旧仓库**永远不会被修改**。使用 `--dry-run` 可以预览计划而不执行。
-
-> [!NOTE]
-> 适用于任何 Obsidian 仓库，不仅限于 obsidian-mind。对于非 obsidian-mind 仓库，Claude 会读取每个笔记并进行语义分类——将工作笔记、人员、事件、1:1 和决策路由到正确的文件夹。
-
----
-
-## 🚀 快速开始
-
-1. 克隆此仓库（或使用它作为 **GitHub 模板**）
-2. 将文件夹作为 **Obsidian 仓库** 打开
-3. 在 设置 → 通用 中启用 **Obsidian CLI**（需要 Obsidian 1.12+）
-4. 在仓库目录中运行 **`claude`**
-5. 在 **`brain/North Star.md`** 中填写你的目标——这将为每次会话定下基调
-6. 开始谈论工作
-
-### 可选：QMD 语义搜索
-
-用于在仓库中进行语义搜索（即使笔记标题是 "Redis Migration ADR"，也能找到 "我们关于缓存做了什么决策"）：
-
-```bash
-npm install -g @tobilu/qmd
-qmd collection add . --name vault --mask "**/*.md"
-qmd context add qmd://vault "Engineer's work vault: projects, decisions, incidents, people, reviews, architecture"
-qmd update && qmd embed
-```
-
-> [!NOTE]
-> 如果没有安装 QMD，一切仍然正常运作——Claude 会回退到 Obsidian CLI 和 grep。
-
----
-
 ## 📁 仓库结构
 
 ```
@@ -360,13 +341,32 @@ templates/              带有 YAML frontmatter 的 Obsidian 模板
 
 ---
 
-## 📋 环境要求
+## 🔄 升级
 
-- [Obsidian](https://obsidian.md) 1.12+（支持 CLI）
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- Python 3（用于钩子脚本）
-- Git（用于版本历史）
-- [QMD](https://github.com/tobi/qmd)（可选，用于语义搜索）
+已经在使用旧版本的 obsidian-mind（或其他 Obsidian 仓库）？`/vault-upgrade` 命令可以将你的内容迁移到最新模板：
+
+```bash
+# 1. 克隆最新版 obsidian-mind
+git clone https://github.com/breferrari/obsidian-mind.git ~/new-vault
+
+# 2. 在 Claude Code 中打开
+cd ~/new-vault && claude
+
+# 3. 运行升级命令，指向你的旧仓库
+/vault-upgrade ~/my-old-vault
+```
+
+Claude 将会：
+1. **检测** 你的仓库版本（v1–v3.2，或识别为非 obsidian-mind 仓库）
+2. **盘点** 每个文件——分类为用户内容、脚手架、基础设施或未分类
+3. **展示迁移计划**——你可以确切看到哪些内容将被复制、转换和跳过
+4. **经你批准后执行**——转换 frontmatter、修复 wikilinks、重建索引
+5. **验证**——检查孤立笔记、断开链接、缺失的 frontmatter
+
+你的旧仓库**永远不会被修改**。使用 `--dry-run` 可以预览计划而不执行。
+
+> [!NOTE]
+> 适用于任何 Obsidian 仓库，不仅限于 obsidian-mind。对于非 obsidian-mind 仓库，Claude 会读取每个笔记并进行语义分类——将工作笔记、人员、事件、1:1 和决策路由到正确的文件夹。
 
 ---
 

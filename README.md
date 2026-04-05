@@ -82,6 +82,41 @@ You: "wrap up"
 
 ---
 
+## 🚀 Quick Start
+
+1. Clone this repo (or use it as a **GitHub template**)
+2. Open the folder as an **Obsidian vault**
+3. Enable the **Obsidian CLI** in Settings → General (requires Obsidian 1.12+)
+4. Run **`claude`** in the vault directory
+5. Fill in **`brain/North Star.md`** with your goals — this grounds every session
+6. Start talking about work
+
+### Optional: QMD Semantic Search
+
+For semantic search across the vault (find "what did we decide about caching" even if the note is titled "Redis Migration ADR"):
+
+```bash
+npm install -g @tobilu/qmd
+qmd collection add . --name vault --mask "**/*.md"
+qmd context add qmd://vault "Engineer's work vault: projects, decisions, incidents, people, reviews, architecture"
+qmd update && qmd embed
+```
+
+> [!NOTE]
+> If QMD isn't installed, everything still works — Claude falls back to the Obsidian CLI and grep.
+
+---
+
+## 📋 Requirements
+
+- [Obsidian](https://obsidian.md) 1.12+ (for CLI support)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- Python 3 (for hook scripts)
+- Git (for version history)
+- [QMD](https://github.com/tobi/qmd) (optional, for semantic search)
+
+---
+
 ## ⚙️ How It Works
 
 **Folders group by purpose. Links group by meaning.** A note lives in one folder (its home) but links to many notes (its context). Claude maintains this graph — linking work notes to people, decisions, and competencies automatically. When review season arrives, the backlinks on each competency note are already the evidence trail. A note without links is a bug.
@@ -200,60 +235,6 @@ The `bases/` folder contains database views that query your notes' frontmatter p
 
 ---
 
-## 🔄 Upgrading
-
-Already using an older version of obsidian-mind (or any Obsidian vault)? The `/vault-upgrade` command migrates your content into the latest template:
-
-```bash
-# 1. Clone the latest obsidian-mind
-git clone https://github.com/breferrari/obsidian-mind.git ~/new-vault
-
-# 2. Open it in Claude Code
-cd ~/new-vault && claude
-
-# 3. Run the upgrade pointing to your old vault
-/vault-upgrade ~/my-old-vault
-```
-
-Claude will:
-1. **Detect** your vault version (v1–v3.2, or identify it as a non-obsidian-mind vault)
-2. **Inventory** every file — classify as user content, scaffold, infrastructure, or uncategorized
-3. **Present a migration plan** — you see exactly what will be copied, transformed, and skipped
-4. **Execute** after your approval — transforms frontmatter, fixes wikilinks, rebuilds indexes
-5. **Validate** — checks for orphans, broken links, missing frontmatter
-
-Your old vault is **never modified**. Use `--dry-run` to preview the plan without executing.
-
-> [!NOTE]
-> Works with any Obsidian vault, not just obsidian-mind. For non-obsidian-mind vaults, Claude reads each note and classifies it semantically — routing work notes, people, incidents, 1:1s, and decisions to the right folders.
-
----
-
-## 🚀 Quick Start
-
-1. Clone this repo (or use it as a **GitHub template**)
-2. Open the folder as an **Obsidian vault**
-3. Enable the **Obsidian CLI** in Settings → General (requires Obsidian 1.12+)
-4. Run **`claude`** in the vault directory
-5. Fill in **`brain/North Star.md`** with your goals — this grounds every session
-6. Start talking about work
-
-### Optional: QMD Semantic Search
-
-For semantic search across the vault (find "what did we decide about caching" even if the note is titled "Redis Migration ADR"):
-
-```bash
-npm install -g @tobilu/qmd
-qmd collection add . --name vault --mask "**/*.md"
-qmd context add qmd://vault "Engineer's work vault: projects, decisions, incidents, people, reviews, architecture"
-qmd update && qmd embed
-```
-
-> [!NOTE]
-> If QMD isn't installed, everything still works — Claude falls back to the Obsidian CLI and grep.
-
----
-
 ## 📁 Vault Structure
 
 ```
@@ -357,13 +338,32 @@ This is a starting point. Adapt it to how you work:
 
 ---
 
-## 📋 Requirements
+## 🔄 Upgrading
 
-- [Obsidian](https://obsidian.md) 1.12+ (for CLI support)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- Python 3 (for hook scripts)
-- Git (for version history)
-- [QMD](https://github.com/tobi/qmd) (optional, for semantic search)
+Already using an older version of obsidian-mind (or any Obsidian vault)? The `/vault-upgrade` command migrates your content into the latest template:
+
+```bash
+# 1. Clone the latest obsidian-mind
+git clone https://github.com/breferrari/obsidian-mind.git ~/new-vault
+
+# 2. Open it in Claude Code
+cd ~/new-vault && claude
+
+# 3. Run the upgrade pointing to your old vault
+/vault-upgrade ~/my-old-vault
+```
+
+Claude will:
+1. **Detect** your vault version (v1–v3.2, or identify it as a non-obsidian-mind vault)
+2. **Inventory** every file — classify as user content, scaffold, infrastructure, or uncategorized
+3. **Present a migration plan** — you see exactly what will be copied, transformed, and skipped
+4. **Execute** after your approval — transforms frontmatter, fixes wikilinks, rebuilds indexes
+5. **Validate** — checks for orphans, broken links, missing frontmatter
+
+Your old vault is **never modified**. Use `--dry-run` to preview the plan without executing.
+
+> [!NOTE]
+> Works with any Obsidian vault, not just obsidian-mind. For non-obsidian-mind vaults, Claude reads each note and classifies it semantically — routing work notes, people, incidents, 1:1s, and decisions to the right folders.
 
 ---
 

@@ -85,6 +85,41 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ---
 
+## 🚀 クイックスタート
+
+1. このリポジトリをクローン（または**GitHubテンプレート**として使用）
+2. フォルダを**Obsidianボールト**として開く
+3. 設定 → 一般で**Obsidian CLI**を有効化（Obsidian 1.12以上が必要）
+4. ボールトディレクトリで**`claude`**を実行
+5. **`brain/North Star.md`**に目標を記入 — これがすべてのセッションの基盤になります
+6. 仕事について話し始める
+
+### オプション：QMDセマンティック検索
+
+ボールト全体のセマンティック検索（ノートのタイトルが「Redis Migration ADR」でも「キャッシュについて何を決めた？」で見つかる）：
+
+```bash
+npm install -g @tobilu/qmd
+qmd collection add . --name vault --mask "**/*.md"
+qmd context add qmd://vault "Engineer's work vault: projects, decisions, incidents, people, reviews, architecture"
+qmd update && qmd embed
+```
+
+> [!NOTE]
+> QMDがインストールされていなくても、すべて動作します — ClaudeはObsidian CLIとgrepにフォールバックします。
+
+---
+
+## 📋 要件
+
+- [Obsidian](https://obsidian.md) 1.12以上（CLIサポートのため）
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- Python 3（フックスクリプト用）
+- Git（バージョン履歴用）
+- [QMD](https://github.com/tobi/qmd)（オプション、セマンティック検索用）
+
+---
+
 ## ⚙️ 仕組み
 
 **フォルダは目的別にグループ化。リンクは意味別にグループ化。** ノートは1つのフォルダ（その居場所）に存在しますが、多くのノート（そのコンテキスト）にリンクします。Claudeがこのグラフを維持し、作業ノートを人物、意思決定、コンピテンシーに自動的にリンクします。レビューシーズンが来たとき、各コンピテンシーノートのバックリンクがそのままエビデンスの軌跡になっています。リンクのないノートはバグです。
@@ -203,60 +238,6 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ---
 
-## 🔄 アップグレード
-
-obsidian-mindの古いバージョン（または任意のObsidianボールト）をお使いですか？`/vault-upgrade`コマンドでコンテンツを最新テンプレートに移行できます：
-
-```bash
-# 1. 最新のobsidian-mindをクローン
-git clone https://github.com/breferrari/obsidian-mind.git ~/new-vault
-
-# 2. Claude Codeで開く
-cd ~/new-vault && claude
-
-# 3. 古いボールトを指定してアップグレードを実行
-/vault-upgrade ~/my-old-vault
-```
-
-Claudeが以下を行います：
-1. **検出** — ボールトのバージョンを特定（v1〜v3.2、またはobsidian-mind以外のボールトとして識別）
-2. **棚卸し** — すべてのファイルを分類（ユーザーコンテンツ、スキャフォールド、インフラ、未分類）
-3. **移行プランの提示** — コピー、変換、スキップされるものを正確に確認できます
-4. **承認後に実行** — フロントマターの変換、ウィキリンクの修正、インデックスの再構築
-5. **検証** — 孤立ノート、壊れたリンク、不足しているフロントマターをチェック
-
-古いボールトは**一切変更されません**。`--dry-run`を使えば、実行せずにプランだけをプレビューできます。
-
-> [!NOTE]
-> obsidian-mindだけでなく、あらゆるObsidianボールトで動作します。obsidian-mind以外のボールトの場合、Claudeは各ノートを読んで意味的に分類し、作業ノート、人物、インシデント、1on1、意思決定を適切なフォルダに振り分けます。
-
----
-
-## 🚀 クイックスタート
-
-1. このリポジトリをクローン（または**GitHubテンプレート**として使用）
-2. フォルダを**Obsidianボールト**として開く
-3. 設定 → 一般で**Obsidian CLI**を有効化（Obsidian 1.12以上が必要）
-4. ボールトディレクトリで**`claude`**を実行
-5. **`brain/North Star.md`**に目標を記入 — これがすべてのセッションの基盤になります
-6. 仕事について話し始める
-
-### オプション：QMDセマンティック検索
-
-ボールト全体のセマンティック検索（ノートのタイトルが「Redis Migration ADR」でも「キャッシュについて何を決めた？」で見つかる）：
-
-```bash
-npm install -g @tobilu/qmd
-qmd collection add . --name vault --mask "**/*.md"
-qmd context add qmd://vault "Engineer's work vault: projects, decisions, incidents, people, reviews, architecture"
-qmd update && qmd embed
-```
-
-> [!NOTE]
-> QMDがインストールされていなくても、すべて動作します — ClaudeはObsidian CLIとgrepにフォールバックします。
-
----
-
 ## 📁 ボールト構造
 
 ```
@@ -360,13 +341,32 @@ YAMLフロントマター付きテンプレート。段階的開示のための`
 
 ---
 
-## 📋 要件
+## 🔄 アップグレード
 
-- [Obsidian](https://obsidian.md) 1.12以上（CLIサポートのため）
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- Python 3（フックスクリプト用）
-- Git（バージョン履歴用）
-- [QMD](https://github.com/tobi/qmd)（オプション、セマンティック検索用）
+obsidian-mindの古いバージョン（または任意のObsidianボールト）をお使いですか？`/vault-upgrade`コマンドでコンテンツを最新テンプレートに移行できます：
+
+```bash
+# 1. 最新のobsidian-mindをクローン
+git clone https://github.com/breferrari/obsidian-mind.git ~/new-vault
+
+# 2. Claude Codeで開く
+cd ~/new-vault && claude
+
+# 3. 古いボールトを指定してアップグレードを実行
+/vault-upgrade ~/my-old-vault
+```
+
+Claudeが以下を行います：
+1. **検出** — ボールトのバージョンを特定（v1〜v3.2、またはobsidian-mind以外のボールトとして識別）
+2. **棚卸し** — すべてのファイルを分類（ユーザーコンテンツ、スキャフォールド、インフラ、未分類）
+3. **移行プランの提示** — コピー、変換、スキップされるものを正確に確認できます
+4. **承認後に実行** — フロントマターの変換、ウィキリンクの修正、インデックスの再構築
+5. **検証** — 孤立ノート、壊れたリンク、不足しているフロントマターをチェック
+
+古いボールトは**一切変更されません**。`--dry-run`を使えば、実行せずにプランだけをプレビューできます。
+
+> [!NOTE]
+> obsidian-mindだけでなく、あらゆるObsidianボールトで動作します。obsidian-mind以外のボールトの場合、Claudeは各ノートを読んで意味的に分類し、作業ノート、人物、インシデント、1on1、意思決定を適切なフォルダに振り分けます。
 
 ---
 

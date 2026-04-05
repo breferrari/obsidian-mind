@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.5 — 2026-04-05
+
+### Added
+- Demo GIF (`obsidian-mind-demo.gif`) showing `/standup` and `/dump` in action — embedded in all four READMEs
+
+### Changed
+- README: restructured section order — Quick Start and Requirements moved up (from sections 12–13 to 4–5), Upgrading moved down (from section 11 to 16). No content added or removed.
+- All translated READMEs (ja, zh-CN, ko) updated with same structure and demo GIF
+
 ## v3.4.1 — 2026-04-05
 
 ### Fixed
