@@ -2,12 +2,14 @@
 """Classify user messages and inject routing hints for Claude.
 
 Architecture: data-driven signal matching. Each signal has a list of trigger
-patterns checked via word-boundary regex. Words can appear in multiple signals
-(explicit overlaps) because the cost of a false positive hint is ~0 (Claude
-ignores irrelevant hints) while a false negative means missed routing.
+patterns checked via regex with Latin-letter lookarounds (not \\b). Words can
+appear in multiple signals (explicit overlaps) because the cost of a false
+positive hint is ~0 (Claude ignores irrelevant hints) while a false negative
+means missed routing.
 
 Patterns include English, Japanese, Korean, and Simplified Chinese to support
-multilingual users. The Latin-letter boundary regex handles all scripts.
+multilingual users. The Latin-letter lookaround approach allows mixed
+Latin/CJK text without relying on Python word-boundary behavior.
 """
 import json
 import sys
@@ -68,9 +70,11 @@ SIGNALS = [
         "message": "WIN detected — consider adding to perf/Brag Doc.md with a link to the evidence note",
         "patterns": [
             # Delivery — English (shared with PROJECT UPDATE)
-            "shipped", "shipping", "launched", "launching",
-            "completed", "completing", "released", "releasing",
-            "deployed", "deploying",
+            "shipped", "shipping", "ships",
+            "launched", "launching", "launches",
+            "completed", "completing", "completes",
+            "released", "releasing", "releases",
+            "deployed", "deploying", "deploys",
             # Achievement — English
             "achieved", "achieving", "won", "promoted", "praised", "win",
             "kudos", "shoutout", "great feedback", "recognized",
@@ -120,12 +124,15 @@ SIGNALS = [
             # English
             "project update", "sprint", "milestone",
             # Delivery — English (shared with WIN)
-            "shipped", "shipping", "shipped feature",
-            "launched", "launching", "completed", "completing",
-            "released", "releasing", "deployed", "deploying",
+            "shipped", "shipping", "ships", "shipped feature",
+            "launched", "launching", "launches",
+            "completed", "completing", "completes",
+            "released", "releasing", "releases",
+            "deployed", "deploying", "deploys",
             # Delivery-only — English (not wins on their own)
             "went live", "rolled out", "rolling out",
-            "merged", "merging", "cut the release",
+            "merged", "merging", "merges",
+            "cut the release", "release cut",
             # Japanese
             "スプリント", "マイルストーン", "マージした", "リリースしました",
             # Korean

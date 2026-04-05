@@ -189,6 +189,33 @@ class TestClassifyInflections(unittest.TestCase):
     def test_rolling_out(self):
         self.assertIn("PROJECT UPDATE", get_signal_names("rolling out the new config"))
 
+    # Present-tense -s/-es forms
+    def test_deploys(self):
+        names = get_signal_names("she deploys to prod every Friday")
+        self.assertIn("WIN", names)
+        self.assertIn("PROJECT UPDATE", names)
+
+    def test_launches(self):
+        names = get_signal_names("he launches the service tomorrow")
+        self.assertIn("WIN", names)
+        self.assertIn("PROJECT UPDATE", names)
+
+    def test_ships(self):
+        names = get_signal_names("the team ships fast")
+        self.assertIn("WIN", names)
+        self.assertIn("PROJECT UPDATE", names)
+
+    def test_merges(self):
+        self.assertIn("PROJECT UPDATE", get_signal_names("she merges the PR"))
+
+    def test_releases(self):
+        names = get_signal_names("he releases a new version weekly")
+        self.assertIn("WIN", names)
+        self.assertIn("PROJECT UPDATE", names)
+
+    def test_release_cut(self):
+        self.assertIn("PROJECT UPDATE", get_signal_names("did the release cut for v3.4"))
+
 
 # ---------------------------------------------------------------------------
 # TestClassifyCJK — per-language signal detection with subTest
