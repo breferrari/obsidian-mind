@@ -1,0 +1,21 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.claude/scripts/**'
+  pull_request:
+    paths:
+      - '.claude/scripts/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run hook tests
+        run: python .claude/scripts/test_hooks.py -v
