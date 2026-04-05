@@ -34,6 +34,10 @@ Claude: "You're working on Project Alpha, blocked on the BE contract.
 
 ## ⚡ 실제 동작 예시
 
+<p align="center">
+  <img src="obsidian-mind-demo.gif" alt="Obsidian Mind 데모 — standup 및 dump 명령어" width="800">
+</p>
+
 **아침 킥오프:**
 
 ```bash

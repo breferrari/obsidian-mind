@@ -31,6 +31,10 @@ Claude: "You're working on Project Alpha, blocked on the BE contract.
 
 ## ⚡ See It In Action
 
+<p align="center">
+  <img src="obsidian-mind-demo.gif" alt="Obsidian Mind demo — standup and dump commands" width="800">
+</p>
+
 **Morning kickoff:**
 
 ```bash

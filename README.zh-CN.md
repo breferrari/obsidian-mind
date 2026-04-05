@@ -34,6 +34,10 @@ Claude: "你正在做 Project Alpha，被后端契约阻塞了。
 
 ## ⚡ 实际效果
 
+<p align="center">
+  <img src="obsidian-mind-demo.gif" alt="Obsidian Mind 演示 — standup 和 dump 命令" width="800">
+</p>
+
 **早间启动：**
 
 ```bash
