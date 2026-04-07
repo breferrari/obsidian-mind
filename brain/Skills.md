@@ -1,4 +1,5 @@
 ---
+date: 2026-04-07
 description: "Vault-specific workflows and slash commands — reusable patterns for review prep, project tracking, and vault maintenance"
 tags:
   - brain
@@ -26,10 +27,11 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 | `/humanize` | Voice-calibrated editing — makes Claude-drafted text sound like you wrote it |
 | `/weekly` | Weekly synthesis — cross-session patterns, North Star alignment, uncaptured wins |
 
-### Capture & Documentation
+### Meeting Prep & Capture
 
 | Command | Purpose |
 |---------|---------|
+| `/prep-1on1` | Prep for an upcoming 1:1 — load person context, open items, wins to share, suggested agenda |
 | `/capture-1on1` | Capture 1:1 meeting transcript into structured vault note with quotes, action items, DM context |
 | `/incident-capture` | Capture incident from Slack channels/DMs into structured vault notes — timeline, people, analysis, brag entry |
 | `/slack-scan` | Deep scan Slack channels/DMs for evidence — extracts timestamped touchpoints, organizes by context |
@@ -54,7 +56,7 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 ## Usage Notes
 
 **Daily:**
-- `/standup` replaces the manual session start — reads North Star, active work, tasks, git log
+- `/standup` replaces the manual session start — reads [[North Star]], active work, tasks, git log
 - `/dump` processes freeform text and routes each piece to the correct note type and folder
 - `/wrap-up` is auto-triggered when you say "wrap up" — runs full session review
 

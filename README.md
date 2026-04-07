@@ -167,6 +167,7 @@ Defined in `.claude/commands/`. Run them in any Claude Code session.
 | `/wrap-up` | Full session review — verify notes, indexes, links, suggest improvements |
 | `/humanize` | Voice-calibrated editing — makes Claude-drafted text sound like you wrote it |
 | `/weekly` | Weekly synthesis — cross-session patterns, North Star alignment, uncaptured wins |
+| `/prep-1on1` | Prep for an upcoming 1:1 — load person context, open items, suggested agenda |
 | `/capture-1on1` | Capture a 1:1 meeting transcript into a structured vault note |
 | `/incident-capture` | Capture an incident from Slack/channels into structured notes |
 | `/slack-scan` | Deep scan Slack channels/DMs for evidence |
@@ -280,7 +281,7 @@ thinking/               Scratchpad for drafts — promote findings, then delete
 templates/              Obsidian templates with YAML frontmatter
 
 .claude/
-  commands/             15 slash commands
+  commands/             16 slash commands
   agents/               9 subagents
   scripts/              Hook scripts + charcount.sh utility
   skills/               Obsidian + QMD skills

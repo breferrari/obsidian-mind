@@ -24,6 +24,7 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 | `/wrap-up` | Full session review -- verify notes, indexes, links, suggest improvements |
 | `/humanize` | Voice-calibrated editing -- make notes sound like you, not AI |
 | `/weekly` | Weekly synthesis -- cross-session patterns, North Star alignment, uncaptured wins |
+| `/prep-1on1` | Prep for an upcoming 1:1 — load person context, open items, suggested agenda |
 | `/capture-1on1` | Capture 1:1 meeting transcript into structured vault note |
 | `/incident-capture` | Capture incident from Slack channels/DMs into structured vault notes |
 | `/slack-scan` | Deep scan Slack channels/DMs for evidence |
