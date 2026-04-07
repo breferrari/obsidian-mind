@@ -19,28 +19,28 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 
 | Command | Purpose |
 |---------|---------|
-| `/standup` | Morning kickoff -- load context, review yesterday, surface tasks, priorities |
-| `/dump` | Freeform capture -- dump anything, gets routed to the right notes |
-| `/wrap-up` | Full session review -- verify notes, indexes, links, suggest improvements |
-| `/humanize` | Voice-calibrated editing -- make notes sound like you, not AI |
-| `/weekly` | Weekly synthesis -- cross-session patterns, North Star alignment, uncaptured wins |
-| `/capture-1on1` | Capture 1:1 meeting transcript into structured vault note |
-| `/incident-capture` | Capture incident from Slack channels/DMs into structured vault notes |
-| `/slack-scan` | Deep scan Slack channels/DMs for evidence |
-| `/peer-scan` | Deep scan a peer's GitHub PRs for review prep |
-| `/review-brief` | Generate review brief (manager or peer version) |
-| `/self-review` | Write self-assessment for review tool -- projects, competencies, principles |
-| `/review-peer` | Write peer review -- projects, principles, performance summary |
-| `/vault-audit` | Audit indexes, links, orphans, stale context |
-| `/vault-upgrade` | Import content from an existing vault into this obsidian-mind instance |
-| `/project-archive` | Move completed project from active/ to archive/, update indexes |
+| `/om-standup` | Morning kickoff -- load context, review yesterday, surface tasks, priorities |
+| `/om-dump` | Freeform capture -- dump anything, gets routed to the right notes |
+| `/om-wrap-up` | Full session review -- verify notes, indexes, links, suggest improvements |
+| `/om-humanize` | Voice-calibrated editing -- make notes sound like you, not AI |
+| `/om-weekly` | Weekly synthesis -- cross-session patterns, North Star alignment, uncaptured wins |
+| `/om-capture-1on1` | Capture 1:1 meeting transcript into structured vault note |
+| `/om-incident-capture` | Capture incident from Slack channels/DMs into structured vault notes |
+| `/om-slack-scan` | Deep scan Slack channels/DMs for evidence |
+| `/om-peer-scan` | Deep scan a peer's GitHub PRs for review prep |
+| `/om-review-brief` | Generate review brief (manager or peer version) |
+| `/om-self-review` | Write self-assessment for review tool -- projects, competencies, principles |
+| `/om-review-peer` | Write peer review -- projects, principles, performance summary |
+| `/om-vault-audit` | Audit indexes, links, orphans, stale context |
+| `/om-vault-upgrade` | Import content from an existing vault into this obsidian-mind instance |
+| `/om-project-archive` | Move completed project from active/ to archive/, update indexes |
 
 ## Vault Structure
 
 | Folder | Purpose | Key Files |
 |--------|---------|-----------|
 | `Home.md` | **Vault entry point** -- embedded Base views, quick links | Open this first |
-| `vault-manifest.json` | **Template metadata** -- version, infrastructure vs user content boundaries, frontmatter schemas, version fingerprints | Used by `/vault-upgrade` for migration |
+| `vault-manifest.json` | **Template metadata** -- version, infrastructure vs user content boundaries, frontmatter schemas, version fingerprints | Used by `/om-vault-upgrade` for migration |
 | `CHANGELOG.md` | **Version history** -- tracks template releases (v1--v3.3) with what changed | Reference for upgrade paths |
 | `bases/` | **All Bases centralized** -- dynamic views for navigation | `Work Dashboard`, `Incidents`, `People Directory`, `1-1 History`, `Review Evidence`, `Competency Map`, `Templates` |
 | `work/` | Work notes index | `Index.md` (detailed MOC) |
@@ -90,7 +90,7 @@ obsidian orphans                                   # Unlinked notes
 
 The `SessionStart` hook automatically injects rich context: vault file listing, North Star goals, active work, recent git changes, open tasks, and triggers a QMD re-index. Most context is already loaded -- you don't need to manually read files.
 
-**Shortcut**: Run `/standup` for a structured morning kickoff that reads everything and presents a summary with suggested priorities.
+**Shortcut**: Run `/om-standup` for a structured morning kickoff that reads everything and presents a summary with suggested priorities.
 
 If doing it manually:
 
@@ -102,11 +102,11 @@ If doing it manually:
 
 ### Ending a Substantial Session
 
-**When the user says "wrap up", "let's wrap", "wrapping up", or similar -- invoke `/wrap-up` automatically.** This runs a full review of the session.
+**When the user says "wrap up", "let's wrap", "wrapping up", or similar -- invoke `/om-wrap-up` automatically.** This runs a full review of the session.
 
-If `/wrap-up` is not invoked, at minimum do these before wrapping up:
+If `/om-wrap-up` is not invoked, at minimum do these before wrapping up:
 
-1. **Archive completed projects**: `git mv` from `work/active/` to `work/archive/YYYY/`, update `status: completed` (or use `/project-archive`)
+1. **Archive completed projects**: `git mv` from `work/active/` to `work/archive/YYYY/`, update `status: completed` (or use `/om-project-archive`)
 2. Update `work/Index.md` if new notes or decisions were created
 3. Update the relevant brain topic note (`brain/Key Decisions.md`, `brain/Patterns.md`, `brain/Gotchas.md`) with key learnings
 4. Update `org/People & Context.md` if org knowledge changed
@@ -114,7 +114,7 @@ If `/wrap-up` is not invoked, at minimum do these before wrapping up:
 6. Offer to update `brain/North Star.md` if goals shifted or new focus emerged
 7. Verify all new notes link to at least one existing note (orphans are bugs)
 8. If work demonstrates competencies, add competency links to the work note's `## Related`
-9. Run `/vault-audit` if the session created many notes
+9. Run `/om-vault-audit` if the session created many notes
 
 Skip steps that don't apply. The goal is transferring durable knowledge from conversation to vault state.
 
@@ -286,8 +286,8 @@ When asked to "remember" something:
 - **Deep scanning PRs for review?** -- `perf/evidence/`
 - **Creating review briefs?** -- `perf/<cycle>/`
 - **Tracking active project work?** -- `work/active/`
-- **Capturing an incident?** -- `work/incidents/` (use `/incident-capture`)
-- **Dumping unstructured info?** -- use `/dump` to auto-classify and route everything
+- **Capturing an incident?** -- `work/incidents/` (use `/om-incident-capture`)
+- **Dumping unstructured info?** -- use `/om-dump` to auto-classify and route everything
 
 ### Don't Mix Contexts
 
@@ -303,15 +303,15 @@ Specialized agents in `.claude/agents/` for heavy operations. They run in isolat
 
 | Agent | Purpose | Invoked by |
 |-------|---------|------------|
-| `brag-spotter` | Finds uncaptured wins and competency gaps | `/wrap-up`, `/weekly` |
+| `brag-spotter` | Finds uncaptured wins and competency gaps | `/om-wrap-up`, `/om-weekly` |
 | `context-loader` | Loads all vault context about a person, project, or concept | Direct |
-| `cross-linker` | Finds missing wikilinks, orphans, broken backlinks | `/vault-audit` |
-| `people-profiler` | Bulk creates/updates person notes from Slack profiles | `/incident-capture` |
-| `review-prep` | Aggregates all performance evidence for a review period | `/review-brief` |
-| `slack-archaeologist` | Full Slack reconstruction -- every message, thread, profile | `/incident-capture` |
-| `vault-librarian` | Deep vault maintenance -- orphans, broken links, stale notes | `/vault-audit` |
-| `review-fact-checker` | Verifies every claim in a review draft against vault sources | `/self-review`, `/review-peer` |
-| `vault-migrator` | Classifies, transforms, and migrates content from a source vault | `/vault-upgrade` |
+| `cross-linker` | Finds missing wikilinks, orphans, broken backlinks | `/om-vault-audit` |
+| `people-profiler` | Bulk creates/updates person notes from Slack profiles | `/om-incident-capture` |
+| `review-prep` | Aggregates all performance evidence for a review period | `/om-review-brief` |
+| `slack-archaeologist` | Full Slack reconstruction -- every message, thread, profile | `/om-incident-capture` |
+| `vault-librarian` | Deep vault maintenance -- orphans, broken links, stale notes | `/om-vault-audit` |
+| `review-fact-checker` | Verifies every claim in a review draft against vault sources | `/om-self-review`, `/om-review-peer` |
+| `vault-migrator` | Classifies, transforms, and migrates content from a source vault | `/om-vault-upgrade` |
 
 ## Hooks
 
@@ -323,7 +323,7 @@ Five lifecycle hooks in `.claude/settings.json`:
 | UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person) and injects routing hints |
 | PostToolUse | After writing `.md` | Validates frontmatter, checks for wikilinks, verifies folder placement |
 | PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
-| Stop | End of every session | Lightweight checklist reminder: archive, update indexes, check orphans. For thorough review, use `/wrap-up` instead. |
+| Stop | End of every session | Lightweight checklist reminder: archive, update indexes, check orphans. For thorough review, use `/om-wrap-up` instead. |
 
 ## Rules
 

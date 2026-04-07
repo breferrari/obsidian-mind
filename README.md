@@ -38,7 +38,7 @@ Claude: "You're working on Project Alpha, blocked on the BE contract.
 **Morning kickoff:**
 
 ```bash
-/standup
+/om-standup
 # → loads North Star, active projects, open tasks, recent git changes
 # → "You have 2 active projects. The auth refactor is blocked on API contract.
 #    Your 1:1 with Sarah is at 2pm — last time she flagged observability."
@@ -47,7 +47,7 @@ Claude: "You're working on Project Alpha, blocked on the BE contract.
 **Brain dump after a meeting:**
 
 ```bash
-/dump Just had a 1:1 with Sarah. She's happy with the auth work but wants
+/om-dump Just had a 1:1 with Sarah. She's happy with the auth work but wants
 us to add error monitoring before release. Also, Tom mentioned the cache
 migration is deferred to Q2 — we decided to focus on the API contract first.
 Decision: defer Redis migration. Win: Sarah praised the auth architecture.
@@ -64,7 +64,7 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 **Incident response:**
 
 ```bash
-/incident-capture https://slack.com/archives/C0INCIDENT/p123456
+/om-incident-capture https://slack.com/archives/C0INCIDENT/p123456
 # → slack-archaeologist reads every message, thread, and profile
 # → people-profiler creates notes for new people involved
 # → Full timeline, root cause analysis, brag doc entry
@@ -123,7 +123,7 @@ qmd update && qmd embed
 
 **Vault-first memory** keeps context across sessions and machines. All durable knowledge lives in `brain/` topic notes (git-tracked, Obsidian-browsable, linked). Claude Code's `MEMORY.md` (`~/.claude/`) is an auto-loaded index that points to vault locations — never the storage itself. This means memories survive machine changes and are part of the graph.
 
-**Sessions have a designed lifecycle.** The `SessionStart` hook auto-injects your North Star goals, active projects, recent changes, open tasks, and the full vault file listing — Claude starts every session with context, not a blank slate. At the end, say "wrap up" and Claude runs `/wrap-up` — verifying notes, updating indexes, and spotting uncaptured wins. The 285-line `CLAUDE.md` governs everything in between: where to file things, how to link, when to split a note, what to do with decisions and incidents.
+**Sessions have a designed lifecycle.** The `SessionStart` hook auto-injects your North Star goals, active projects, recent changes, open tasks, and the full vault file listing — Claude starts every session with context, not a blank slate. At the end, say "wrap up" and Claude runs `/om-wrap-up` — verifying notes, updating indexes, and spotting uncaptured wins. The 285-line `CLAUDE.md` governs everything in between: where to file things, how to link, when to split a note, what to do with decisions and incidents.
 
 ### Hooks
 
@@ -144,15 +144,15 @@ Five lifecycle hooks handle routing automatically:
 
 ## 📅 Daily Workflow
 
-**Morning**: Run `/standup`. Claude loads your North Star, active projects, open tasks, and recent changes. You get a structured summary and suggested priorities.
+**Morning**: Run `/om-standup`. Claude loads your North Star, active projects, open tasks, and recent changes. You get a structured summary and suggested priorities.
 
-**Throughout the day**: Talk naturally. Mention a decision you made, an incident that happened, a 1:1 you just had, a win you want to remember. The classification hook nudges Claude to file each piece correctly. For bigger brain dumps, use `/dump` and narrate everything at once.
+**Throughout the day**: Talk naturally. Mention a decision you made, an incident that happened, a 1:1 you just had, a win you want to remember. The classification hook nudges Claude to file each piece correctly. For bigger brain dumps, use `/om-dump` and narrate everything at once.
 
-**End of day**: Say "wrap up" and Claude invokes `/wrap-up` — verifies notes, updates indexes, checks links, spots uncaptured wins.
+**End of day**: Say "wrap up" and Claude invokes `/om-wrap-up` — verifies notes, updates indexes, checks links, spots uncaptured wins.
 
-**Weekly**: Run `/weekly` for cross-session synthesis — North Star alignment, patterns, uncaptured wins, and next-week priorities. Run `/vault-audit` to catch orphan notes, broken links, and stale content.
+**Weekly**: Run `/om-weekly` for cross-session synthesis — North Star alignment, patterns, uncaptured wins, and next-week priorities. Run `/om-vault-audit` to catch orphan notes, broken links, and stale content.
 
-**Review season**: Run `/review-brief manager` and get a structured review prep document with all the evidence already linked.
+**Review season**: Run `/om-review-brief manager` and get a structured review prep document with all the evidence already linked.
 
 ---
 
@@ -162,21 +162,21 @@ Defined in `.claude/commands/`. Run them in any Claude Code session.
 
 | Command | What It Does |
 |---------|-------------|
-| `/standup` | Morning kickoff — loads context, reviews yesterday, surfaces tasks, suggests priorities |
-| `/dump` | Freeform capture — talk naturally about anything, Claude routes it all to the right notes |
-| `/wrap-up` | Full session review — verify notes, indexes, links, suggest improvements |
-| `/humanize` | Voice-calibrated editing — makes Claude-drafted text sound like you wrote it |
-| `/weekly` | Weekly synthesis — cross-session patterns, North Star alignment, uncaptured wins |
-| `/capture-1on1` | Capture a 1:1 meeting transcript into a structured vault note |
-| `/incident-capture` | Capture an incident from Slack/channels into structured notes |
-| `/slack-scan` | Deep scan Slack channels/DMs for evidence |
-| `/peer-scan` | Deep scan a peer's GitHub PRs for review prep |
-| `/review-brief` | Generate a review brief (manager or peer version) |
-| `/self-review` | Write your self-assessment for review season — projects, competencies, principles |
-| `/review-peer` | Write a peer review — projects, principles, performance summary |
-| `/vault-audit` | Audit indexes, links, orphans, stale context |
-| `/vault-upgrade` | Import content from an existing vault — version detection, classification, migration |
-| `/project-archive` | Move a completed project from active/ to archive/, update indexes |
+| `/om-standup` | Morning kickoff — loads context, reviews yesterday, surfaces tasks, suggests priorities |
+| `/om-dump` | Freeform capture — talk naturally about anything, Claude routes it all to the right notes |
+| `/om-wrap-up` | Full session review — verify notes, indexes, links, suggest improvements |
+| `/om-humanize` | Voice-calibrated editing — makes Claude-drafted text sound like you wrote it |
+| `/om-weekly` | Weekly synthesis — cross-session patterns, North Star alignment, uncaptured wins |
+| `/om-capture-1on1` | Capture a 1:1 meeting transcript into a structured vault note |
+| `/om-incident-capture` | Capture an incident from Slack/channels into structured notes |
+| `/om-slack-scan` | Deep scan Slack channels/DMs for evidence |
+| `/om-peer-scan` | Deep scan a peer's GitHub PRs for review prep |
+| `/om-review-brief` | Generate a review brief (manager or peer version) |
+| `/om-self-review` | Write your self-assessment for review season — projects, competencies, principles |
+| `/om-review-peer` | Write a peer review — projects, principles, performance summary |
+| `/om-vault-audit` | Audit indexes, links, orphans, stale context |
+| `/om-vault-upgrade` | Import content from an existing vault — version detection, classification, migration |
+| `/om-project-archive` | Move a completed project from active/ to archive/, update indexes |
 
 ---
 
@@ -186,15 +186,15 @@ Specialized agents that run in isolated context windows. They handle heavy opera
 
 | Agent | Purpose | Invoked by |
 |-------|---------|------------|
-| `brag-spotter` | Finds uncaptured wins and competency gaps | `/wrap-up`, `/weekly` |
+| `brag-spotter` | Finds uncaptured wins and competency gaps | `/om-wrap-up`, `/om-weekly` |
 | `context-loader` | Loads all vault context about a person, project, or concept | Direct |
-| `cross-linker` | Finds missing wikilinks, orphans, broken backlinks | `/vault-audit` |
-| `people-profiler` | Bulk creates/updates person notes from Slack profiles | `/incident-capture` |
-| `review-prep` | Aggregates all performance evidence for a review period | `/review-brief` |
-| `slack-archaeologist` | Full Slack reconstruction — every message, thread, profile | `/incident-capture` |
-| `vault-librarian` | Deep vault maintenance — orphans, broken links, stale notes | `/vault-audit` |
-| `review-fact-checker` | Verify every claim in a review draft against vault sources | `/self-review`, `/review-peer` |
-| `vault-migrator` | Classify, transform, and migrate content from a source vault | `/vault-upgrade` |
+| `cross-linker` | Finds missing wikilinks, orphans, broken backlinks | `/om-vault-audit` |
+| `people-profiler` | Bulk creates/updates person notes from Slack profiles | `/om-incident-capture` |
+| `review-prep` | Aggregates all performance evidence for a review period | `/om-review-brief` |
+| `slack-archaeologist` | Full Slack reconstruction — every message, thread, profile | `/om-incident-capture` |
+| `vault-librarian` | Deep vault maintenance — orphans, broken links, stale notes | `/om-vault-audit` |
+| `review-fact-checker` | Verify every claim in a review draft against vault sources | `/om-self-review`, `/om-review-peer` |
+| `vault-migrator` | Classify, transform, and migrate content from a source vault | `/om-vault-upgrade` |
 
 > [!NOTE]
 > Subagents are defined in `.claude/agents/`. You can add your own for domain-specific workflows.
@@ -209,8 +209,8 @@ The vault doubles as a performance tracking system:
 2. **Work notes** link to competencies in their `## Related` section, annotated with what was demonstrated
 3. **Backlinks accumulate automatically** — review prep becomes reading the backlinks panel on each competency note
 4. **Brag Doc** aggregates wins per quarter with links to evidence notes
-5. **`/peer-scan`** deep-scans a colleague's GitHub PRs and writes structured evidence to `perf/evidence/`
-6. **`/review-brief`** generates a full review brief by aggregating everything: brag entries, decisions, incidents, competency evidence, and 1:1 feedback
+5. **`/om-peer-scan`** deep-scans a colleague's GitHub PRs and writes structured evidence to `perf/evidence/`
+6. **`/om-review-brief`** generates a full review brief by aggregating everything: brag entries, decisions, incidents, competency evidence, and 1:1 feedback
 
 > [!TIP]
 > To get started: create competency notes from the template, then link your work notes to them as you go. The graph does the rest.
@@ -340,7 +340,7 @@ This is a starting point. Adapt it to how you work:
 
 ## 🔄 Upgrading
 
-Already using an older version of obsidian-mind (or any Obsidian vault)? The `/vault-upgrade` command migrates your content into the latest template:
+Already using an older version of obsidian-mind (or any Obsidian vault)? The `/om-vault-upgrade` command migrates your content into the latest template:
 
 ```bash
 # 1. Clone the latest obsidian-mind
@@ -350,7 +350,7 @@ git clone https://github.com/breferrari/obsidian-mind.git ~/new-vault
 cd ~/new-vault && claude
 
 # 3. Run the upgrade pointing to your old vault
-/vault-upgrade ~/my-old-vault
+/om-vault-upgrade ~/my-old-vault
 ```
 
 Claude will:
