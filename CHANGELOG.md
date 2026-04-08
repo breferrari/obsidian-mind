@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.6 — 2026-04-07
+
+### Added
+- `/prep-1on1` command — prep for an upcoming 1:1 by loading person context, recent history, active work, wins to share, and a suggested agenda. Run before the meeting; use `/capture-1on1` after.
+
+### Changed
+- CLAUDE.md: added `/prep-1on1` to command table (15→16 commands)
+- README: added `/prep-1on1` to commands table and vault structure diagram (15→16 commands)
+- `brain/Skills.md`: renamed "Capture & Documentation" category to "Meeting Prep & Capture", added `/prep-1on1`
+
 ## v3.5 — 2026-04-05
 
 ### Added

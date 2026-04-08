@@ -1,4 +1,5 @@
 ---
+date: 2026-04-07
 description: "Vault-specific workflows and slash commands — reusable patterns for review prep, project tracking, and vault maintenance"
 tags:
   - brain
@@ -26,10 +27,11 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 | `/om-humanize` | Voice-calibrated editing — makes Claude-drafted text sound like you wrote it |
 | `/om-weekly` | Weekly synthesis — cross-session patterns, North Star alignment, uncaptured wins |
 
-### Capture & Documentation
+### Meeting Prep & Capture
 
 | Command | Purpose |
 |---------|---------|
+| `/om-prep-1on1` | Prep for an upcoming 1:1 — load person context, open items, wins to share, suggested agenda |
 | `/om-capture-1on1` | Capture 1:1 meeting transcript into structured vault note with quotes, action items, DM context |
 | `/om-incident-capture` | Capture incident from Slack channels/DMs into structured vault notes — timeline, people, analysis, brag entry |
 | `/om-slack-scan` | Deep scan Slack channels/DMs for evidence — extracts timestamped touchpoints, organizes by context |

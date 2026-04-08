@@ -280,7 +280,7 @@ thinking/               Scratchpad for drafts — promote findings, then delete
 templates/              Obsidian templates with YAML frontmatter
 
 .claude/
-  commands/             15 slash commands
+  commands/             16 slash commands
   agents/               9 subagents
   scripts/              Hook scripts + charcount.sh utility
   skills/               Obsidian + QMD skills

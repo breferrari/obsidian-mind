@@ -1,7 +1,7 @@
 {
   "template": "obsidian-mind",
-  "version": "3.3.0",
-  "released": "2026-03-29",
+  "version": "3.6.0",
+  "released": "2026-04-07",
   "infrastructure": [
     "CLAUDE.md",
     "Home.md",
@@ -65,7 +65,11 @@
       "missing": ["vault-manifest.json"]
     },
     "v3.3": {
-      "exists": ["vault-manifest.json"]
+      "exists": ["vault-manifest.json"],
+      "missing": [".claude/commands/prep-1on1.md"]
+    },
+    "v3.6": {
+      "exists": [".claude/commands/prep-1on1.md"]
     }
   },
   "frontmatter_required": {
