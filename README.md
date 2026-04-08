@@ -176,6 +176,9 @@ Defined in `.claude/commands/`. Run them in any Claude Code session.
 | `/om-review-peer` | Write a peer review — projects, principles, performance summary |
 | `/om-vault-audit` | Audit indexes, links, orphans, stale context |
 | `/om-vault-upgrade` | Import content from an existing vault — version detection, classification, migration |
+| `/om-prep-1on1` | Prep for an upcoming 1:1 — load person context, open items, suggested agenda |
+| `/om-meeting` | Prep for any meeting by topic — subject-forward briefing with open items and considerations |
+| `/om-intake` | Process meeting notes inbox — classify and route to the right vault notes |
 | `/om-project-archive` | Move a completed project from active/ to archive/, update indexes |
 
 ---

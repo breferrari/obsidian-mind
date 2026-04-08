@@ -5,10 +5,10 @@ Deep scan a peer's GitHub PRs for performance review preparation. Produces a str
 ## Usage
 
 ```
-/peer-scan <name> <github-username> <repo> [period]
+/om-peer-scan <name> <github-username> <repo> [period]
 ```
 
-Example: `/peer-scan "Jane Doe" jdoe example-repo "Jan 2025 - Jun 2025"`
+Example: `/om-peer-scan "Jane Doe" jdoe example-repo "Jan 2025 - Jun 2025"`
 
 ## Workflow
 

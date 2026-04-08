@@ -5,10 +5,10 @@ Take a meeting transcript, notes, or Gemini summary and create a structured vaul
 ## Usage
 
 ```
-/capture-1on1 <participant>
+/om-capture-1on1 <participant>
 ```
 
-User will paste the transcript/notes. Example: `/capture-1on1 <name>`
+User will paste the transcript/notes. Example: `/om-capture-1on1 <name>`
 
 ## Workflow
 

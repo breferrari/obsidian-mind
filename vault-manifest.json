@@ -1,7 +1,7 @@
 {
   "template": "obsidian-mind",
-  "version": "3.6.0",
-  "released": "2026-04-07",
+  "version": "3.7.0",
+  "released": "2026-04-08",
   "infrastructure": [
     "CLAUDE.md",
     "Home.md",
@@ -66,10 +66,14 @@
     },
     "v3.3": {
       "exists": ["vault-manifest.json"],
-      "missing": [".claude/commands/prep-1on1.md"]
+      "missing": [".claude/commands/om-standup.md"]
     },
     "v3.6": {
-      "exists": [".claude/commands/prep-1on1.md"]
+      "exists": [".claude/commands/prep-1on1.md"],
+      "missing": [".claude/commands/om-standup.md"]
+    },
+    "v3.7": {
+      "exists": [".claude/commands/om-standup.md", ".claude/commands/om-intake.md"]
     }
   },
   "frontmatter_required": {

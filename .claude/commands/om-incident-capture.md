@@ -5,7 +5,7 @@ Capture an incident from Slack channels, DMs, and threads into structured vault 
 ## Usage
 
 ```
-/incident-capture <slack-urls>
+/om-incident-capture <slack-urls>
 ```
 
 Provide one or more Slack URLs: incident channels, DM conversations, threads. The more context, the better.
@@ -106,7 +106,7 @@ After capturing, suggest:
 - "Want me to prepare the incident ticket fields?" (Points of Time, Impact, RCA)
 - "Want me to draft a message for the incident channel?"
 - "Want me to create a root cause analysis document?"
-- "Should I run `/vault-audit` to verify everything links properly?"
+- "Should I run `/om-vault-audit` to verify everything links properly?"
 
 ## Important
 

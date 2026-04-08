@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.7 — 2026-04-08
+
+### Added
+- `/om-meeting` command — subject-forward meeting prep that searches the vault, surfaces open items and blockers, and brainstorms considerations beyond what's documented
+- `/om-intake` command — processes raw meeting exports dropped in `work/meetings/`, classifies content (1:1, project, decision, win, action item), and routes to the correct vault notes
+- `work/meetings/` inbox folder with README — staging area for raw meeting exports
+
+### Changed
+- **All 18 slash commands renamed to `om-` prefix** (e.g. `/standup` → `/om-standup`, `/dump` → `/om-dump`) for discoverability — type `/om-` to see all commands via autocomplete
+- Updated all cross-references in commands, agents, scripts, hooks, and docs to use new `om-` prefixed names
+- CLAUDE.md: updated command table (16→18 commands), added `work/meetings/` to vault structure
+- README + all translations (ja, ko, zh-CN): updated all command names, agent tables, workflow examples, and added 3 new commands
+- `brain/Skills.md`: updated all command names, added `/om-meeting` and `/om-intake` to Meeting Prep & Capture category
+- `.claude/settings.json`: updated Stop hook checklist to reference `/om-vault-audit`
+- `.claude/scripts/classify-message.py`: updated INCIDENT hint to reference `/om-incident-capture`
+- `vault-manifest.json`: updated version fingerprints for `om-` prefix detection
+
 ## v3.6 — 2026-04-07
 
 ### Added

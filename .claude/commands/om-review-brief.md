@@ -5,12 +5,12 @@ Generate a performance review context transfer document from vault data. Support
 ## Usage
 
 ```
-/review-brief <audience> [period]
+/om-review-brief <audience> [period]
 ```
 
 Examples:
-- `/review-brief manager "Q3 2024 + Q4 2024"`
-- `/review-brief peers "Q3 2024 + Q4 2024"`
+- `/om-review-brief manager "Q3 2024 + Q4 2024"`
+- `/om-review-brief peers "Q3 2024 + Q4 2024"`
 
 ## Subagent
 

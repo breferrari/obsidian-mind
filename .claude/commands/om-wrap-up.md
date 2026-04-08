@@ -5,7 +5,7 @@ Full session review before ending. Review context, ways of working, files modifi
 ## Usage
 
 ```
-/wrap-up
+/om-wrap-up
 ```
 
 Triggered when the user says "wrap up", "let's wrap", "wrapping up", or similar. Claude should invoke this automatically.

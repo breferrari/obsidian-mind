@@ -5,7 +5,7 @@ Write your self-assessment for your company's review tool. Produces project impa
 ## Usage
 
 ```
-/self-review [cycle]
+/om-self-review [cycle]
 ```
 
 Default cycle: current review period.

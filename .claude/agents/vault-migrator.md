@@ -1,6 +1,6 @@
 ---
 name: vault-migrator
-description: "Classify, transform, and migrate vault content from a source vault into this obsidian-mind instance. Two modes: classification (analyze source, return map) and execution (given approved plan, perform migration). Invoked by /vault-upgrade."
+description: "Classify, transform, and migrate vault content from a source vault into this obsidian-mind instance. Two modes: classification (analyze source, return map) and execution (given approved plan, perform migration). Invoked by /om-vault-upgrade."
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
 maxTurns: 50

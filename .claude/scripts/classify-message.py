@@ -37,7 +37,7 @@ SIGNALS = [
     },
     {
         "name": "INCIDENT",
-        "message": "INCIDENT detected — consider using /incident-capture or creating an incident note in work/incidents/",
+        "message": "INCIDENT detected — consider using /om-incident-capture or creating an incident note in work/incidents/",
         "patterns": [
             # English
             "incident", "outage", "pagerduty", "severity",

@@ -7,7 +7,7 @@ Edit a note to match your writing voice. This is voice calibration, not pattern 
 ## Usage
 
 ```
-/humanize <file path or note name>
+/om-humanize <file path or note name>
 ```
 
 ## Workflow

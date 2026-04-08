@@ -5,12 +5,12 @@ Deep scan Slack channels and DMs for evidence involving a specific person or pro
 ## Usage
 
 ```
-/slack-scan <target> [channels...] [date-range]
+/om-slack-scan <target> [channels...] [date-range]
 ```
 
 Examples:
-- `/slack-scan "Jane Doe" C0EXAMPLE1 C0EXAMPLE2 "after:2026-03-16"`
-- `/slack-scan "project:example" C0EXAMPLE1 C0EXAMPLE2 C0EXAMPLE3 C0EXAMPLE4`
+- `/om-slack-scan "Jane Doe" C0EXAMPLE1 C0EXAMPLE2 "after:2026-03-16"`
+- `/om-slack-scan "project:example" C0EXAMPLE1 C0EXAMPLE2 C0EXAMPLE3 C0EXAMPLE4`
 
 ## Workflow
 

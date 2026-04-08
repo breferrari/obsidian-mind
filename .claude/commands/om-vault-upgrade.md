@@ -7,10 +7,10 @@ Import and migrate content from an existing Obsidian vault into this obsidian-mi
 ## Usage
 
 ```
-/vault-upgrade <path-to-source-vault>
-/vault-upgrade <path-to-source-vault> --dry-run
-/vault-upgrade --source <path-to-source-vault>
-/vault-upgrade --source <path-to-source-vault> --dry-run
+/om-vault-upgrade <path-to-source-vault>
+/om-vault-upgrade <path-to-source-vault> --dry-run
+/om-vault-upgrade --source <path-to-source-vault>
+/om-vault-upgrade --source <path-to-source-vault> --dry-run
 ```
 
 **Arguments**:
@@ -161,14 +161,14 @@ Migration complete.
   ✓ Indexes rebuilt (work/Index.md, People & Context, Brag Doc, Memories)
   ✓ .obsidian/ config copied
 
-  ⚠ 3 orphan notes (no inbound links) — run /vault-audit to fix
+  ⚠ 3 orphan notes (no inbound links) — run /om-vault-audit to fix
   ⚠ 5 files in thinking/migrate-review/ need manual sorting
 
   Migration log: brain/Migration Log.md
 ```
 
 Offer next steps:
-- "Run `/vault-audit` for a full structural check"
+- "Run `/om-vault-audit` for a full structural check"
 - "Review `thinking/migrate-review/` for uncategorized files"
 - "Check `brain/Migration Log.md` for the full receipt and CLAUDE.md diff"
 

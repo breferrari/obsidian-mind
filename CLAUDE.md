@@ -33,6 +33,9 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 | `/om-review-peer` | Write peer review -- projects, principles, performance summary |
 | `/om-vault-audit` | Audit indexes, links, orphans, stale context |
 | `/om-vault-upgrade` | Import content from an existing vault into this obsidian-mind instance |
+| `/om-prep-1on1` | Prep for an upcoming 1:1 -- load person context, open items, suggested agenda |
+| `/om-meeting` | Prep for any meeting by topic -- subject-forward briefing with open items and considerations |
+| `/om-intake` | Process meeting notes inbox -- classify and route to the right vault notes |
 | `/om-project-archive` | Move completed project from active/ to archive/, update indexes |
 
 ## Vault Structure
@@ -48,6 +51,7 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 | `work/archive/YYYY/` | Completed work organized by year | Grows over time |
 | `work/incidents/` | Incident docs (main note + RCA + deep dive + drafts) | Per-incident grouping |
 | `work/1-1/` | 1:1 meeting notes (accumulate weekly) | Named `<Person> YYYY-MM-DD.md` |
+| `work/meetings/` | **Meeting notes inbox** -- staging area for raw exports, processed by `/om-intake` | Drop files, run `/om-intake` |
 | `perf/` | Performance framework, brag doc | `Brag Doc.md` (index) |
 | `perf/brag/` | Quarterly brag notes | One per quarter, e.g. `Q1 2025.md` |
 | `perf/competencies/` | Atomic competency notes (link targets) | One note per competency |
@@ -60,7 +64,7 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 | `reference/` | Codebase knowledge, architecture maps | Flow docs, architecture docs |
 | `thinking/` | Scratchpad for drafts and reasoning | Named `YYYY-MM-DD-topic.md` |
 | `templates/` | Obsidian templates | `Work Note.md`, `Decision Record.md`, etc. |
-| `.claude/commands/` | 15 slash commands | See command table above |
+| `.claude/commands/` | 18 slash commands | See command table above |
 | `.claude/agents/` | 9 subagents | See subagents table below |
 | `.claude/scripts/` | Hook scripts | `session-start.sh`, `classify-message.py`, `validate-write.py`, `pre-compact.sh` |
 | `.claude/skills/` | Obsidian + QMD skills | Loaded automatically via Skill tool |

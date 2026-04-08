@@ -5,7 +5,7 @@ Move a completed project from `work/active/` to `work/archive/YYYY/` and update 
 ## Usage
 
 ```
-/project-archive <project name>
+/om-project-archive <project name>
 ```
 
 ## Workflow

@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'INPUT=$(cat); ACTIVE=$(printf \"%s\" \"$INPUT\" | bash .claude/scripts/find-python.sh -c \"import json,sys; print(json.load(sys.stdin).get(\\\"stop_hook_active\\\",False))\" 2>/dev/null || echo False); [ \"$ACTIVE\" = \"True\" ] && exit 0; echo \"Session end checklist:\n- Archive completed projects? (work/active/ -> work/archive/YYYY/)\n- Update indexes? (Index.md, Memories.md, People & Context, Brag Doc)\n- New notes linked? (orphans are bugs)\n- Run /vault-audit if many notes were created/modified\"'",
+            "command": "bash -c 'INPUT=$(cat); ACTIVE=$(printf \"%s\" \"$INPUT\" | bash .claude/scripts/find-python.sh -c \"import json,sys; print(json.load(sys.stdin).get(\\\"stop_hook_active\\\",False))\" 2>/dev/null || echo False); [ \"$ACTIVE\" = \"True\" ] && exit 0; echo \"Session end checklist:\n- Archive completed projects? (work/active/ -> work/archive/YYYY/)\n- Update indexes? (Index.md, Memories.md, People & Context, Brag Doc)\n- New notes linked? (orphans are bugs)\n- Run /om-vault-audit if many notes were created/modified\"'",
             "timeout": 5
           }
         ]

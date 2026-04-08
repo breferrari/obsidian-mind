@@ -35,6 +35,8 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 | `/om-capture-1on1` | Capture 1:1 meeting transcript into structured vault note with quotes, action items, DM context |
 | `/om-incident-capture` | Capture incident from Slack channels/DMs into structured vault notes — timeline, people, analysis, brag entry |
 | `/om-slack-scan` | Deep scan Slack channels/DMs for evidence — extracts timestamped touchpoints, organizes by context |
+| `/om-meeting` | Prep for any meeting by topic — subject-forward briefing with open items, blockers, and brainstormed considerations |
+| `/om-intake` | Process meeting notes inbox — classify raw exports in `work/meetings/` and route to the right vault notes |
 
 ### Performance & Review
 
@@ -124,8 +126,8 @@ SessionStart hook runs `qmd update` automatically. See `.claude/skills/qmd/SKILL
 
 ## Workflow: Full Review Cycle Prep
 
-1. **`/review-brief manager`** — generate the manager context transfer doc
-2. **`/review-brief peers`** — generate the peer context transfer doc
+1. **`/om-review-brief manager`** — generate the manager context transfer doc
+2. **`/om-review-brief peers`** — generate the peer context transfer doc
 3. **`/om-peer-scan`** (parallel, one per peer) — deep scan each peer's PRs
 4. **`/om-slack-scan`** — scan relevant channels for your own evidence + peer context
 5. **`/om-capture-1on1`** — capture the review 1:1 with your manager

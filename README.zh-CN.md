@@ -41,7 +41,7 @@ Claude: "你正在做 Project Alpha，被后端契约阻塞了。
 **早间启动：**
 
 ```bash
-/standup
+/om-standup
 # → 加载北极星目标、活跃项目、待办任务、最近的 git 变更
 # → "你有 2 个活跃项目。auth 重构被 API 契约阻塞了。
 #    你下午2点和 Sarah 有 1:1——上次她提到了可观测性的问题。"
@@ -50,7 +50,7 @@ Claude: "你正在做 Project Alpha，被后端契约阻塞了。
 **会后头脑转储：**
 
 ```bash
-/dump Just had a 1:1 with Sarah. She's happy with the auth work but wants
+/om-dump Just had a 1:1 with Sarah. She's happy with the auth work but wants
 us to add error monitoring before release. Also, Tom mentioned the cache
 migration is deferred to Q2 — we decided to focus on the API contract first.
 Decision: defer Redis migration. Win: Sarah praised the auth architecture.
@@ -67,7 +67,7 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 **事件响应：**
 
 ```bash
-/incident-capture https://slack.com/archives/C0INCIDENT/p123456
+/om-incident-capture https://slack.com/archives/C0INCIDENT/p123456
 # → slack-archaeologist 读取每一条消息、线程和个人资料
 # → people-profiler 为新涉及的人员创建笔记
 # → 完整的时间线、根因分析、成就记录
@@ -126,7 +126,7 @@ qmd update && qmd embed
 
 **仓库优先的记忆** 使上下文能跨会话和设备持续存在。所有持久知识存储在 `brain/` 主题笔记中（git 跟踪、Obsidian 可浏览、相互链接）。Claude Code 的 `MEMORY.md`（`~/.claude/`）是一个自动加载的索引，指向仓库中的位置——本身不存储内容。这意味着记忆可以在更换设备后保留，并且是知识图谱的一部分。
 
-**会话有设计好的生命周期。** `SessionStart` 钩子自动注入你的北极星目标、活跃项目、最近变更、待办任务和完整的仓库文件列表——Claude 每次会话都带着上下文启动，而不是从空白开始。结束时，说 "wrap up"，Claude 就会运行 `/wrap-up`——验证笔记、更新索引、发现未记录的成就。285 行的 `CLAUDE.md` 规范了中间的一切：文件归档位置、链接方式、何时拆分笔记、如何处理决策和事件。
+**会话有设计好的生命周期。** `SessionStart` 钩子自动注入你的北极星目标、活跃项目、最近变更、待办任务和完整的仓库文件列表——Claude 每次会话都带着上下文启动，而不是从空白开始。结束时，说 "wrap up"，Claude 就会运行 `/om-wrap-up`——验证笔记、更新索引、发现未记录的成就。285 行的 `CLAUDE.md` 规范了中间的一切：文件归档位置、链接方式、何时拆分笔记、如何处理决策和事件。
 
 ### 钩子
 
@@ -147,15 +147,15 @@ qmd update && qmd embed
 
 ## 📅 日常工作流
 
-**早晨**：运行 `/standup`。Claude 加载你的北极星目标、活跃项目、待办任务和最近变更。你会得到一份结构化的摘要和优先事项建议。
+**早晨**：运行 `/om-standup`。Claude 加载你的北极星目标、活跃项目、待办任务和最近变更。你会得到一份结构化的摘要和优先事项建议。
 
-**全天**：自然地交谈。提到你做的决策、发生的事件、刚结束的 1:1、想记住的成就。分类钩子会引导 Claude 将每条信息归档到正确位置。对于更大量的信息转储，使用 `/dump` 一次性叙述所有内容。
+**全天**：自然地交谈。提到你做的决策、发生的事件、刚结束的 1:1、想记住的成就。分类钩子会引导 Claude 将每条信息归档到正确位置。对于更大量的信息转储，使用 `/om-dump` 一次性叙述所有内容。
 
-**收工**：说 "wrap up"，Claude 就会调用 `/wrap-up`——验证笔记、更新索引、检查链接、发现未记录的成就。
+**收工**：说 "wrap up"，Claude 就会调用 `/om-wrap-up`——验证笔记、更新索引、检查链接、发现未记录的成就。
 
-**每周**：运行 `/weekly` 进行跨会话综合——北极星对齐、模式识别、未记录的成就和下周优先事项。运行 `/vault-audit` 捕获孤立笔记、断开的链接和过时的内容。
+**每周**：运行 `/om-weekly` 进行跨会话综合——北极星对齐、模式识别、未记录的成就和下周优先事项。运行 `/om-vault-audit` 捕获孤立笔记、断开的链接和过时的内容。
 
-**绩效评估季**：运行 `/review-brief manager`，获得一份结构化的评估准备文档，所有证据都已链接就绪。
+**绩效评估季**：运行 `/om-review-brief manager`，获得一份结构化的评估准备文档，所有证据都已链接就绪。
 
 ---
 
@@ -165,21 +165,24 @@ qmd update && qmd embed
 
 | 命令 | 功能 |
 |------|------|
-| `/standup` | 早间启动——加载上下文，回顾昨天，浮现任务，建议优先事项 |
-| `/dump` | 自由捕获——随意交谈，Claude 将所有内容路由到正确的笔记 |
-| `/wrap-up` | 完整的会话回顾——验证笔记、索引、链接，提出改进建议 |
-| `/humanize` | 语气校准编辑——让 Claude 起草的文字听起来像是你自己写的 |
-| `/weekly` | 每周综合——跨会话模式、北极星对齐、未记录的成就 |
-| `/capture-1on1` | 将 1:1 会议记录捕获为结构化的仓库笔记 |
-| `/incident-capture` | 从 Slack/频道中捕获事件，生成结构化笔记 |
-| `/slack-scan` | 深度扫描 Slack 频道/私信以获取证据 |
-| `/peer-scan` | 深度扫描同事的 GitHub PR，用于评估准备 |
-| `/review-brief` | 生成评估简报（经理版或同事版） |
-| `/self-review` | 撰写绩效评估自评——项目、能力、原则 |
-| `/review-peer` | 撰写同事评审——项目、原则、绩效总结 |
-| `/vault-audit` | 审计索引、链接、孤立笔记、过时内容 |
-| `/vault-upgrade` | 从现有仓库导入内容——版本检测、分类、迁移 |
-| `/project-archive` | 将已完成的项目从 active/ 移至 archive/，更新索引 |
+| `/om-standup` | 早间启动——加载上下文，回顾昨天，浮现任务，建议优先事项 |
+| `/om-dump` | 自由捕获——随意交谈，Claude 将所有内容路由到正确的笔记 |
+| `/om-wrap-up` | 完整的会话回顾——验证笔记、索引、链接，提出改进建议 |
+| `/om-humanize` | 语气校准编辑——让 Claude 起草的文字听起来像是你自己写的 |
+| `/om-weekly` | 每周综合——跨会话模式、北极星对齐、未记录的成就 |
+| `/om-prep-1on1` | 1:1 准备——加载对方上下文、未解决事项、建议议程 |
+| `/om-meeting` | 按主题准备会议——未解决事项、障碍、需要考虑的要点 |
+| `/om-intake` | 处理会议笔记收件箱——分类 `work/meetings/` 中的文件并路由到正确的笔记 |
+| `/om-capture-1on1` | 将 1:1 会议记录捕获为结构化的仓库笔记 |
+| `/om-incident-capture` | 从 Slack/频道中捕获事件，生成结构化笔记 |
+| `/om-slack-scan` | 深度扫描 Slack 频道/私信以获取证据 |
+| `/om-peer-scan` | 深度扫描同事的 GitHub PR，用于评估准备 |
+| `/om-review-brief` | 生成评估简报（经理版或同事版） |
+| `/om-self-review` | 撰写绩效评估自评——项目、能力、原则 |
+| `/om-review-peer` | 撰写同事评审——项目、原则、绩效总结 |
+| `/om-vault-audit` | 审计索引、链接、孤立笔记、过时内容 |
+| `/om-vault-upgrade` | 从现有仓库导入内容——版本检测、分类、迁移 |
+| `/om-project-archive` | 将已完成的项目从 active/ 移至 archive/，更新索引 |
 
 ---
 
@@ -189,15 +192,15 @@ qmd update && qmd embed
 
 | 代理 | 用途 | 调用方式 |
 |------|------|---------|
-| `brag-spotter` | 发现未记录的成就和能力差距 | `/wrap-up`, `/weekly` |
+| `brag-spotter` | 发现未记录的成就和能力差距 | `/om-wrap-up`, `/om-weekly` |
 | `context-loader` | 加载仓库中关于某人、项目或概念的所有上下文 | 直接调用 |
-| `cross-linker` | 查找缺失的 wikilinks、孤立笔记、断开的反向链接 | `/vault-audit` |
-| `people-profiler` | 从 Slack 个人资料批量创建/更新人员笔记 | `/incident-capture` |
-| `review-prep` | 汇总某个评估周期的所有绩效证据 | `/review-brief` |
-| `slack-archaeologist` | 完整的 Slack 重建——每条消息、线程、个人资料 | `/incident-capture` |
-| `vault-librarian` | 深度仓库维护——孤立笔记、断开链接、过时笔记 | `/vault-audit` |
-| `review-fact-checker` | 对照仓库来源验证评审草稿中的每一项声明 | `/self-review`, `/review-peer` |
-| `vault-migrator` | 分类、转换和迁移源仓库中的内容 | `/vault-upgrade` |
+| `cross-linker` | 查找缺失的 wikilinks、孤立笔记、断开的反向链接 | `/om-vault-audit` |
+| `people-profiler` | 从 Slack 个人资料批量创建/更新人员笔记 | `/om-incident-capture` |
+| `review-prep` | 汇总某个评估周期的所有绩效证据 | `/om-review-brief` |
+| `slack-archaeologist` | 完整的 Slack 重建——每条消息、线程、个人资料 | `/om-incident-capture` |
+| `vault-librarian` | 深度仓库维护——孤立笔记、断开链接、过时笔记 | `/om-vault-audit` |
+| `review-fact-checker` | 对照仓库来源验证评审草稿中的每一项声明 | `/om-self-review`, `/om-review-peer` |
+| `vault-migrator` | 分类、转换和迁移源仓库中的内容 | `/om-vault-upgrade` |
 
 > [!NOTE]
 > 子代理定义在 `.claude/agents/` 中。你可以添加自己的代理以适应特定领域的工作流。
@@ -212,8 +215,8 @@ qmd update && qmd embed
 2. **工作笔记** 在其 `## Related` 部分链接到能力项，并标注所展示的能力
 3. **反向链接自动积累**——绩效评估准备变成了查看每个能力项笔记上的反向链接面板
 4. **Brag Doc** 按季度汇总成就，并链接到证据笔记
-5. **`/peer-scan`** 深度扫描同事的 GitHub PR，并将结构化证据写入 `perf/evidence/`
-6. **`/review-brief`** 通过汇总所有内容生成完整的评估简报：成就记录、决策、事件、能力证据和 1:1 反馈
+5. **`/om-peer-scan`** 深度扫描同事的 GitHub PR，并将结构化证据写入 `perf/evidence/`
+6. **`/om-review-brief`** 通过汇总所有内容生成完整的评估简报：成就记录、决策、事件、能力证据和 1:1 反馈
 
 > [!TIP]
 > 入门方法：使用模板创建能力项笔记，然后在日常工作中将工作笔记链接到它们。图谱会处理剩下的一切。
@@ -283,7 +286,7 @@ thinking/               草稿用暂存区——提炼成果后删除
 templates/              带有 YAML frontmatter 的 Obsidian 模板
 
 .claude/
-  commands/             15 个斜杠命令
+  commands/             18 个斜杠命令
   agents/               9 个子代理
   scripts/              钩子脚本 + charcount.sh 工具
   skills/               Obsidian + QMD 技能
@@ -343,7 +346,7 @@ templates/              带有 YAML frontmatter 的 Obsidian 模板
 
 ## 🔄 升级
 
-已经在使用旧版本的 obsidian-mind（或其他 Obsidian 仓库）？`/vault-upgrade` 命令可以将你的内容迁移到最新模板：
+已经在使用旧版本的 obsidian-mind（或其他 Obsidian 仓库）？`/om-vault-upgrade` 命令可以将你的内容迁移到最新模板：
 
 ```bash
 # 1. 克隆最新版 obsidian-mind
@@ -353,7 +356,7 @@ git clone https://github.com/breferrari/obsidian-mind.git ~/new-vault
 cd ~/new-vault && claude
 
 # 3. 运行升级命令，指向你的旧仓库
-/vault-upgrade ~/my-old-vault
+/om-vault-upgrade ~/my-old-vault
 ```
 
 Claude 将会：

@@ -9,10 +9,10 @@ Prepare for an upcoming 1:1 by gathering everything relevant about the person an
 ## Usage
 
 ```
-/prep-1on1 <person>
+/om-prep-1on1 <person>
 ```
 
-Example: `/prep-1on1 Scott Detweiler`
+Example: `/om-prep-1on1 Scott Detweiler`
 
 ## Workflow
 
@@ -54,4 +54,4 @@ Example: `/prep-1on1 Scott Detweiler`
 
 ## After the Meeting
 
-Run `/capture-1on1 $ARGUMENTS` to file the notes into `work/1-1/` and update the person note.
+Run `/om-capture-1on1 $ARGUMENTS` to file the notes into `work/1-1/` and update the person note.

@@ -5,7 +5,7 @@ Write a peer review for a colleague on your company's review tool. Produces proj
 ## Usage
 
 ```
-/review-peer <Name>
+/om-review-peer <Name>
 ```
 
 ## Context: Review System
@@ -22,7 +22,7 @@ Adapt to your company's review system. Common patterns:
 
 Load in order:
 1. Person note from `org/people/<Name>.md`
-2. PR evidence from `perf/evidence/<Name> PRs - <cycle>.md` (run `/peer-scan` if missing)
+2. PR evidence from `perf/evidence/<Name> PRs - <cycle>.md` (run `/om-peer-scan` if missing)
 3. Peer review notes from `work/active/` (any active review writing notes)
 4. Any brag sheet or impact overview the person shared (user provides)
 5. Relevant work notes (search vault for their name)
