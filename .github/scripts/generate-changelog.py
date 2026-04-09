@@ -169,6 +169,10 @@ def main():
 
     section = generate_section(version, commits)
 
+    if not any(classify_commit(msg)[0] is not None for msg in commits):
+        print("All commits were skipped (ci/test/release only). Nothing to changelog.", file=sys.stderr)
+        sys.exit(1)
+
     prepend_to_changelog(section, version)
     update_manifest(version)
 

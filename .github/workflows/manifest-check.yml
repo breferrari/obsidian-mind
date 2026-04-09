@@ -19,48 +19,41 @@ jobs:
         run: |
           MISSING=()
 
-          # Check commands
-          for f in .claude/commands/*.md; do
-            [ -f "$f" ] || continue
-            if ! grep -q "$f" vault-manifest.json; then
-              MISSING+=("$f")
-            fi
-          done
+          # Read infrastructure globs from manifest
+          GLOBS=$(python3 -c "
+          import json
+          with open('vault-manifest.json') as f:
+              m = json.load(f)
+          for g in m.get('infrastructure', []):
+              print(g)
+          ")
 
-          # Check agents
-          for f in .claude/agents/*.md; do
+          # For each file in watched directories, check if any glob covers it
+          for f in .claude/commands/*.md .claude/agents/*.md .claude/scripts/*.py .claude/scripts/*.sh templates/*.md bases/*.base; do
             [ -f "$f" ] || continue
-            if ! grep -q "$f" vault-manifest.json; then
-              MISSING+=("$f")
-            fi
-          done
+            COVERED=false
+            while IFS= read -r glob; do
+              # Check exact match
+              if [ "$f" = "$glob" ]; then
+                COVERED=true
+                break
+              fi
+              # Check glob coverage: ".claude/**" covers ".claude/commands/foo.md"
+              # Convert glob to regex: ** → .*, * → [^/]*
+              regex=$(echo "$glob" | sed 's|\*\*|__DOUBLESTAR__|g' | sed 's|\*|[^/]*|g' | sed 's|__DOUBLESTAR__|.*|g' | sed 's|\.|\\.|g' | sed 's|\\\.\*|.*|g' | sed 's|\\\[|[|g' | sed 's|\\\]|]|g')
+              if echo "$f" | grep -qE "^${regex}$"; then
+                COVERED=true
+                break
+              fi
+            done <<< "$GLOBS"
 
-          # Check scripts
-          for f in .claude/scripts/*.py .claude/scripts/*.sh; do
-            [ -f "$f" ] || continue
-            if ! grep -q "$f" vault-manifest.json; then
-              MISSING+=("$f")
-            fi
-          done
-
-          # Check templates
-          for f in templates/*.md; do
-            [ -f "$f" ] || continue
-            if ! grep -q "$f" vault-manifest.json; then
-              MISSING+=("$f")
-            fi
-          done
-
-          # Check bases
-          for f in bases/*.base; do
-            [ -f "$f" ] || continue
-            if ! grep -q "$f" vault-manifest.json; then
+            if [ "$COVERED" = false ]; then
               MISSING+=("$f")
             fi
           done
 
           if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::warning::The following files are not listed in vault-manifest.json infrastructure:"
+            echo "::warning::The following files are not covered by vault-manifest.json infrastructure globs:"
             for f in "${MISSING[@]}"; do
               echo "  - $f"
             done

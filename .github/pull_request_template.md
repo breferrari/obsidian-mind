@@ -10,6 +10,7 @@
 - [ ] `docs` — documentation only
 - [ ] `refactor` — code restructuring, no behavior change
 - [ ] `test` — adding or updating tests
+- [ ] `ci` — CI/CD workflow changes
 - [ ] `chore` — maintenance, cleanup
 
 ## Checklist

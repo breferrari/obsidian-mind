@@ -17,16 +17,16 @@ Thanks for your interest in contributing to obsidian-mind!
 type: short description
 ```
 
-| Prefix | When to use | Changelog section |
-|--------|-------------|-------------------|
+| Prefix | When to use | Changelog |
+|--------|-------------|-----------|
 | `feat` | New command, agent, hook, or capability | Added |
 | `fix` | Bug fix | Fixed |
 | `docs` | Documentation only (README, translations, CLAUDE.md) | Changed |
 | `refactor` | Code restructuring without behavior change | Changed |
-| `test` | Adding or updating tests | Changed |
-| `ci` | CI/CD workflow changes | Changed |
 | `chore` | Maintenance, cleanup | Changed |
 | `revert` | Reverting a previous change | Fixed |
+| `ci` | CI/CD workflow changes | Skipped (internal) |
+| `test` | Adding or updating tests | Skipped (internal) |
 
 **Examples:**
 - `feat: add /om-review command`
@@ -63,7 +63,7 @@ The release pipeline handles these automatically — **do not include in your PR
 - [ ] PR title follows `type: description` format
 - [ ] Counts match everywhere (commands, agents) if you added/removed any
 - [ ] New command/agent appears in ALL doc tables (CLAUDE.md + README + Skills.md)
-- [ ] All translations updated if you changed README.md
+- [ ] Translations flagged if you changed README.md (maintainer can handle these)
 - [ ] Tests pass: `python .claude/scripts/test_hooks.py`
 - [ ] Examples use generic dates and names, not specific to any company or person
 
