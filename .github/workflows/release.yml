@@ -13,16 +13,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Run tests
         run: python3 .claude/scripts/test_hooks.py
 
-      - name: Build vault zip
+      - name: Generate changelog
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
+          python3 .github/scripts/generate-changelog.py "$VERSION" > release_body.md
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Commit changelog and manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md vault-manifest.json
+          git commit -m "release: update CHANGELOG and manifest for $VERSION"
+          git push origin main
+
+      - name: Build vault zip
+        run: |
           ZIP_NAME="obsidian-mind-${VERSION}.zip"
 
-          # Create clean zip excluding dev/CI files
           zip -r "$ZIP_NAME" . \
             -x ".git/*" \
             -x ".github/*" \
@@ -31,16 +50,15 @@ jobs:
             -x "thinking/session-logs/*"
 
           echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Create or update release
+      - name: Create release
         run: |
           if gh release view "$VERSION" &>/dev/null; then
             gh release upload "$VERSION" "$ZIP_NAME" --clobber
           else
             gh release create "$VERSION" "$ZIP_NAME" \
               --title "$VERSION" \
-              --generate-notes
+              --notes-file release_body.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
