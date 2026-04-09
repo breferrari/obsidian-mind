@@ -1,5 +1,11 @@
 # Changelog
 
+
+## v3.8 — 2026-04-09
+
+### Fixed
+- correct hook docs and add token efficiency section
+
 ## v3.7 — 2026-04-08
 
 ### Added

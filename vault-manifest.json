@@ -1,7 +1,7 @@
 {
   "template": "obsidian-mind",
-  "version": "3.7.0",
-  "released": "2026-04-08",
+  "version": "3.8.0",
+  "released": "2026-04-09",
   "infrastructure": [
     "CLAUDE.md",
     "Home.md",
@@ -45,43 +45,102 @@
   ],
   "version_fingerprints": {
     "v1": {
-      "exists": ["claude/Memories.md"],
-      "missing": ["brain/", "bases/"]
+      "exists": [
+        "claude/Memories.md"
+      ],
+      "missing": [
+        "brain/",
+        "bases/"
+      ]
     },
     "v2": {
-      "exists": ["brain/", "bases/", "Home.md"],
-      "missing": [".claude/agents/"]
+      "exists": [
+        "brain/",
+        "bases/",
+        "Home.md"
+      ],
+      "missing": [
+        ".claude/agents/"
+      ]
     },
     "v3.0": {
-      "exists": [".claude/agents/", ".claude/scripts/"],
-      "missing": [".claude/agents/review-fact-checker.md"]
+      "exists": [
+        ".claude/agents/",
+        ".claude/scripts/"
+      ],
+      "missing": [
+        ".claude/agents/review-fact-checker.md"
+      ]
     },
     "v3.1": {
-      "exists": [".claude/agents/review-fact-checker.md"],
-      "missing": [".claude/commands/humanize.md"]
+      "exists": [
+        ".claude/agents/review-fact-checker.md"
+      ],
+      "missing": [
+        ".claude/commands/humanize.md"
+      ]
     },
     "v3.2": {
-      "exists": [".claude/commands/humanize.md", ".claude/commands/weekly.md"],
-      "missing": ["vault-manifest.json"]
+      "exists": [
+        ".claude/commands/humanize.md",
+        ".claude/commands/weekly.md"
+      ],
+      "missing": [
+        "vault-manifest.json"
+      ]
     },
     "v3.3": {
-      "exists": ["vault-manifest.json"],
-      "missing": [".claude/commands/om-standup.md"]
+      "exists": [
+        "vault-manifest.json"
+      ],
+      "missing": [
+        ".claude/commands/om-standup.md"
+      ]
     },
     "v3.6": {
-      "exists": [".claude/commands/prep-1on1.md"],
-      "missing": [".claude/commands/om-standup.md"]
+      "exists": [
+        ".claude/commands/prep-1on1.md"
+      ],
+      "missing": [
+        ".claude/commands/om-standup.md"
+      ]
     },
     "v3.7": {
-      "exists": [".claude/commands/om-standup.md", ".claude/commands/om-intake.md"]
+      "exists": [
+        ".claude/commands/om-standup.md",
+        ".claude/commands/om-intake.md"
+      ]
     }
   },
   "frontmatter_required": {
-    "global": ["date", "description", "tags"],
-    "work-note": ["date", "status", "quarter"],
-    "incident": ["date", "status", "quarter", "ticket", "severity", "role"],
-    "person": ["date", "title"],
-    "team": ["date"],
-    "1-1": ["date", "quarter"]
+    "global": [
+      "date",
+      "description",
+      "tags"
+    ],
+    "work-note": [
+      "date",
+      "status",
+      "quarter"
+    ],
+    "incident": [
+      "date",
+      "status",
+      "quarter",
+      "ticket",
+      "severity",
+      "role"
+    ],
+    "person": [
+      "date",
+      "title"
+    ],
+    "team": [
+      "date"
+    ],
+    "1-1": [
+      "date",
+      "quarter"
+    ]
   }
 }
