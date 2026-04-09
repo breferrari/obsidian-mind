@@ -5,7 +5,7 @@ Usage: generate-changelog.py <version>
   e.g. generate-changelog.py v3.8
 
 Outputs:
-  - Prepends new section to CHANGELOG.md
+  - Prepends new section to CHANGELOG.md (or replaces if version exists)
   - Updates vault-manifest.json version and released date
   - Prints the generated section to stdout (for use as GitHub Release body)
 """
@@ -35,12 +35,20 @@ SKIP_PREFIXES = {"release", "ci", "test"}
 SECTION_ORDER = ["Added", "Changed", "Fixed", "Removed"]
 
 
-def get_previous_tag():
+def run_git(*args):
     result = subprocess.run(
-        ["git", "tag", "--sort=-version:refname"],
+        ["git"] + list(args),
         capture_output=True, text=True
     )
-    tags = [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
+    if result.returncode != 0:
+        print(f"git {' '.join(args)} failed: {result.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
+    return result.stdout.strip()
+
+
+def get_previous_tag():
+    output = run_git("tag", "--sort=-version:refname")
+    tags = [t.strip() for t in output.split("\n") if t.strip()]
     if len(tags) >= 2:
         return tags[1]
     return None
@@ -52,11 +60,8 @@ def get_commits(since_tag):
     else:
         range_spec = "HEAD"
 
-    result = subprocess.run(
-        ["git", "log", range_spec, "--pretty=format:%s", "--first-parent"],
-        capture_output=True, text=True
-    )
-    return [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+    output = run_git("log", range_spec, "--pretty=format:%s", "--first-parent")
+    return [line.strip() for line in output.split("\n") if line.strip()]
 
 
 def classify_commit(message):
@@ -107,29 +112,41 @@ def prepend_to_changelog(section, version):
     with open("CHANGELOG.md", "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Insert after the "# Changelog" header
-    header = "# Changelog"
-    idx = content.find(header)
-    if idx == -1:
-        new_content = f"{header}\n\n{section}\n{content}"
+    # Check if this version already exists (idempotent on re-runs)
+    version_pattern = rf"(?m)^## {re.escape(version)} — .*$"
+    existing_pattern = rf"(?ms)^## {re.escape(version)} — .*?\n.*?(?=^## |\Z)"
+    if re.search(version_pattern, content):
+        new_content = re.sub(existing_pattern, section.rstrip() + "\n", content, count=1)
     else:
-        insert_at = idx + len(header)
-        # Skip any whitespace after header
-        while insert_at < len(content) and content[insert_at] in ("\n", "\r"):
-            insert_at += 1
-        new_content = content[:insert_at] + "\n" + section + "\n" + content[insert_at:]
+        # Insert after the "# Changelog" header
+        header = "# Changelog"
+        idx = content.find(header)
+        if idx == -1:
+            new_content = f"{header}\n\n{section}\n{content}"
+        else:
+            insert_at = idx + len(header)
+            while insert_at < len(content) and content[insert_at] in ("\n", "\r"):
+                insert_at += 1
+            new_content = content[:insert_at] + "\n" + section + "\n" + content[insert_at:]
 
     with open("CHANGELOG.md", "w", encoding="utf-8") as f:
         f.write(new_content)
+
+
+def normalize_version(version):
+    match = re.fullmatch(r"v?(\d+)\.(\d+)(?:\.(\d+))?", version)
+    if not match:
+        print(f"Invalid version '{version}'. Expected vX.Y or vX.Y.Z.", file=sys.stderr)
+        sys.exit(1)
+    major, minor, patch = match.groups()
+    return f"{major}.{minor}.{patch or '0'}"
 
 
 def update_manifest(version):
     with open("vault-manifest.json", "r", encoding="utf-8") as f:
         manifest = json.load(f)
 
-    # Strip 'v' prefix for semver
-    semver = version.lstrip("v")
-    manifest["version"] = semver
+    manifest["version"] = normalize_version(version)
     manifest["released"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     with open("vault-manifest.json", "w", encoding="utf-8") as f:

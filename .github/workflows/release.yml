@@ -27,7 +27,7 @@ jobs:
       - name: Generate changelog
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
-          python3 .github/scripts/generate-changelog.py "$VERSION" > release_body.md
+          python3 .github/scripts/generate-changelog.py "$VERSION" > /tmp/release_body.md
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Commit changelog and manifest
@@ -51,14 +51,15 @@ jobs:
 
           echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
 
-      - name: Create release
+      - name: Create or update release
         run: |
           if gh release view "$VERSION" &>/dev/null; then
+            gh release edit "$VERSION" --notes-file /tmp/release_body.md
             gh release upload "$VERSION" "$ZIP_NAME" --clobber
           else
             gh release create "$VERSION" "$ZIP_NAME" \
               --title "$VERSION" \
-              --notes-file release_body.md
+              --notes-file /tmp/release_body.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
