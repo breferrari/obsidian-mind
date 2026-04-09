@@ -30,7 +30,7 @@ PREFIX_MAP = {
     "revert": "Fixed",
 }
 
-SKIP_PREFIXES = {"release", "ci"}
+SKIP_PREFIXES = {"release", "ci", "test"}
 
 SECTION_ORDER = ["Added", "Changed", "Fixed", "Removed"]
 
