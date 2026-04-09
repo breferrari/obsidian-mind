@@ -24,6 +24,9 @@ type: short description
 | `docs` | Documentation only (README, translations, CLAUDE.md) | Changed |
 | `refactor` | Code restructuring without behavior change | Changed |
 | `chore` | Maintenance, cleanup | Changed |
+| `build` | Build system or packaging changes | Changed |
+| `perf` | Performance improvements | Changed |
+| `style` | Formatting, no behavior change | Changed |
 | `revert` | Reverting a previous change | Fixed |
 | `ci` | CI/CD workflow changes | Skipped (internal) |
 | `test` | Adding or updating tests | Skipped (internal) |

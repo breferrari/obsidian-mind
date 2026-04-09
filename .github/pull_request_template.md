@@ -12,6 +12,10 @@
 - [ ] `test` — adding or updating tests
 - [ ] `ci` — CI/CD workflow changes
 - [ ] `chore` — maintenance, cleanup
+- [ ] `build` — build system or packaging changes
+- [ ] `perf` — performance improvements
+- [ ] `style` — formatting, no behavior change
+- [ ] `revert` — revert a previous change
 
 ## Checklist
 
