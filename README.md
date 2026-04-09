@@ -132,13 +132,27 @@ Five lifecycle hooks handle routing automatically:
 | Hook | When | What |
 |------|------|------|
 | 🚀 SessionStart | On startup/resume | QMD re-index, inject North Star, active work, recent changes, tasks, file listing |
-| 💬 UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person) and injects routing hints |
-| ✍️ PostToolUse | After writing `.md` | Validates frontmatter, checks for wikilinks, verifies folder placement |
+| 💬 UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints |
+| ✍️ PostToolUse | After writing `.md` | Validates frontmatter, checks for wikilinks |
 | 💾 PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
 | 🏁 Stop | End of session | Checklist: archive completed projects, update indexes, check orphans |
 
 > [!TIP]
 > You just talk. The hooks handle the routing.
+
+### Token Efficiency
+
+obsidian-mind does **not** dump your entire vault into context. It uses tiered loading to keep token costs low:
+
+| Tier | What | When | Cost |
+|------|------|------|------|
+| **Always** | `CLAUDE.md` + SessionStart metadata (filenames, git summary, tasks) | Session start | ~2K tokens |
+| **On-demand** | QMD semantic search results | When Claude needs specific context | Targeted |
+| **Triggered** | Classification routing hints | Every message | ~100 tokens |
+| **Triggered** | PostToolUse validation | After `.md` writes | ~200 tokens |
+| **Rare** | Full file reads | Only when explicitly needed | Variable |
+
+SessionStart loads **metadata and filenames only** — no full file reads at startup. Claude queries by meaning via QMD before reading files, so it pulls only what's relevant. The classification hook is one lightweight Python call per message. The validation hook only fires on markdown writes and skips non-vault files.
 
 ---
 

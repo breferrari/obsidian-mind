@@ -324,8 +324,8 @@ Five lifecycle hooks in `.claude/settings.json`:
 | Hook | When | What |
 |------|------|------|
 | SessionStart | On startup/resume | QMD re-index, inject North Star, active work, recent changes, tasks, file listing |
-| UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person) and injects routing hints |
-| PostToolUse | After writing `.md` | Validates frontmatter, checks for wikilinks, verifies folder placement |
+| UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints |
+| PostToolUse | After writing `.md` | Validates frontmatter, checks for wikilinks |
 | PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
 | Stop | End of every session | Lightweight checklist reminder: archive, update indexes, check orphans. For thorough review, use `/om-wrap-up` instead. |
 

@@ -135,8 +135,8 @@ qmd update && qmd embed
 | 钩子 | 触发时机 | 功能 |
 |------|---------|------|
 | 🚀 SessionStart | 启动/恢复时 | QMD 重新索引，注入北极星目标、活跃工作、最近变更、任务、文件列表 |
-| 💬 UserPromptSubmit | 每条消息 | 对内容分类（决策、事件、成就、1:1、架构、人员）并注入路由提示 |
-| ✍️ PostToolUse | 写入 `.md` 后 | 验证 frontmatter、检查 wikilinks、验证文件夹位置 |
+| 💬 UserPromptSubmit | 每条消息 | 对内容分类（决策、事件、成就、1:1、架构、人员、项目更新）并注入路由提示 |
+| ✍️ PostToolUse | 写入 `.md` 后 | 验证 frontmatter、检查 wikilinks |
 | 💾 PreCompact | 上下文压缩前 | 将会话记录备份到 `thinking/session-logs/` |
 | 🏁 Stop | 会话结束时 | 检查清单：归档已完成项目、更新索引、检查孤立笔记 |
 

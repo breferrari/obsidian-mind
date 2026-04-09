@@ -102,7 +102,7 @@ Subagents run in isolated context windows via `.claude/agents/`. They don't poll
 |------|------|------|
 | SessionStart | On startup/resume | QMD re-index, inject North Star, active work, recent changes, tasks, file listing |
 | UserPromptSubmit | Every message | Classify content (decision, incident, 1:1, win, architecture, person, project update) and inject routing hints |
-| PreToolUse (Write/Edit) | Before file writes | Validate frontmatter, check for wikilinks, verify folder placement |
+| PostToolUse | After writing `.md` | Validates frontmatter, checks for wikilinks |
 | PreCompact | Before context compaction | Back up session transcript to `thinking/session-logs/` |
 | Stop | End of session | Checklist: archive, update indexes, check orphans |
 
