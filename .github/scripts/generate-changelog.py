@@ -114,9 +114,10 @@ def prepend_to_changelog(section, version):
 
     # Check if this version already exists (idempotent on re-runs)
     version_pattern = rf"(?m)^## {re.escape(version)} — .*$"
-    existing_pattern = rf"(?ms)^## {re.escape(version)} — .*?\n.*?(?=^## |\Z)"
+    # Match everything from this version header up to the next version header (or end of file)
+    existing_pattern = rf"(?ms)^## {re.escape(version)} — .*?(?=\n## [^\n]|\Z)"
     if re.search(version_pattern, content):
-        new_content = re.sub(existing_pattern, section.rstrip() + "\n", content, count=1)
+        new_content = re.sub(existing_pattern, section.rstrip(), content, count=1)
     else:
         # Insert after the "# Changelog" header
         header = "# Changelog"
