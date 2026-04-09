@@ -1,6 +1,10 @@
 🌐 **English** | [日本語](README.ja.md) | [中文](README.zh-CN.md) | [한국어](README.ko.md)
 
-# 🧠 Obsidian Mind
+<p align="center">
+  <img src="obsidian-mind-logo.png" alt="Obsidian Mind" width="120">
+</p>
+
+<h1 align="center">Obsidian Mind</h1>
 
 [![Claude Code](https://img.shields.io/badge/claude%20code-full%20support-D97706)](https://docs.anthropic.com/en/docs/claude-code)
 [![Codex CLI](https://img.shields.io/badge/codex%20cli-hooks%20%2B%20commands-10A37F)](https://github.com/openai/codex)
