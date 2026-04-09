@@ -25,7 +25,12 @@ PREFIX_MAP = {
     "perf": "Changed",
     "test": "Changed",
     "chore": "Changed",
+    "build": "Changed",
+    "style": "Changed",
+    "revert": "Fixed",
 }
+
+SKIP_PREFIXES = {"release"}
 
 SECTION_ORDER = ["Added", "Changed", "Fixed", "Removed"]
 
@@ -63,6 +68,8 @@ def classify_commit(message):
     if match:
         prefix = match.group(1).lower()
         description = match.group(2).strip()
+        if prefix in SKIP_PREFIXES:
+            return None, None
         category = PREFIX_MAP.get(prefix, "Changed")
         return category, description
 
@@ -78,6 +85,8 @@ def generate_section(version, commits):
 
     for msg in commits:
         category, description = classify_commit(msg)
+        if category is None:
+            continue
         if category not in grouped:
             grouped[category] = []
         grouped[category].append(description)
