@@ -17,10 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate version format
+      - name: Validate and normalize version
         env:
-          VERSION: ${{ inputs.version }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
+          # Auto-prepend v if missing
+          VERSION="$INPUT_VERSION"
+          if [[ ! "$VERSION" =~ ^v ]]; then
+            VERSION="v$VERSION"
+          fi
+
           if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
             echo "::error::Invalid version format: $VERSION (expected v*.* or v*.*.*)"
             exit 1
@@ -30,9 +36,9 @@ jobs:
             exit 1
           fi
 
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
       - name: Create and push tag
-        env:
-          VERSION: ${{ inputs.version }}
         run: |
           git tag "$VERSION"
           git push origin "$VERSION"
