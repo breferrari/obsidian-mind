@@ -146,13 +146,13 @@ obsidian-mind does **not** dump your entire vault into context. It uses tiered l
 
 | Tier | What | When | Cost |
 |------|------|------|------|
-| **Always** | `CLAUDE.md` + SessionStart metadata (filenames, git summary, tasks) | Session start | ~2K tokens |
+| **Always** | `CLAUDE.md` + SessionStart context (North Star excerpt, git summary, tasks, vault file listing) | Session start | ~2K tokens |
 | **On-demand** | QMD semantic search results | When Claude needs specific context | Targeted |
 | **Triggered** | Classification routing hints | Every message | ~100 tokens |
 | **Triggered** | PostToolUse validation | After `.md` writes | ~200 tokens |
 | **Rare** | Full file reads | Only when explicitly needed | Variable |
 
-SessionStart loads **metadata and filenames only** — no full file reads at startup. Claude queries by meaning via QMD before reading files, so it pulls only what's relevant. The classification hook is one lightweight Python call per message. The validation hook only fires on markdown writes and skips non-vault files.
+SessionStart loads **lightweight context** — small excerpts from key files, filenames, and git summary — not full note contents. Claude queries by meaning via QMD before reading files, so it pulls only what's relevant. The classification hook is one lightweight Python call per message. The validation hook only fires on markdown writes and skips excluded paths.
 
 ---
 
