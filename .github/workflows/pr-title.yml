@@ -1,0 +1,23 @@
+name: PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title format
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [[ ! "$TITLE" =~ ^(feat|fix|docs|ci|refactor|perf|test|chore|build|style|revert):\ .+ ]]; then
+            echo "::error::PR title must follow conventional format: 'type: description'"
+            echo ""
+            echo "Valid types: feat, fix, docs, ci, refactor, perf, test, chore, build, style, revert"
+            echo "Example: 'feat: add /om-review command'"
+            echo ""
+            echo "See CONTRIBUTING.md for details."
+            exit 1
+          fi
