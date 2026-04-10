@@ -7,7 +7,20 @@ Thanks for your interest in contributing to obsidian-mind!
 1. Fork the repo and create a branch from `main`
 2. Make your changes
 3. Open a PR with a title following the [commit format](#pr-title-format)
-4. That's it — the maintainer will review and merge
+4. The maintainer will review, then merge, request changes, or close with context
+
+## Before You Open a PR
+
+**Small changes can go straight to PR.** Typos, fixes, one-file updates, doc corrections. Just open it.
+
+**Bigger changes should start with an issue.** This includes:
+
+- Rewrites, migrations, or language swaps
+- New commands, agents, hooks, or vault structure
+- Anything that touches the install story or runtime requirements
+- Anything listed as self-owned in the [Roadmap](README.md#roadmap) section of the README
+
+Some areas have ongoing work that isn't public yet. Opening an issue first lets us check whether the direction is already on the roadmap before you write code. Saves you from building something that can't be merged.
 
 ## PR Title Format
 
@@ -80,4 +93,4 @@ Tests run automatically on PRs that touch `.claude/scripts/`.
 
 ## Questions?
 
-Open an issue or start a discussion. PRs are welcome without prior assignment — just open it.
+Open an issue or start a discussion. For small changes, PRs are welcome directly. For anything bigger, see [Before You Open a PR](#before-you-open-a-pr).
