@@ -4,6 +4,8 @@ This vault is built for [Claude Code](https://claude.ai/code) with a full operat
 
 **Read `CLAUDE.md` for all vault conventions** — structure, note types, linking rules, frontmatter schemas, indexes, and workflows. Most of the content is agent-agnostic.
 
+If you need a stable user profile entry point, read `USER.md` after `CLAUDE.md`. `USER.md` is the concise summary; the linked vault notes remain the source of truth.
+
 ## Hooks
 
 The hook scripts in `.claude/scripts/` are agent-agnostic Node.js and shell — no Claude SDK dependencies. Hook configs are provided for three agents:

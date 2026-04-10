@@ -99,8 +99,9 @@ You: "wrap up"
 2. Open the folder as an **Obsidian vault**
 3. Enable the **Obsidian CLI** in Settings → General (requires Obsidian 1.12+)
 4. Run your agent in the vault directory: **`claude`**, **`codex`**, or **`gemini`**
-5. Fill in **`brain/North Star.md`** with your goals — this grounds every session
-6. Start talking about work
+5. Fill in **`USER.md`** with your identity, working style, and preferences
+6. Fill in **`brain/North Star.md`** with your goals — this grounds every session
+7. Start talking about work
 
 ### 🔍 Optional: QMD Semantic Search
 
@@ -133,6 +134,8 @@ qmd update && qmd embed
 **Folders group by purpose. Links group by meaning.** A note lives in one folder (its home) but links to many notes (its context). Your agent maintains this graph — linking work notes to people, decisions, and competencies automatically. When review season arrives, the backlinks on each competency note are already the evidence trail. A note without links is a bug.
 
 **Vault-first memory** keeps context across sessions and machines. All durable knowledge lives in `brain/` topic notes (git-tracked, Obsidian-browsable, linked). Claude Code's `MEMORY.md` (`~/.claude/`) is an auto-loaded index that points to vault locations — never the storage itself. This means memories survive machine changes and are part of the graph.
+
+**`USER.md` provides a stable front door for user context.** It gives agents one concise place to learn who you are, how you like to work, and where the deeper source notes live. It is a summary and routing layer, not a replacement for `brain/` or `org/`.
 
 **Sessions have a designed lifecycle.** The `SessionStart` hook auto-injects your North Star goals, active projects, recent changes, open tasks, and the full vault file listing — your agent starts every session with context, not a blank slate. At the end, say "wrap up" and the agent runs `/om-wrap-up` — verifying notes, updating indexes, and spotting uncaptured wins. The `CLAUDE.md` operating manual governs everything in between: where to file things, how to link, when to split a note, what to do with decisions and incidents.
 

@@ -2,6 +2,8 @@
 
 Personal Obsidian vault -- an external brain for work notes, decisions, performance tracking, and Claude context.
 
+`USER.md` at the vault root is the stable user profile entry point. Use it for a concise snapshot of the user's identity, working style, and preferences, then follow its links to `brain/` and `org/` notes for the durable source material.
+
 ## Skills & Capabilities
 
 This vault has [obsidian-skills](https://github.com/kepano/obsidian-skills) installed in `.claude/skills/`. Follow these skill conventions:
@@ -43,6 +45,7 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 | Folder | Purpose | Key Files |
 |--------|---------|-----------|
 | `Home.md` | **Vault entry point** -- embedded Base views, quick links | Open this first |
+| `USER.md` | **User profile entry point** -- concise identity, preferences, working style, and links to deeper notes | Read when you need user context |
 | `vault-manifest.json` | **Template metadata** -- version, infrastructure vs user content boundaries, frontmatter schemas, version fingerprints | Used by `/om-vault-upgrade` for migration |
 | `CHANGELOG.md` | **Version history** -- tracks template releases (v1--v3.3) with what changed | Reference for upgrade paths |
 | `bases/` | **All Bases centralized** -- dynamic views for navigation | `Work Dashboard`, `Incidents`, `People Directory`, `1-1 History`, `Review Evidence`, `Competency Map`, `Templates` |
@@ -99,10 +102,11 @@ The `SessionStart` hook automatically injects rich context: vault file listing, 
 If doing it manually:
 
 1. Read `Home.md` -- vault entry point with embedded dashboards
-2. Read `brain/North Star.md` -- ground suggestions in current goals
-3. Check `work/Index.md` -- see active projects and recent notes
-4. Scan `brain/Memories.md` -- index of memory topics, then read relevant topic notes
-5. `obsidian tasks daily todo` -- see pending items
+2. Read `USER.md` -- user profile entry point for preferences and working style
+3. Read `brain/North Star.md` -- ground suggestions in current goals
+4. Check `work/Index.md` -- see active projects and recent notes
+5. Scan `brain/Memories.md` -- index of memory topics, then read relevant topic notes
+6. `obsidian tasks daily todo` -- see pending items
 
 ### Ending a Substantial Session
 

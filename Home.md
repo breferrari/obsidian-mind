@@ -21,7 +21,7 @@ tags:
 ## Quick Links
 
 - [[Index|Work Notes]] | [[People & Context]] | [[Brag Doc]]
-- [[Memories]] | [[North Star]] | [[Skills]]
+- [[Memories]] | [[North Star]] | [[Skills]] | [[User]]
 
 ## Recent 1:1s
 

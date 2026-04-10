@@ -4,6 +4,7 @@
   "released": "2026-04-09",
   "infrastructure": [
     "CLAUDE.md",
+    "USER.md",
     "Home.md",
     "README.md",
     "CHANGELOG.md",
