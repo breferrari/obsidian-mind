@@ -16,7 +16,7 @@
 [![Obsidian CLI](https://img.shields.io/badge/obsidian--cli-integrated-E6E6E6)](https://github.com/kepano/obsidian-cli)
 [![Obsidian Skills](https://img.shields.io/badge/obsidian--skills-integrated-8B5CF6)](https://github.com/kepano/obsidian-skills)
 [![QMD](https://img.shields.io/badge/qmd-semantic%20search-FF6B6B)](https://github.com/tobi/qmd)
-[![Python](https://img.shields.io/badge/python-3.8%2B-3776AB)](https://python.org)
+[![Node.js](https://img.shields.io/badge/node.js-18%2B-339933)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > **Claude Code가 모든 것을 기억하게 해주는 Obsidian 볼트.** 세션을 시작하고 하루에 대해 이야기하면, Claude가 나머지를 처리합니다 — 노트, 링크, 인덱스, 성과 추적까지. 모든 대화가 이전 대화 위에 쌓입니다.
@@ -123,7 +123,7 @@ qmd update && qmd embed
 
 - [Obsidian](https://obsidian.md) 1.12+ (CLI 지원)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- Python 3 (훅 스크립트용)
+- Node.js 18+ (훅 스크립트용)
 - Git (버전 히스토리용)
 - [QMD](https://github.com/tobi/qmd) (선택 사항, 시맨틱 검색용)
 
@@ -164,11 +164,11 @@ obsidian-mind는 전체 볼트를 컨텍스트에 로드하지 **않습니다**.
 | **트리거** | PostToolUse 검증 | `.md` 작성 후 | ~200 토큰 |
 | **드물게** | 전체 파일 읽기 | 명시적으로 필요한 경우만 | 가변 |
 
-SessionStart는 **가벼운 컨텍스트**를 로드합니다 — 주요 파일의 짧은 발췌, 파일명, git 요약만 로드하며 전체 노트 내용은 읽지 않습니다. 에이전트는 QMD를 통해 의미 기반 검색 후 파일을 읽으므로 관련 정보만 가져옵니다. 분류 훅은 메시지당 가벼운 Python 호출 1회입니다. 검증 훅은 마크다운 쓰기 시에만 실행되며 제외된 경로는 건너뜁니다.
+SessionStart는 **가벼운 컨텍스트**를 로드합니다 — 주요 파일의 짧은 발췌, 파일명, git 요약만 로드하며 전체 노트 내용은 읽지 않습니다. 에이전트는 QMD를 통해 의미 기반 검색 후 파일을 읽으므로 관련 정보만 가져옵니다. 분류 훅은 메시지당 가벼운 Node.js 호출 1회입니다. 검증 훅은 마크다운 쓰기 시에만 실행되며 제외된 경로는 건너뜁니다.
 
 ### 🌐 다른 에이전트와 사용하기
 
-obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAUDE.md`의 볼트 규약, `.claude/scripts/`의 훅 스크립트, `.claude/commands/`의 18개 커맨드는 모두 에이전트 비의존적입니다 — 순수 Markdown, Python, 셸이며 SDK 의존성이 없습니다.
+obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAUDE.md`의 볼트 규약, `.claude/scripts/`의 훅 스크립트, `.claude/commands/`의 18개 커맨드는 모두 에이전트 비의존적입니다 — 순수 Markdown, Node.js, 셸이며 SDK 의존성이 없습니다.
 
 **Claude Code** — 완전 지원. 훅, 커맨드, 서브에이전트, 메모리 시스템이 모두 기본으로 작동합니다.
 

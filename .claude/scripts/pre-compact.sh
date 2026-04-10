@@ -4,10 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 INPUT=$(cat)
-IFS=$'\t' read -r TRANSCRIPT_PATH TRIGGER <<< "$(echo "$INPUT" | bash "$SCRIPT_DIR/find-python.sh" -c "
-import json,sys
-d=json.load(sys.stdin)
-print(d.get('transcript_path','') + '\t' + d.get('trigger','unknown'))
+IFS=$'\t' read -r TRANSCRIPT_PATH TRIGGER <<< "$(echo "$INPUT" | node -e "
+let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const o=JSON.parse(d);console.log((o.transcript_path||'')+'\t'+(o.trigger||'unknown'))}catch{console.log('\tunknown')}})
 " 2>/dev/null || printf '\tunknown')"
 
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then

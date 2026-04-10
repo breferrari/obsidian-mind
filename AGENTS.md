@@ -6,7 +6,7 @@ This vault is built for [Claude Code](https://claude.ai/code) with a full operat
 
 ## Hooks
 
-The hook scripts in `.claude/scripts/` are agent-agnostic Python and shell — no Claude SDK dependencies. Hook configs are provided for three agents:
+The hook scripts in `.claude/scripts/` are agent-agnostic Node.js and shell — no Claude SDK dependencies. Hook configs are provided for three agents:
 
 | Agent | Config | Status |
 |-------|--------|--------|
@@ -17,8 +17,8 @@ The hook scripts in `.claude/scripts/` are agent-agnostic Python and shell — n
 | Script | Purpose | Claude event | Codex event | Gemini event |
 |--------|---------|--------------|-------------|--------------|
 | `session-start.sh` | Inject vault context at startup | SessionStart | SessionStart | SessionStart |
-| `classify-message.py` | Classify messages, inject routing hints | UserPromptSubmit | UserPromptSubmit | BeforeAgent |
-| `validate-write.py` | Validate frontmatter and wikilinks | PostToolUse | PostToolUse | AfterTool |
+| `classify-message.js` | Classify messages, inject routing hints | UserPromptSubmit | UserPromptSubmit | BeforeAgent |
+| `validate-write.js` | Validate frontmatter and wikilinks | PostToolUse | PostToolUse | AfterTool |
 | `pre-compact.sh` | Back up transcript before compaction | PreCompact | — | PreCompress |
 
 ## Commands

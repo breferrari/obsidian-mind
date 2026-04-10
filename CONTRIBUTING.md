@@ -67,13 +67,13 @@ The release pipeline handles these automatically — **do not include in your PR
 - [ ] Counts match everywhere (commands, agents) if you added/removed any
 - [ ] New command/agent appears in ALL doc tables (CLAUDE.md + README + Skills.md)
 - [ ] Translations flagged if you changed README.md (maintainer can handle these)
-- [ ] Tests pass: `python .claude/scripts/test_hooks.py`
+- [ ] Tests pass: `node --test .claude/scripts/test_hooks.js`
 - [ ] Examples use generic dates and names, not specific to any company or person
 
 ## Running Tests
 
 ```bash
-python .claude/scripts/test_hooks.py -v
+node --test .claude/scripts/test_hooks.js
 ```
 
 Tests run automatically on PRs that touch `.claude/scripts/`.

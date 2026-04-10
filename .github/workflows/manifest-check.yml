@@ -20,16 +20,13 @@ jobs:
           MISSING=()
 
           # Read infrastructure globs from manifest
-          GLOBS=$(python3 -c "
-          import json
-          with open('vault-manifest.json') as f:
-              m = json.load(f)
-          for g in m.get('infrastructure', []):
-              print(g)
+          GLOBS=$(node -e "
+          const m = JSON.parse(require('fs').readFileSync('vault-manifest.json','utf-8'));
+          (m.infrastructure || []).forEach(g => console.log(g));
           ")
 
           # For each file in watched directories, check if any glob covers it
-          for f in .claude/commands/*.md .claude/agents/*.md .claude/scripts/*.py .claude/scripts/*.sh templates/*.md bases/*.base; do
+          for f in .claude/commands/*.md .claude/agents/*.md .claude/scripts/*.js .claude/scripts/*.sh templates/*.md bases/*.base; do
             [ -f "$f" ] || continue
             COVERED=false
             while IFS= read -r glob; do

@@ -66,7 +66,7 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 | `templates/` | Obsidian templates | `Work Note.md`, `Decision Record.md`, etc. |
 | `.claude/commands/` | 18 slash commands | See command table above |
 | `.claude/agents/` | 9 subagents | See subagents table below |
-| `.claude/scripts/` | Hook scripts | `session-start.sh`, `classify-message.py`, `validate-write.py`, `pre-compact.sh` |
+| `.claude/scripts/` | Hook scripts | `session-start.sh`, `classify-message.js`, `validate-write.js`, `pre-compact.sh` |
 | `.claude/skills/` | Obsidian + QMD skills | Loaded automatically via Skill tool |
 
 ## Obsidian CLI

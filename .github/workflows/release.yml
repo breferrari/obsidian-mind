@@ -23,9 +23,9 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
+          node-version: '20'
 
       - name: Resolve version
         env:
@@ -62,18 +62,18 @@ jobs:
           git push origin "$VERSION"
 
       - name: Run tests
-        run: python3 .claude/scripts/test_hooks.py
+        run: node --test .claude/scripts/test_hooks.js
 
       - name: Generate changelog
         run: |
-          python3 .github/scripts/generate-changelog.py "$VERSION" > /tmp/changelog_section.md
+          node .github/scripts/generate-changelog.js "$VERSION" > /tmp/changelog_section.md
 
       - name: Build release body
         run: |
           cat > /tmp/release_body.md <<'HEADER'
           ## Quick Start
 
-          **Requirements:** [Obsidian](https://obsidian.md), [Python 3.8+](https://python.org/downloads), and one of: [Claude Code](https://claude.ai/code) · [Codex CLI](https://github.com/openai/codex) · [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+          **Requirements:** [Obsidian](https://obsidian.md), [Node.js 18+](https://nodejs.org), and one of: [Claude Code](https://claude.ai/code) · [Codex CLI](https://github.com/openai/codex) · [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 
           ```bash
           git clone https://github.com/breferrari/obsidian-mind.git
@@ -107,7 +107,7 @@ jobs:
           zip -r "$ZIP_NAME" . \
             -x ".git/*" \
             -x ".github/*" \
-            -x ".claude/scripts/test_hooks.py" \
+            -x ".claude/scripts/test_hooks.js" \
             -x ".DS_Store" \
             -x "thinking/session-logs/*"
 

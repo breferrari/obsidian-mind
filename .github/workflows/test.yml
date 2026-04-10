@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
+          node-version: '20'
       - name: Run hook tests
-        run: python .claude/scripts/test_hooks.py -v
+        run: node --test .claude/scripts/test_hooks.js
