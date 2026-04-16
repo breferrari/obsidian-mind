@@ -20,7 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          # workflow_dispatch: check out main (that flow also tags main's HEAD).
+          # tag push: check out the tagged commit (github.ref) so the release
+          # artifacts, changelog scope, and zip all anchor to what was tagged.
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
