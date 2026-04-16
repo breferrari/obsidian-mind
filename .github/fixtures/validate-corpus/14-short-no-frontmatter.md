@@ -1,0 +1,1 @@
+Short note without frontmatter.

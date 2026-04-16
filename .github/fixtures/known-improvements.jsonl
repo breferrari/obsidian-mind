@@ -1,0 +1,4 @@
+// Declared intentional divergences between Python and TypeScript implementations.
+// One JSON object per line: { "mode": "classify"|"validate", "input": "<exact input>", "note": "<rationale>" }
+// Lines starting with // are comments. Blank lines are ignored.
+// Empty for v5.0 — the port is strictly 1-1 with no intentional behavioral changes.
