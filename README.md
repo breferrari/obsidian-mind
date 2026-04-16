@@ -126,6 +126,8 @@ qmd update && qmd embed
 - Git (for version history)
 - [QMD](https://github.com/tobi/qmd) (optional, for semantic search)
 
+> **Note on the Node flag.** Hook scripts execute TypeScript directly via Node's `--experimental-strip-types` flag, stable in Node 22.6+ (Aug 2024) and the default behaviour in Node 23.6+. The flag is marked experimental but has been unchanged across 22 LTS and 24 LTS; if a future Node release retires or renames it, hook commands in `.claude/settings.json`, `.codex/hooks.json`, and `.gemini/settings.json` need a one-line update.
+
 ---
 
 ## ⚙️ How It Works

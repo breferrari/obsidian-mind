@@ -127,6 +127,8 @@ qmd update && qmd embed
 - Git（バージョン履歴用）
 - [QMD](https://github.com/tobi/qmd)（オプション、セマンティック検索用）
 
+> **Node フラグについて。** フックスクリプトは Node の `--experimental-strip-types` フラグで TypeScript を直接実行します。このフラグは Node 22.6+（2024年8月）で安定し、Node 23.6+ ではデフォルトの動作になりました。実験的扱いではあるものの 22 LTS と 24 LTS で挙動は変わっていません。将来の Node リリースでフラグが廃止・改名された場合、`.claude/settings.json`、`.codex/hooks.json`、`.gemini/settings.json` のフックコマンドを1行修正する必要があります。
+
 ---
 
 ## ⚙️ 仕組み

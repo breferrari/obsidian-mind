@@ -127,6 +127,8 @@ qmd update && qmd embed
 - Git (버전 히스토리용)
 - [QMD](https://github.com/tobi/qmd) (선택 사항, 시맨틱 검색용)
 
+> **Node 플래그에 관한 참고.** 훅 스크립트는 Node의 `--experimental-strip-types` 플래그로 TypeScript를 직접 실행합니다. 이 플래그는 Node 22.6+ (2024년 8월)부터 안정화되었고, Node 23.6+ 에서는 기본 동작이 되었습니다. 실험적(experimental)으로 표시되어 있지만 22 LTS와 24 LTS 전반에서 동작이 변경된 적은 없습니다. 향후 Node 릴리스에서 플래그가 폐지되거나 이름이 변경되면 `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`의 훅 명령어를 한 줄만 수정하면 됩니다.
+
 ---
 
 ## ⚙️ 작동 원리

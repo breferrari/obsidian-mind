@@ -127,6 +127,8 @@ qmd update && qmd embed
 - Git（用于版本历史）
 - [QMD](https://github.com/tobi/qmd)（可选，用于语义搜索）
 
+> **关于 Node 标志。** 钩子脚本通过 Node 的 `--experimental-strip-types` 标志直接执行 TypeScript。该标志自 Node 22.6+（2024 年 8 月）起稳定，并在 Node 23.6+ 中成为默认行为。虽然被标记为实验性（experimental），但在 22 LTS 和 24 LTS 中行为均未改变。如果未来的 Node 版本废弃或重命名该标志，只需在 `.claude/settings.json`、`.codex/hooks.json` 和 `.gemini/settings.json` 中对钩子命令做一行修改即可。
+
 ---
 
 ## ⚙️ 工作原理
