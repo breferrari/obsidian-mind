@@ -17,6 +17,13 @@ import {
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import {
+	take,
+	formatDateHeader,
+	formatActiveWork,
+	formatRecentChanges,
+	isSkippedPath,
+} from "./lib/session-start.ts";
 
 const cwd =
 	process.env["CLAUDE_PROJECT_DIR"] ??
@@ -62,19 +69,6 @@ function runCmd(
 	return { kind: "ok", stdout: r.stdout ?? "" };
 }
 
-function take(stdout: string, n: number): string {
-	return stdout.split("\n").slice(0, n).join("\n");
-}
-
-function dateHeader(): string {
-	// Local time (matches `date +%Y-%m-%d`), not UTC.
-	const d = new Date();
-	const y = d.getFullYear();
-	const m = String(d.getMonth() + 1).padStart(2, "0");
-	const day = String(d.getDate()).padStart(2, "0");
-	const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
-	return `${y}-${m}-${day} (${weekday})`;
-}
 
 function northStar(): string {
 	// Prefer Obsidian CLI when available (authoritative for wikilink resolution)
@@ -95,8 +89,7 @@ function recentChanges(): string {
 		"--no-merges",
 	]);
 	if (r.kind !== "ok") return "(no git history)";
-	const lines = r.stdout.split("\n").filter((l) => l.length > 0).slice(0, 15);
-	return lines.length > 0 ? lines.join("\n") : "(no git history)";
+	return formatRecentChanges(r.stdout, 15);
 }
 
 function openTasks(): string {
@@ -113,11 +106,8 @@ function activeWork(): string {
 	} catch {
 		return "(none)";
 	}
-	const names = entries
-		.filter((e) => e.isFile() && e.name.endsWith(".md"))
-		.map((e) => e.name.replace(/\.md$/, ""))
-		.slice(0, 10);
-	return names.length > 0 ? names.join("\n") : "(none)";
+	const files = entries.filter((e) => e.isFile()).map((e) => e.name);
+	return formatActiveWork(files, 10);
 }
 
 const SKIP_PREFIXES: readonly string[] = [
@@ -138,9 +128,7 @@ function listMd(): string[] {
 		}
 		for (const e of entries) {
 			const full = dir === "." ? e.name : join(dir, e.name);
-			if (SKIP_PREFIXES.some((p) => full === p || full.startsWith(p + "/"))) {
-				continue;
-			}
+			if (isSkippedPath(full, SKIP_PREFIXES)) continue;
 			if (e.isDirectory()) walk(full);
 			else if (e.isFile() && e.name.endsWith(".md")) results.push(`./${full}`);
 		}
@@ -153,7 +141,7 @@ const sections = [
 	"## Session Context",
 	"",
 	"### Date",
-	dateHeader(),
+	formatDateHeader(new Date()),
 	"",
 	"### North Star (current goals)",
 	northStar(),
