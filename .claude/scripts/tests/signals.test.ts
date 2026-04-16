@@ -78,6 +78,42 @@ describe("SIGNALS table integrity", () => {
 		}
 	});
 
+	test("cross-signal phrase sharing is limited to declared pairs", () => {
+		// Only WIN ↔ PROJECT UPDATE and WIN ↔ PROJECT UPDATE (via Chinese delivery
+		// verbs 发布了/上线了) should share patterns. Any other pair sharing a
+		// phrase is a table bug — patterns leak into unrelated categories.
+		const DECLARED_OVERLAP_PAIRS = new Set([
+			"WIN|PROJECT UPDATE",
+			"PROJECT UPDATE|WIN",
+		]);
+
+		const phraseToSignals = new Map<string, string[]>();
+		for (const s of SIGNALS) {
+			for (const p of s.patterns) {
+				const list = phraseToSignals.get(p) ?? [];
+				if (!list.includes(s.name)) list.push(s.name);
+				phraseToSignals.set(p, list);
+			}
+		}
+
+		for (const [phrase, names] of phraseToSignals) {
+			if (names.length < 2) continue;
+			// Sort to get canonical pair key
+			const pairs: string[] = [];
+			for (let i = 0; i < names.length; i++) {
+				for (let j = i + 1; j < names.length; j++) {
+					pairs.push(`${names[i]}|${names[j]}`);
+					pairs.push(`${names[j]}|${names[i]}`);
+				}
+			}
+			const allDeclared = pairs.every((p) => DECLARED_OVERLAP_PAIRS.has(p));
+			assert.ok(
+				allDeclared,
+				`Phrase "${phrase}" matches multiple signals ${JSON.stringify(names)}; only WIN↔PROJECT UPDATE sharing is declared.`,
+			);
+		}
+	});
+
 	test("known signal categories are present", () => {
 		// Guards against accidental deletion. Additions do not require a test update.
 		const names = new Set(SIGNALS.map((s) => s.name));

@@ -177,6 +177,27 @@ describe("validate-write — valid note produces no warnings", () => {
 	});
 });
 
+// --- Performance ---
+describe("validate-write — performance", () => {
+	test("1MB note validates in under 500ms", () => {
+		const path = join(TMP_DIR, "big.md");
+		const header =
+			"---\ndate: 2026-04-17\ndescription: large note\ntags:\n  - test\n---\n[[link]]\n";
+		const body = "lorem ipsum ".repeat(90_000);
+		writeFileSync(path, header + body);
+
+		const start = performance.now();
+		const { code } = runScript({ tool_input: { file_path: path } });
+		const elapsed = performance.now() - start;
+
+		assert.equal(code, 0);
+		assert.ok(
+			elapsed < 1500,
+			`validate-write took ${elapsed.toFixed(1)}ms on ~1MB note (budget 1500ms; includes subprocess spawn)`,
+		);
+	});
+});
+
 // --- Type safety ---
 describe("validate-write — robustness to bad input", () => {
 	test("null tool_input", () => {
