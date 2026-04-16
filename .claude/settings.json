@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'INPUT=$(cat); ACTIVE=$(printf \"%s\" \"$INPUT\" | node --experimental-strip-types .claude/scripts/lib/read-field.ts stop_hook_active 2>/dev/null || echo false); [ \"$ACTIVE\" = \"true\" ] && exit 0; echo \"Session end checklist:\n- Archive completed projects? (work/active/ -> work/archive/YYYY/)\n- Update indexes? (Index.md, Memories.md, People & Context, Brag Doc)\n- New notes linked? (orphans are bugs)\n- Run /om-vault-audit if many notes were created/modified\"'",
+            "command": "node --experimental-strip-types .claude/scripts/stop-checklist.ts",
             "timeout": 5
           }
         ]
