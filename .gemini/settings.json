@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/session-start.ts\"",
+            "command": "node --experimental-strip-types .claude/scripts/session-start.ts",
             "timeout": 30000
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/classify-message.ts\"",
+            "command": "node --experimental-strip-types .claude/scripts/classify-message.ts",
             "timeout": 15000
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/validate-write.ts\"",
+            "command": "node --experimental-strip-types .claude/scripts/validate-write.ts",
             "timeout": 15000
           }
         ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/pre-compact.ts\"",
+            "command": "node --experimental-strip-types .claude/scripts/pre-compact.ts",
             "timeout": 30000
           }
         ]

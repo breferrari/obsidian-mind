@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${CODEX_PROJECT_DIR:-.}/.claude/scripts/session-start.ts\"",
+            "command": "node --experimental-strip-types .claude/scripts/session-start.ts",
             "timeout": 30
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${CODEX_PROJECT_DIR:-.}/.claude/scripts/classify-message.ts\"",
+            "command": "node --experimental-strip-types .claude/scripts/classify-message.ts",
             "timeout": 15
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${CODEX_PROJECT_DIR:-.}/.claude/scripts/validate-write.ts\"",
+            "command": "node --experimental-strip-types .claude/scripts/validate-write.ts",
             "timeout": 15
           }
         ]
