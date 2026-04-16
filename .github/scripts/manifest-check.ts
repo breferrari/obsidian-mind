@@ -6,10 +6,6 @@
  * Emits GitHub workflow `::warning::` annotations for uncovered files. Does
  * not fail the job — this is an informational nudge to keep the manifest in
  * sync when new template files land.
- *
- * Ports the earlier inline bash that used a chained `sed` pipeline for
- * glob-to-regex conversion. Pure logic is extracted so it can be unit-
- * tested; see tests/manifest-check.test.ts.
  */
 
 import { readFileSync, readdirSync, type Dirent } from "node:fs";
@@ -22,9 +18,6 @@ type Manifest = { readonly infrastructure?: readonly string[] };
  * Grammar: `**` matches any characters (including `/`); `*` matches any
  * run of non-slash characters; every other character is matched literally
  * (with regex metacharacters escaped).
- *
- * Matches the behaviour of the previous sed chain, which is what the
- * existing entries in `vault-manifest.json` were written against.
  */
 export function globToRegex(glob: string): RegExp {
 	let pattern = "";

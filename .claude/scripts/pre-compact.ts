@@ -14,7 +14,6 @@ import {
 	readdirSync,
 	statSync,
 	unlinkSync,
-	existsSync,
 } from "node:fs";
 import { join } from "node:path";
 import { debug, readStdinJson } from "./lib/hook-io.ts";
@@ -67,8 +66,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	const trigger =
 		typeof input.trigger === "string" ? input.trigger : "unknown";
 
-	if (!transcriptPath || !existsSync(transcriptPath)) {
-		debug(`pre-compact: no usable transcript (path=${transcriptPath})`);
+	if (!transcriptPath) {
+		debug("pre-compact: no transcript_path in input");
 		process.exit(0);
 	}
 
@@ -85,8 +84,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		copyFileSync(transcriptPath, dest);
 		debug(`pre-compact: backed up ${transcriptPath} → ${dest}`);
 	} catch (err) {
-		// Copy failure is non-fatal — we exit 0 and move on.
-		debug(`pre-compact: copy failed: ${(err as Error).message}`);
+		// Both "transcript missing" (ENOENT) and any other fs error are non-fatal:
+		// hook protocol requires exit 0. The debug line differentiates so a
+		// missing-transcript scenario isn't logged as a "copy failed" anomaly.
+		const code = (err as NodeJS.ErrnoException).code;
+		if (code === "ENOENT") {
+			debug(`pre-compact: transcript not found (path=${transcriptPath})`);
+		} else {
+			debug(`pre-compact: copy failed: ${(err as Error).message}`);
+		}
 		process.exit(0);
 	}
 
