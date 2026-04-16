@@ -327,7 +327,7 @@ templates/              Obsidian templates with YAML frontmatter
 .claude/
   commands/             18 slash commands
   agents/               9 subagents
-  scripts/              Hook scripts + charcount.sh utility
+  scripts/              Hook scripts + charcount.ts utility
   skills/               Obsidian + QMD skills
   settings.json         5 hooks configuration
 ```

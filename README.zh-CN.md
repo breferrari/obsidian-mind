@@ -328,7 +328,7 @@ templates/              带有 YAML frontmatter 的 Obsidian 模板
 .claude/
   commands/             18 个斜杠命令
   agents/               9 个子代理
-  scripts/              钩子脚本 + charcount.sh 工具
+  scripts/              钩子脚本 + charcount.ts 工具
   skills/               Obsidian + QMD 技能
   settings.json         5 个钩子配置
 ```

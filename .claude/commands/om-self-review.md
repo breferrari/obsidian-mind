@@ -81,7 +81,7 @@ Before finalizing, review the full picture:
 
 ### 6. Quality Checks
 
-- [ ] All sections within your tool's character limit (use `.claude/scripts/charcount.sh <file> "<section>" "" <limit>`)
+- [ ] All sections within your tool's character limit (use `node --experimental-strip-types .claude/scripts/charcount.ts <file> "<section>" "" <limit>`)
 - [ ] Watch for special characters (em-dashes, en-dashes) — some review tools count these as multiple characters
 - [ ] Every factual claim backed by vault evidence
 - [ ] No fabricated decisions ("chose X over Y" when Y was never considered)

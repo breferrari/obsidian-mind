@@ -76,7 +76,7 @@ Don't show unchanged sections. The user can run `git diff` for the full picture.
 - This is NOT "remove AI words from a list." It's "make this sound like the same person who wrote the other notes in this vault."
 - If the note is already well-written, say so and make minimal changes. Don't edit for the sake of editing.
 - Respect the context — a peer review needs to stay professional even after humanizing. A 1:1 note can be loose.
-- If charcount matters (review content in `perf/`), verify limits after editing with `.claude/scripts/charcount.sh`.
+- If charcount matters (review content in `perf/`), verify limits after editing with `node --experimental-strip-types .claude/scripts/charcount.ts`.
 
 Content to edit:
 $ARGUMENTS

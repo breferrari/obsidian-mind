@@ -328,7 +328,7 @@ templates/              YAML 프론트매터가 포함된 Obsidian 템플릿
 .claude/
   commands/             18개 슬래시 명령어
   agents/               9개 서브에이전트
-  scripts/              훅 스크립트 + charcount.sh 유틸리티
+  scripts/              훅 스크립트 + charcount.ts 유틸리티
   skills/               Obsidian + QMD 스킬
   settings.json         5개 훅 설정
 ```
