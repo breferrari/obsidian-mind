@@ -1,6 +1,6 @@
 /**
- * Unit tests for the anyWordMatch core matcher.
- * 1-1 parity with TestAnyWordMatch from the Python test_hooks.py suite.
+ * Unit tests for the anyWordMatch core matcher: regex-boundary behavior,
+ * CJK adjacency, multi-word phrases, empty-input edge cases.
  */
 
 import { test, describe } from "node:test";

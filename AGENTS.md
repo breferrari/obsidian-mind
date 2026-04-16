@@ -16,10 +16,10 @@ The hook scripts in `.claude/scripts/` are agent-agnostic TypeScript and shell, 
 
 | Script | Purpose | Claude event | Codex event | Gemini event |
 |--------|---------|--------------|-------------|--------------|
-| `session-start.sh` | Inject vault context at startup | SessionStart | SessionStart | SessionStart |
+| `session-start.ts` | Inject vault context at startup | SessionStart | SessionStart | SessionStart |
 | `classify-message.ts` | Classify messages, inject routing hints | UserPromptSubmit | UserPromptSubmit | BeforeAgent |
 | `validate-write.ts` | Validate frontmatter and wikilinks | PostToolUse | PostToolUse | AfterTool |
-| `pre-compact.sh` | Back up transcript before compaction | PreCompact | — | PreCompress |
+| `pre-compact.ts` | Back up transcript before compaction | PreCompact | — | PreCompress |
 
 ## Commands
 
