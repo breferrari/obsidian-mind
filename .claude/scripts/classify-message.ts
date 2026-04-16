@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * UserPromptSubmit hook — classify user messages and inject routing hints.
  *

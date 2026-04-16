@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * PostToolUse hook — validate vault notes after Write/Edit operations.
  *
