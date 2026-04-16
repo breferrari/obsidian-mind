@@ -80,7 +80,6 @@ export function classifyCommit(message: string): ClassifiedCommit {
 		return { category, description };
 	}
 
-	// No prefix — capitalize first letter, put in Changed
 	if (!clean) return { category: "Changed", description: clean };
 	return {
 		category: "Changed",

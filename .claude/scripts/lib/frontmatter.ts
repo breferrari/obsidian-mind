@@ -1,9 +1,6 @@
 /**
- * Validation logic for the validate-write hook.
- *
- * Mirrors the Python implementation: normalize path separators for cross-platform
- * matching, skip dotfiles/templates/thinking and root template files, then check
- * for required frontmatter fields and wikilink presence on non-trivial notes.
+ * Validation logic for the validate-write hook: path skip rules, required
+ * frontmatter fields, and wikilink presence on non-trivial notes.
  */
 
 import { basename } from "node:path";
