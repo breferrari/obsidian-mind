@@ -26,11 +26,13 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Install typecheck deps (CI-only, not shipped)
         shell: bash
-        run: npm install --no-save --silent --prefix .claude/scripts typescript@5.6 @types/node@22
+        run: npm install --no-save --silent --prefix .claude/scripts typescript@5.6.3 @types/node@22.9.0
       - name: Typecheck
         shell: bash
-        run: .claude/scripts/node_modules/.bin/tsc --noEmit -p .claude/scripts/tsconfig.json
+        working-directory: .claude/scripts
+        run: npm run typecheck
       - name: Run hook tests
         shell: bash
-        run: node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts
+        working-directory: .claude/scripts
+        run: npm test
 

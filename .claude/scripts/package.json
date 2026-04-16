@@ -1,5 +1,9 @@
 {
   "private": true,
   "type": "module",
-  "description": "Hook scripts for obsidian-mind. Runtime has zero dependencies — executed by `node --experimental-strip-types`. This file exists only to mark .ts files as ESM for Node's module resolution and for CI typecheck (devDependencies installed ad hoc via `npm install --no-save typescript @types/node`)."
+  "description": "Hook scripts for obsidian-mind. Runtime has zero dependencies — executed by `node --experimental-strip-types`. This file exists only to mark .ts files as ESM for Node's module resolution and for CI typecheck (devDependencies installed ad hoc via `npm install --no-save typescript @types/node`).",
+  "scripts": {
+    "test": "node --experimental-strip-types --test 'tests/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  }
 }
