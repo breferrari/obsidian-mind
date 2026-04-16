@@ -22,7 +22,7 @@ if (!input) process.exit(0);
 const toolInput = input.tool_input;
 if (!toolInput || typeof toolInput !== "object") process.exit(0);
 
-const filePath = (toolInput as { file_path?: unknown }).file_path;
+const filePath = (toolInput as Record<string, unknown>).file_path;
 if (typeof filePath !== "string" || !filePath) process.exit(0);
 
 if (shouldSkipFile(filePath)) process.exit(0);

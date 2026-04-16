@@ -78,7 +78,20 @@ describe("SIGNALS table integrity", () => {
 		}
 	});
 
-	test("signal count stable (7 categories)", () => {
-		assert.equal(SIGNALS.length, 7);
+	test("known signal categories are present", () => {
+		// Guards against accidental deletion. Additions do not require a test update.
+		const names = new Set(SIGNALS.map((s) => s.name));
+		const required = [
+			"DECISION",
+			"INCIDENT",
+			"1:1 CONTENT",
+			"WIN",
+			"ARCHITECTURE",
+			"PERSON CONTEXT",
+			"PROJECT UPDATE",
+		];
+		for (const expected of required) {
+			assert.ok(names.has(expected), `missing signal: ${expected}`);
+		}
 	});
 });

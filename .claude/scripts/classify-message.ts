@@ -21,12 +21,7 @@ if (!input) process.exit(0);
 const prompt = input.prompt;
 if (typeof prompt !== "string" || !prompt) process.exit(0);
 
-let signals: string[] = [];
-try {
-	signals = classify(prompt);
-} catch {
-	process.exit(0);
-}
+const signals = classify(prompt);
 
 if (signals.length > 0) {
 	const hints = signals.map((s) => `- ${s}`).join("\n");
