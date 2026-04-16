@@ -5,14 +5,10 @@ on:
     branches: [main]
     paths:
       - '.claude/scripts/**'
-      - '.github/scripts/**'
-      - '.github/fixtures/**'
       - '.github/workflows/test.yml'
   pull_request:
     paths:
       - '.claude/scripts/**'
-      - '.github/scripts/**'
-      - '.github/fixtures/**'
       - '.github/workflows/test.yml'
 
 jobs:
@@ -38,21 +34,3 @@ jobs:
         shell: bash
         run: node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts
 
-  parity:
-    # Deletion gate: runs while the Python files still exist.
-    # The delete-Python commit removes this job.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Classify parity
-        run: node --experimental-strip-types .github/scripts/parity-check.ts classify
-      - name: Validate-write parity
-        run: node --experimental-strip-types .github/scripts/parity-check.ts validate
-      - name: Changelog parity (single-shot)
-        run: node --experimental-strip-types .github/scripts/parity-check.ts changelog
