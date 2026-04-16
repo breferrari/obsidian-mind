@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/session-start.sh",
+            "command": "node --experimental-strip-types .claude/scripts/session-start.ts",
             "timeout": 30000
           }
         ]
