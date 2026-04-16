@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/find-python.sh .claude/scripts/classify-message.py",
+            "command": "node --experimental-strip-types .claude/scripts/classify-message.ts",
             "timeout": 15000
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/find-python.sh .claude/scripts/validate-write.py",
+            "command": "node --experimental-strip-types .claude/scripts/validate-write.ts",
             "timeout": 15000
           }
         ]

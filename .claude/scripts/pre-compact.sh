@@ -4,11 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 INPUT=$(cat)
-IFS=$'\t' read -r TRANSCRIPT_PATH TRIGGER <<< "$(echo "$INPUT" | bash "$SCRIPT_DIR/find-python.sh" -c "
-import json,sys
-d=json.load(sys.stdin)
-print(d.get('transcript_path','') + '\t' + d.get('trigger','unknown'))
-" 2>/dev/null || printf '\tunknown')"
+IFS=$'\t' read -r TRANSCRIPT_PATH TRIGGER <<< "$(echo "$INPUT" | node --experimental-strip-types "$SCRIPT_DIR/lib/read-field.ts" transcript_path trigger 2>/dev/null || printf '\tunknown')"
 
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
   BACKUP_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}/thinking/session-logs"
