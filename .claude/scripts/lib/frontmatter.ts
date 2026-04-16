@@ -20,6 +20,9 @@ const ROOT_FILES: ReadonlySet<string> = new Set([
 
 const SKIP_PATH_SEGMENTS: readonly string[] = [
 	".claude/",
+	".codex/",
+	".gemini/",
+	".github/",
 	".obsidian/",
 	"templates/",
 	"thinking/",

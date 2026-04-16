@@ -33,6 +33,16 @@ describe("shouldSkipFile — skip rules", () => {
 	test("skips .claude/ paths", () => {
 		assert.equal(shouldSkipFile("/vault/.claude/commands/foo.md"), true);
 	});
+	test("skips .codex/ paths", () => {
+		assert.equal(shouldSkipFile("/vault/.codex/hooks.json.md"), true);
+	});
+	test("skips .gemini/ paths", () => {
+		assert.equal(shouldSkipFile("/vault/.gemini/settings.md"), true);
+	});
+	test("skips .github/ paths (PR templates, workflow docs)", () => {
+		assert.equal(shouldSkipFile("/repo/.github/pull_request_template.md"), true);
+		assert.equal(shouldSkipFile("/repo/.github/ISSUE_TEMPLATE/bug.md"), true);
+	});
 	test("skips templates/", () => {
 		assert.equal(shouldSkipFile("/vault/templates/Work Note.md"), true);
 	});
