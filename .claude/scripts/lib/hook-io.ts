@@ -1,12 +1,9 @@
 /**
- * Shared hook I/O: read JSON from stdin, write the hookSpecificOutput envelope
- * to stdout. Errors are swallowed — the hook protocol expects exit 0 and a
- * silent no-op on malformed input.
+ * Shared I/O for hook entry points.
  *
- * Output format matches the Python reference implementation byte-for-byte:
- * - Key/value separator `": "` and item separator `", "` (Python json.dump default)
- * - Non-ASCII characters escaped as \uXXXX (Python ensure_ascii=True default)
- * This preserves parity with any agent consumer that hardcoded format expectations.
+ * The hook protocol expects exit 0 on failure with no output. readStdinJson
+ * returns null on any error (malformed JSON, non-UTF8, empty stdin) so callers
+ * can `if (!input) process.exit(0)` uniformly.
  */
 
 export async function readStdinJson<T = unknown>(): Promise<T | null> {
@@ -24,25 +21,13 @@ export async function readStdinJson<T = unknown>(): Promise<T | null> {
 	}
 }
 
-/**
- * Serialize a string as JSON with Python's ensure_ascii=True behavior:
- * non-ASCII code units (>= 0x80) are emitted as \uXXXX escapes. Surrogate
- * pairs for chars above the BMP come through naturally because JS strings
- * are UTF-16 and the regex iterates per code unit.
- */
-function jsonStringPyCompat(s: string): string {
-	return JSON.stringify(s).replace(/[\u0080-\uffff]/g, (c) => {
-		return `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
-	});
-}
-
 export function writeHookOutput(
 	hookEventName: string,
 	additionalContext: string,
 ): void {
-	const ev = jsonStringPyCompat(hookEventName);
-	const ctx = jsonStringPyCompat(additionalContext);
 	process.stdout.write(
-		`{"hookSpecificOutput": {"hookEventName": ${ev}, "additionalContext": ${ctx}}}`,
+		JSON.stringify({
+			hookSpecificOutput: { hookEventName, additionalContext },
+		}),
 	);
 }
