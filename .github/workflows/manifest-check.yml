@@ -26,7 +26,7 @@ jobs:
           ")
 
           # For each file in watched directories, check if any glob covers it
-          for f in .claude/commands/*.md .claude/agents/*.md .claude/scripts/*.ts .claude/scripts/*.sh templates/*.md bases/*.base; do
+          for f in .claude/commands/*.md .claude/agents/*.md .claude/scripts/*.ts templates/*.md bases/*.base; do
             [ -f "$f" ] || continue
             COVERED=false
             while IFS= read -r glob; do
