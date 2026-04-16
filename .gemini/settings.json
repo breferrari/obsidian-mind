@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/pre-compact.sh",
+            "command": "node --experimental-strip-types .claude/scripts/pre-compact.ts",
             "timeout": 30000
           }
         ]
