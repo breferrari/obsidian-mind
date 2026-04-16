@@ -15,6 +15,6 @@
     "types": ["node"],
     "resolveJsonModule": true
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "../../.github/scripts/**/*.ts"],
   "exclude": ["node_modules"]
 }

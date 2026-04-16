@@ -17,7 +17,7 @@ import {
 	existsSync,
 } from "node:fs";
 import { join } from "node:path";
-import { readStdinJson } from "./lib/hook-io.ts";
+import { debug, readStdinJson } from "./lib/hook-io.ts";
 
 type HookInput = {
 	readonly transcript_path?: unknown;
@@ -67,7 +67,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	const trigger =
 		typeof input.trigger === "string" ? input.trigger : "unknown";
 
-	if (!transcriptPath || !existsSync(transcriptPath)) process.exit(0);
+	if (!transcriptPath || !existsSync(transcriptPath)) {
+		debug(`pre-compact: no usable transcript (path=${transcriptPath})`);
+		process.exit(0);
+	}
 
 	const projectDir = process.env["CLAUDE_PROJECT_DIR"] ?? process.cwd();
 	const backupDir = join(projectDir, "thinking/session-logs");
@@ -80,8 +83,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 	try {
 		copyFileSync(transcriptPath, dest);
-	} catch {
+		debug(`pre-compact: backed up ${transcriptPath} → ${dest}`);
+	} catch (err) {
 		// Copy failure is non-fatal — we exit 0 and move on.
+		debug(`pre-compact: copy failed: ${(err as Error).message}`);
 		process.exit(0);
 	}
 
