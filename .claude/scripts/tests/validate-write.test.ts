@@ -1,18 +1,20 @@
 /**
- * Subprocess integration tests for validate-write.ts.
- * 1-1 parity with TestValidateWriteIntegration from Python test_hooks.py.
+ * Subprocess integration tests for validate-write.ts — skip rules,
+ * frontmatter warnings, wikilink heuristic, robustness to bad input.
  */
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { runScript as spawnHook } from "./_helpers.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = resolve(HERE, "../validate-write.ts");
+const SCRIPT = resolve(
+	dirname(fileURLToPath(import.meta.url)),
+	"../validate-write.ts",
+);
 
 let TMP_DIR = "";
 
@@ -24,28 +26,7 @@ after(() => {
 	if (TMP_DIR) rmSync(TMP_DIR, { recursive: true, force: true });
 });
 
-function runScript(stdin: string | object | null): {
-	stdout: string;
-	stderr: string;
-	code: number;
-} {
-	const input =
-		stdin === null
-			? ""
-			: typeof stdin === "string"
-				? stdin
-				: JSON.stringify(stdin);
-	const proc = spawnSync(
-		process.execPath,
-		["--experimental-strip-types", SCRIPT],
-		{ input, encoding: "utf-8", timeout: 10000 },
-	);
-	return {
-		stdout: proc.stdout ?? "",
-		stderr: proc.stderr ?? "",
-		code: proc.status ?? -1,
-	};
-}
+const runScript = (stdin: string | object | null) => spawnHook(SCRIPT, stdin);
 
 function makeMd(content: string, name = "test.md"): string {
 	const path = join(TMP_DIR, name);

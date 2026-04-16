@@ -1,20 +1,20 @@
 /**
- * Unit and integration tests for classify-message.
- * Combines 1-1 parity with TestClassifyEnglish, TestClassifyInflections,
- * TestClassifyCJK, TestClassifyFalsePositives, TestClassifyIntegration
- * from Python test_hooks.py, plus new edge cases.
+ * Tests for classify-message: English + inflection + CJK + false-positive +
+ * subprocess integration coverage.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { SIGNALS } from "../lib/signals.ts";
 import { classify } from "../lib/matcher.ts";
+import { runScript as spawnHook } from "./_helpers.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = resolve(HERE, "../classify-message.ts");
+const SCRIPT = resolve(
+	dirname(fileURLToPath(import.meta.url)),
+	"../classify-message.ts",
+);
 
 function signalNames(prompt: string): string[] {
 	const messages = classify(prompt);
@@ -25,28 +25,7 @@ function signalNames(prompt: string): string[] {
 		.sort();
 }
 
-function runScript(stdin: string | object | null): {
-	stdout: string;
-	stderr: string;
-	code: number;
-} {
-	const input =
-		stdin === null
-			? ""
-			: typeof stdin === "string"
-				? stdin
-				: JSON.stringify(stdin);
-	const proc = spawnSync(
-		process.execPath,
-		["--experimental-strip-types", SCRIPT],
-		{ input, encoding: "utf-8", timeout: 10000 },
-	);
-	return {
-		stdout: proc.stdout ?? "",
-		stderr: proc.stderr ?? "",
-		code: proc.status ?? -1,
-	};
-}
+const runScript = (stdin: string | object | null) => spawnHook(SCRIPT, stdin);
 
 // ---------------------------------------------------------------------------
 // English signal detection (TestClassifyEnglish parity)
