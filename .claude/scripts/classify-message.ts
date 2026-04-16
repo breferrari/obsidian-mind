@@ -7,7 +7,7 @@
  * malformed input, missing prompt, or zero matches.
  */
 
-import { readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
+import { debug, readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
 import { classify } from "./lib/matcher.ts";
 
 type HookInput = {
@@ -16,12 +16,19 @@ type HookInput = {
 };
 
 const input = await readStdinJson<HookInput>();
-if (!input) process.exit(0);
+if (!input) {
+	debug("classify: null input (bad/empty stdin)");
+	process.exit(0);
+}
 
 const prompt = input.prompt;
-if (typeof prompt !== "string" || !prompt) process.exit(0);
+if (typeof prompt !== "string" || !prompt) {
+	debug(`classify: no usable prompt (type=${typeof prompt})`);
+	process.exit(0);
+}
 
 const signals = classify(prompt);
+debug(`classify: matched ${signals.length} signal(s)`);
 
 if (signals.length > 0) {
 	const hints = signals.map((s) => `- ${s}`).join("\n");

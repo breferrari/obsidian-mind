@@ -8,7 +8,7 @@
  */
 
 import { basename } from "node:path";
-import { readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
+import { debug, readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
 import { shouldSkipFile, validateFile } from "./lib/frontmatter.ts";
 
 type HookInput = {
@@ -17,18 +17,34 @@ type HookInput = {
 };
 
 const input = await readStdinJson<HookInput>();
-if (!input) process.exit(0);
+if (!input) {
+	debug("validate: null input");
+	process.exit(0);
+}
 
 const toolInput = input.tool_input;
-if (!toolInput || typeof toolInput !== "object") process.exit(0);
+if (!toolInput || typeof toolInput !== "object") {
+	debug("validate: missing tool_input");
+	process.exit(0);
+}
 
 const filePath = (toolInput as Record<string, unknown>).file_path;
-if (typeof filePath !== "string" || !filePath) process.exit(0);
+if (typeof filePath !== "string" || !filePath) {
+	debug("validate: missing file_path");
+	process.exit(0);
+}
 
-if (shouldSkipFile(filePath)) process.exit(0);
+if (shouldSkipFile(filePath)) {
+	debug(`validate: skipped ${filePath}`);
+	process.exit(0);
+}
 
 const warnings = validateFile(filePath);
-if (warnings === null) process.exit(0);
+if (warnings === null) {
+	debug(`validate: could not read ${filePath}`);
+	process.exit(0);
+}
+debug(`validate: ${filePath} — ${warnings.length} warning(s)`);
 
 if (warnings.length > 0) {
 	const hintList = warnings.map((w) => `  - ${w}`).join("\n");
