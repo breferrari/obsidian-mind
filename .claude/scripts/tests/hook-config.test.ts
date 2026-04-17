@@ -18,7 +18,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type HookConfig = {
 	readonly hooks?: Record<
@@ -32,7 +33,10 @@ type HookConfig = {
 	>;
 };
 
-const repoRoot = resolve(import.meta.dirname, "../../..");
+const repoRoot = resolve(
+	dirname(fileURLToPath(import.meta.url)),
+	"../../..",
+);
 
 const configs: ReadonlyArray<{
 	readonly label: string;
