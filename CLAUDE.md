@@ -11,7 +11,7 @@ This vault has [obsidian-skills](https://github.com/kepano/obsidian-skills) inst
 - **json-canvas**: Create `.canvas` files with nodes, edges, and visual layouts. See `references/EXAMPLES.md`.
 - **obsidian-bases**: Create `.base` files with views, filters, and formulas. Bases core plugin is enabled. See `references/FUNCTIONS_REFERENCE.md`.
 - **defuddle**: Extract clean markdown from web pages via `defuddle parse <url> --md`.
-- **qmd**: Semantic search across the vault via [QMD](https://github.com/tobi/qmd). Use PROACTIVELY before reading files -- `qmd query "..."` for hybrid search, `qmd search "..."` for keyword, `qmd vsearch "..."` for semantic. Falls back to grep/glob if QMD not installed.
+- **qmd**: Semantic search across the vault via [QMD](https://github.com/tobi/qmd). Use PROACTIVELY before reading files -- `qmd query "..."` for hybrid search, `qmd search "..."` for keyword, `qmd vsearch "..."` for semantic. Also registered as an MCP server via `.mcp.json` (project root), so the `qmd` tools are available directly in the Claude Code tool menu when QMD is installed. Falls back to grep/glob if QMD not installed.
 
 ### Custom Slash Commands
 
