@@ -11,6 +11,9 @@ import {
 	classifyCommit,
 	generateSection,
 	normalizeVersion,
+	toFingerprintKey,
+	pickMarkers,
+	findLatestOpenFingerprint,
 } from "../../../.github/scripts/generate-changelog.ts";
 
 describe("classifyCommit", () => {
@@ -116,5 +119,132 @@ describe("normalizeVersion", () => {
 	});
 	test("5.2.3 (no v) → 5.2.3", () => {
 		assert.equal(normalizeVersion("5.2.3"), "5.2.3");
+	});
+});
+
+describe("toFingerprintKey", () => {
+	test("drops .0 patch for minor releases", () => {
+		assert.equal(toFingerprintKey("5.0.0"), "v5.0");
+		assert.equal(toFingerprintKey("v5.0"), "v5.0");
+		assert.equal(toFingerprintKey("5.0"), "v5.0");
+	});
+	test("preserves non-zero patch", () => {
+		assert.equal(toFingerprintKey("5.1.2"), "v5.1.2");
+		assert.equal(toFingerprintKey("v3.4.1"), "v3.4.1");
+	});
+	test("double-digit components survive", () => {
+		assert.equal(toFingerprintKey("10.12.0"), "v10.12");
+	});
+});
+
+describe("pickMarkers", () => {
+	const GLOBS = [
+		"CLAUDE.md",
+		"AGENTS.md",
+		".mcp.json",
+		".claude/**",
+		".codex/**",
+		".github/scripts/generate-changelog.ts",
+		"templates/**",
+	];
+
+	test("returns at most `limit` entries (default 3)", () => {
+		const added = [
+			".mcp.json",
+			"AGENTS.md",
+			".claude/commands/new.md",
+			".codex/hooks.json",
+			"templates/New.md",
+		];
+		const picked = pickMarkers(added, GLOBS);
+		assert.equal(picked.length, 3);
+		assert.deepEqual(picked, [
+			".mcp.json",
+			"AGENTS.md",
+			".claude/commands/new.md",
+		]);
+	});
+
+	test("filters out files not covered by infrastructure globs", () => {
+		const added = ["work/active/project.md", "brain/MyGotchas.md", ".mcp.json"];
+		assert.deepEqual(pickMarkers(added, GLOBS), [".mcp.json"]);
+	});
+
+	test("skips tests/, lib/, node_modules/, and .github/", () => {
+		const added = [
+			".claude/scripts/tests/new.test.ts",
+			".claude/scripts/lib/internal.ts",
+			".claude/scripts/node_modules/whatever.js",
+			".github/workflows/new.yml",
+			".mcp.json",
+		];
+		assert.deepEqual(pickMarkers(added, GLOBS), [".mcp.json"]);
+	});
+
+	test("skips .test.ts files even outside a tests/ dir", () => {
+		const added = [".claude/scripts/manifest-check.test.ts", ".mcp.json"];
+		assert.deepEqual(pickMarkers(added, GLOBS), [".mcp.json"]);
+	});
+
+	test("custom limit is respected", () => {
+		const added = ["AGENTS.md", ".mcp.json", ".codex/hooks.json"];
+		assert.deepEqual(pickMarkers(added, GLOBS, 2), [
+			"AGENTS.md",
+			".mcp.json",
+		]);
+	});
+
+	test("returns empty when nothing qualifies", () => {
+		assert.deepEqual(pickMarkers(["work/foo.md", "README.ja.md"], GLOBS), []);
+	});
+
+	test("preserves input order (git diff order)", () => {
+		const added = [".codex/hooks.json", ".mcp.json", "AGENTS.md"];
+		const picked = pickMarkers(added, GLOBS);
+		assert.deepEqual(picked, [".codex/hooks.json", ".mcp.json", "AGENTS.md"]);
+	});
+});
+
+describe("findLatestOpenFingerprint", () => {
+	test("returns the highest version without a missing field", () => {
+		const fp = {
+			"v3.7": { exists: ["x"], missing: ["y"] },
+			"v4.0": { exists: ["a"] },
+		};
+		assert.equal(findLatestOpenFingerprint(fp), "v4.0");
+	});
+
+	test("uses numeric component sort (v3.10 > v3.7)", () => {
+		const fp = {
+			"v3.7": { exists: ["a"] },
+			"v3.10": { exists: ["b"] },
+		};
+		assert.equal(findLatestOpenFingerprint(fp), "v3.10");
+	});
+
+	test("returns null when every entry is closed", () => {
+		const fp = {
+			"v3.7": { exists: ["a"], missing: ["b"] },
+			"v4.0": { exists: ["c"], missing: ["d"] },
+		};
+		assert.equal(findLatestOpenFingerprint(fp), null);
+	});
+
+	test("returns null when empty", () => {
+		assert.equal(findLatestOpenFingerprint({}), null);
+	});
+
+	test("single open entry is returned regardless of version", () => {
+		const fp = { v1: { exists: ["a"] } };
+		assert.equal(findLatestOpenFingerprint(fp), "v1");
+	});
+
+	test("mixed three-part + two-part versions sort correctly", () => {
+		const fp = {
+			"v3.6.0": { exists: ["a"] },
+			"v3.6": { exists: ["b"] }, // equivalent to v3.6.0 numerically
+			"v3.7": { exists: ["c"] },
+		};
+		assert.equal(findLatestOpenFingerprint(fp), "v3.7");
 	});
 });

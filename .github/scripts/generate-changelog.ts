@@ -14,6 +14,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync } from "node:fs";
+import { isCovered } from "./manifest-check.ts";
 
 const PREFIX_MAP: Readonly<Record<string, string>> = {
 	feat: "Added",
@@ -174,11 +175,164 @@ export function normalizeVersion(version: string): string {
 	return `${major}.${minor}.${patch ?? "0"}`;
 }
 
-function updateManifest(version: string): void {
+/**
+ * Derive the fingerprint key from a release version. A `.0` patch is dropped
+ * to match the existing manifest convention (e.g. "5.0.0" → "v5.0", while
+ * "5.1.2" stays "v5.1.2"). Keys are prefixed with `v` for parity with git tags.
+ */
+export function toFingerprintKey(version: string): string {
+	const normalized = normalizeVersion(version);
+	const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(normalized);
+	if (!match) return `v${normalized}`;
+	const [, major, minor, patch] = match;
+	return patch === "0" ? `v${major}.${minor}` : `v${major}.${minor}.${patch}`;
+}
+
+/**
+ * Files added between the previous tag and HEAD, via `git diff --diff-filter=A`.
+ * Returns paths relative to the repo root. An empty list signals "nothing
+ * structurally new was added in this release" — callers treat it as "skip
+ * fingerprint generation."
+ */
+function getAddedFiles(prevTag: string): string[] {
+	const proc = spawnSync(
+		"git",
+		[
+			"diff",
+			`${prevTag}..HEAD`,
+			"--name-only",
+			"--diff-filter=A",
+		],
+		{ encoding: "utf-8" },
+	);
+	if (proc.status !== 0) return [];
+	return (proc.stdout ?? "")
+		.split("\n")
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0);
+}
+
+/**
+ * Paths to skip when picking fingerprint markers, even if they're covered by
+ * the manifest's infrastructure globs. These are volatile implementation
+ * details — tests, internal libs, CI plumbing, vendored deps — that shouldn't
+ * serve as stable version markers because they may be renamed or removed.
+ */
+const MARKER_SKIP_PATTERNS: readonly RegExp[] = [
+	/(^|\/)tests?\//,
+	/(^|\/)lib\//,
+	/(^|\/)node_modules\//,
+	/\.github\//,
+	/\.test\.ts$/,
+];
+
+/**
+ * Choose up to `limit` stable version markers from the newly-added files.
+ * A marker must be (a) covered by the manifest's infrastructure globs — so
+ * it's template content, not user content — and (b) not in a skip pattern.
+ * Order follows the input (which is git-diff's natural order) for determinism.
+ */
+export function pickMarkers(
+	addedFiles: readonly string[],
+	infrastructureGlobs: readonly string[],
+	limit = 3,
+): string[] {
+	const out: string[] = [];
+	for (const path of addedFiles) {
+		if (!isCovered(path, infrastructureGlobs)) continue;
+		if (MARKER_SKIP_PATTERNS.some((re) => re.test(path))) continue;
+		out.push(path);
+		if (out.length >= limit) break;
+	}
+	return out;
+}
+
+type Fingerprint = {
+	exists: string[];
+	missing?: string[];
+};
+
+/**
+ * Find the latest fingerprint key that has no `missing` field — conceptually
+ * "the currently-open-ended release." Returns null if the map is empty or
+ * every entry already has a `missing`. Keys are sorted by numeric version
+ * components (v3.7 < v3.10, unlike string sort) so the "latest" is the one
+ * with the highest major/minor/patch.
+ */
+export function findLatestOpenFingerprint(
+	fingerprints: Readonly<Record<string, Fingerprint>>,
+): string | null {
+	const sorted = Object.keys(fingerprints).sort((a, b) => {
+		const pa = a.replace(/^v/, "").split(".").map(Number);
+		const pb = b.replace(/^v/, "").split(".").map(Number);
+		const len = Math.max(pa.length, pb.length);
+		for (let i = 0; i < len; i++) {
+			const da = pa[i] ?? 0;
+			const db = pb[i] ?? 0;
+			if (da !== db) return da - db;
+		}
+		return 0;
+	});
+	for (let i = sorted.length - 1; i >= 0; i--) {
+		const key = sorted[i]!;
+		if (!fingerprints[key]!.missing) return key;
+	}
+	return null;
+}
+
+type ManifestShape = {
+	infrastructure?: string[];
+	version_fingerprints?: Record<string, Fingerprint>;
+	[key: string]: unknown;
+};
+
+/**
+ * Auto-generate the fingerprint entry for `version` from git history, and
+ * close out the previous open-ended fingerprint so version detection stays
+ * unambiguous. No-op when there's no previous tag (first release) or when
+ * the release added no stable markers.
+ */
+function updateFingerprints(
+	version: string,
+	prevTag: string | null,
+	manifest: ManifestShape,
+): void {
+	if (!prevTag) return;
+
+	const fingerprints = manifest.version_fingerprints ?? {};
+	const addedFiles = getAddedFiles(prevTag);
+	const globs = manifest.infrastructure ?? [];
+	const markers = pickMarkers(addedFiles, globs);
+
+	if (markers.length === 0) {
+		process.stderr.write(
+			`No stable infrastructure markers added since ${prevTag}; skipping fingerprint for ${version}.\n`,
+		);
+		return;
+	}
+
+	const key = toFingerprintKey(version);
+
+	// Close out the previous open-ended fingerprint BEFORE adding the new
+	// one, so we don't look up the new entry as its own predecessor.
+	const prevKey = findLatestOpenFingerprint(fingerprints);
+	if (prevKey && prevKey !== key) {
+		fingerprints[prevKey] = {
+			...fingerprints[prevKey]!,
+			missing: [markers[0]!],
+		};
+	}
+
+	fingerprints[key] = { exists: [...markers] };
+	manifest.version_fingerprints = fingerprints;
+}
+
+function updateManifest(version: string, prevTag: string | null): void {
 	const content = readFileSync("vault-manifest.json", { encoding: "utf-8" });
-	const manifest = JSON.parse(content) as Record<string, unknown>;
-	manifest["version"] = normalizeVersion(version);
-	manifest["released"] = todayUTC();
+	const manifest = JSON.parse(content) as ManifestShape;
+	(manifest as Record<string, unknown>)["version"] = normalizeVersion(version);
+	(manifest as Record<string, unknown>)["released"] = todayUTC();
+	updateFingerprints(version, prevTag, manifest);
 	writeFileSync(
 		"vault-manifest.json",
 		JSON.stringify(manifest, null, 2) + "\n",
@@ -213,7 +367,7 @@ function main(): void {
 	}
 
 	prependToChangelog(section, version);
-	updateManifest(version);
+	updateManifest(version, prevTag);
 
 	// Print section for GitHub Release body
 	process.stdout.write(section);
