@@ -8,6 +8,7 @@ on:
       - '.claude/commands/**'
       - '.claude/agents/**'
       - '.claude/scripts/**'
+      - '.claude-plugin/**'
       - '.codex/**'
       - '.gemini/**'
       - 'templates/**'
@@ -20,6 +21,8 @@ on:
       - '.mcp.json'
       - '.gitignore'
       - 'LICENSE'
+      - 'obsidian-mind-logo.png'
+      - 'obsidian-mind-demo.gif'
       - 'vault-manifest.json'
       - '.github/scripts/manifest-check.ts'
 
