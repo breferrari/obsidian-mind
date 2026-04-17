@@ -227,24 +227,57 @@ const MARKER_SKIP_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
+ * Return the immediate parent directory of a path, or "" for root-level files.
+ * Used to reason about how "alone" a file is among its siblings in the diff.
+ */
+function parentOf(path: string): string {
+	const idx = path.lastIndexOf("/");
+	return idx === -1 ? "" : path.slice(0, idx);
+}
+
+/**
  * Choose up to `limit` stable version markers from the newly-added files.
  * A marker must be (a) covered by the manifest's infrastructure globs — so
  * it's template content, not user content — and (b) not in a skip pattern.
- * Order follows the input (which is git-diff's natural order) for determinism.
+ *
+ * Among qualifying candidates we prefer more *distinctive* files: shallower
+ * paths (root files and top-level directory additions tend to be feature
+ * declarations rather than plumbing) and singletons in their parent
+ * directory (a file added alone in its folder is a stronger signal than
+ * one of 15 files added to a bulk-migrated directory). Alphabetical order
+ * is the final tiebreak so the output is deterministic.
  */
 export function pickMarkers(
 	addedFiles: readonly string[],
 	infrastructureGlobs: readonly string[],
 	limit = 3,
 ): string[] {
-	const out: string[] = [];
-	for (const path of addedFiles) {
-		if (!isCovered(path, infrastructureGlobs)) continue;
-		if (MARKER_SKIP_PATTERNS.some((re) => re.test(path))) continue;
-		out.push(path);
-		if (out.length >= limit) break;
+	const qualified = addedFiles.filter(
+		(p) =>
+			isCovered(p, infrastructureGlobs) &&
+			!MARKER_SKIP_PATTERNS.some((re) => re.test(p)),
+	);
+
+	// Count siblings-added-in-this-diff per parent directory. Only other
+	// qualified files count — skipped/uncovered additions don't dilute the
+	// signal because they wouldn't be candidates anyway.
+	const siblingCount = new Map<string, number>();
+	for (const p of qualified) {
+		const parent = parentOf(p);
+		siblingCount.set(parent, (siblingCount.get(parent) ?? 0) + 1);
 	}
-	return out;
+
+	const ranked = [...qualified].sort((a, b) => {
+		const depthA = a.split("/").length;
+		const depthB = b.split("/").length;
+		if (depthA !== depthB) return depthA - depthB;
+		const sibA = siblingCount.get(parentOf(a)) ?? 0;
+		const sibB = siblingCount.get(parentOf(b)) ?? 0;
+		if (sibA !== sibB) return sibA - sibB;
+		return a.localeCompare(b);
+	});
+
+	return ranked.slice(0, limit);
 }
 
 type Fingerprint = {

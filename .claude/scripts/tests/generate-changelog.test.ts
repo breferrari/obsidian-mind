@@ -150,19 +150,14 @@ describe("pickMarkers", () => {
 
 	test("returns at most `limit` entries (default 3)", () => {
 		const added = [
-			".mcp.json",
 			"AGENTS.md",
-			".claude/commands/new.md",
 			".codex/hooks.json",
+			".mcp.json",
 			"templates/New.md",
+			".claude/commands/new.md",
 		];
 		const picked = pickMarkers(added, GLOBS);
 		assert.equal(picked.length, 3);
-		assert.deepEqual(picked, [
-			".mcp.json",
-			"AGENTS.md",
-			".claude/commands/new.md",
-		]);
 	});
 
 	test("filters out files not covered by infrastructure globs", () => {
@@ -188,20 +183,50 @@ describe("pickMarkers", () => {
 
 	test("custom limit is respected", () => {
 		const added = ["AGENTS.md", ".mcp.json", ".codex/hooks.json"];
-		assert.deepEqual(pickMarkers(added, GLOBS, 2), [
-			"AGENTS.md",
-			".mcp.json",
-		]);
+		assert.equal(pickMarkers(added, GLOBS, 2).length, 2);
 	});
 
 	test("returns empty when nothing qualifies", () => {
 		assert.deepEqual(pickMarkers(["work/foo.md", "README.ja.md"], GLOBS), []);
 	});
 
-	test("preserves input order (git diff order)", () => {
-		const added = [".codex/hooks.json", ".mcp.json", "AGENTS.md"];
+	test("prefers shallow (root-level) paths over deep subdirectory paths", () => {
+		// Regression test for the original heuristic, which walked alphabetically
+		// and picked .claude/scripts/* over .mcp.json. Root-level files are
+		// more meaningful markers; they should rank first.
+		const added = [
+			".claude/scripts/charcount.ts",
+			".claude/scripts/classify-message.ts",
+			".claude/scripts/package.json",
+			".mcp.json",
+		];
 		const picked = pickMarkers(added, GLOBS);
-		assert.deepEqual(picked, [".codex/hooks.json", ".mcp.json", "AGENTS.md"]);
+		assert.equal(picked[0], ".mcp.json", "root-level .mcp.json should rank first");
+	});
+
+	test("prefers singletons in their parent dir over bulk-added siblings", () => {
+		// At the same depth, a file with fewer siblings-in-this-diff is a
+		// more distinctive marker. `a/rare.md` is alone under `a/`; `b/` has
+		// three files, so b's entries rank after a's.
+		const globs = ["**"];
+		const added = [
+			"b/mass1.md",
+			"b/mass2.md",
+			"b/mass3.md",
+			"a/rare.md",
+		];
+		const picked = pickMarkers(added, globs, 1);
+		assert.deepEqual(picked, ["a/rare.md"]);
+	});
+
+	test("falls back to alphabetical order when depth and sibling count tie", () => {
+		const globs = ["*.md"];
+		const added = ["zebra.md", "alpha.md", "mango.md"];
+		assert.deepEqual(pickMarkers(added, globs), [
+			"alpha.md",
+			"mango.md",
+			"zebra.md",
+		]);
 	});
 });
 
