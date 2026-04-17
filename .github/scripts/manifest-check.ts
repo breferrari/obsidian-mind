@@ -61,7 +61,7 @@ export function isCovered(
 // ---------------------------------------------------------------------------
 
 // Top-level files in these directories are the "template infrastructure"
-// surface. Matches the hardcoded glob list in the bash predecessor.
+// surface. Each entry contributes every matching file in the directory.
 const WATCHED: ReadonlyArray<{
 	readonly dir: string;
 	readonly exts: readonly string[];
@@ -69,8 +69,31 @@ const WATCHED: ReadonlyArray<{
 	{ dir: ".claude/commands", exts: [".md"] },
 	{ dir: ".claude/agents", exts: [".md"] },
 	{ dir: ".claude/scripts", exts: [".ts"] },
+	{ dir: ".codex", exts: [".json", ".md"] },
+	{ dir: ".gemini", exts: [".json", ".md"] },
 	{ dir: "templates", exts: [".md"] },
 	{ dir: "bases", exts: [".base"] },
+];
+
+// Specific root-level files that are template infrastructure. Unlike the
+// dir-walks above, the root has mixed concerns (infrastructure files live
+// alongside user-content directories like work/ and brain/), so we allowlist
+// the known infrastructure files by name. This list must stay in sync with
+// the corresponding entries in vault-manifest.json's `infrastructure` array.
+const WATCHED_ROOT_FILES: readonly string[] = [
+	"AGENTS.md",
+	"CLAUDE.md",
+	"CHANGELOG.md",
+	"CONTRIBUTING.md",
+	"GEMINI.md",
+	"Home.md",
+	"LICENSE",
+	"README.md",
+	".gitignore",
+	".mcp.json",
+	"vault-manifest.json",
+	"obsidian-mind-demo.gif",
+	"obsidian-mind-logo.png",
 ];
 
 function listTopLevelFiles(dir: string, exts: readonly string[]): string[] {
@@ -85,6 +108,32 @@ function listTopLevelFiles(dir: string, exts: readonly string[]): string[] {
 		.map((e) => join(dir, e.name));
 }
 
+function listRootFiles(allowlist: readonly string[]): string[] {
+	let entries: Dirent[];
+	try {
+		entries = readdirSync(".", { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	const present = new Set(
+		entries.filter((e) => e.isFile()).map((e) => e.name),
+	);
+	const out: string[] = [];
+	for (const name of allowlist) {
+		if (present.has(name)) out.push(name);
+	}
+	// Additionally include translated READMEs (README.<lang>.md). These are
+	// managed as a glob in the manifest (`README.*.md`) rather than an
+	// enumerated list, so discover them dynamically.
+	for (const e of entries) {
+		if (!e.isFile()) continue;
+		if (/^README\.[^/]+\.md$/.test(e.name) && e.name !== "README.md") {
+			out.push(e.name);
+		}
+	}
+	return out;
+}
+
 function main(): void {
 	const manifest = JSON.parse(
 		readFileSync("vault-manifest.json", "utf-8"),
@@ -96,6 +145,9 @@ function main(): void {
 		for (const path of listTopLevelFiles(dir, exts)) {
 			if (!isCovered(path, globs)) missing.push(path);
 		}
+	}
+	for (const path of listRootFiles(WATCHED_ROOT_FILES)) {
+		if (!isCovered(path, globs)) missing.push(path);
 	}
 
 	if (missing.length === 0) return;

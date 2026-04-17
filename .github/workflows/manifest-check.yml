@@ -3,11 +3,23 @@ name: Manifest Check
 on:
   pull_request:
     paths:
+      # Template infrastructure surfaces the script walks — if these change
+      # we need to verify every file is still covered by a manifest glob.
       - '.claude/commands/**'
       - '.claude/agents/**'
       - '.claude/scripts/**'
+      - '.codex/**'
+      - '.gemini/**'
       - 'templates/**'
       - 'bases/**'
+      # Root-level template files (allowlisted in manifest-check.ts). A PR
+      # that adds any of these without a matching manifest entry should
+      # trigger a warning — the .mcp.json addition in #48 slipped through
+      # precisely because root files weren't watched.
+      - '*.md'
+      - '.mcp.json'
+      - '.gitignore'
+      - 'LICENSE'
       - 'vault-manifest.json'
       - '.github/scripts/manifest-check.ts'
 
