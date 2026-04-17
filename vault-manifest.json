@@ -117,6 +117,26 @@
       "exists": [
         ".claude/commands/om-standup.md",
         ".claude/commands/om-intake.md"
+      ],
+      "missing": [
+        ".github/workflows/manifest-check.yml"
+      ]
+    },
+    "v3.8": {
+      "exists": [
+        ".github/workflows/manifest-check.yml",
+        ".github/workflows/pr-title.yml"
+      ],
+      "missing": [
+        "AGENTS.md"
+      ]
+    },
+    "v4.0": {
+      "exists": [
+        "AGENTS.md",
+        "GEMINI.md",
+        ".codex/hooks.json",
+        ".gemini/settings.json"
       ]
     }
   },
