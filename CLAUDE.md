@@ -270,6 +270,15 @@ When asked to "remember" something:
 3. Update `brain/Memories.md` index if a new topic note was created
 4. Do NOT create additional files in `~/.claude/projects/.../memory/` beyond MEMORY.md -- they are not version-controlled
 
+### When to Consult Brain Topics
+
+The SessionStart hook injects a **Brain Topics (read on demand)** index listing each `brain/` topic note with its description and an `(empty)` marker for stub notes. Treat that index as a menu:
+
+- When the user's message touches a topic from the index (debugging → Gotchas, "how do we usually…" → Patterns, "why did we decide" → Key Decisions, "which command / slash" → Skills), query QMD **first** before answering — `qmd query "<topic keywords>"` with the relevant topic name narrows results to brain content.
+- If QMD is unavailable, read the specific `brain/` note directly with the Read tool. Don't load all of `brain/` — only the one(s) matching the topic.
+- Skip notes marked `(empty)` in the index — they're stubs with no substantive content.
+- After answering, if the conversation produced durable knowledge, update the relevant brain note (see the "remember" workflow above).
+
 ## Agent Guidelines
 
 ### Graph-First Thinking
