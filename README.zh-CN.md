@@ -103,7 +103,7 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 5. 在 **`brain/North Star.md`** 中填写你的目标——这将为每次会话定下基调
 6. 开始谈论工作
 
-### 🔍 可选：QMD 语义搜索
+### 🔍 推荐：QMD 语义搜索
 
 用于在仓库中进行语义搜索（即使笔记标题是 "Redis Migration ADR"，也能找到 "我们关于缓存做了什么决策"）：
 

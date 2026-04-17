@@ -103,7 +103,7 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 5. **`brain/North Star.md`**に目標を記入 — これがすべてのセッションの基盤になります
 6. 仕事について話し始める
 
-### 🔍 オプション：QMDセマンティック検索
+### 🔍 推奨：QMDセマンティック検索
 
 ボールト全体のセマンティック検索（ノートのタイトルが「Redis Migration ADR」でも「キャッシュについて何を決めた？」で見つかる）：
 
