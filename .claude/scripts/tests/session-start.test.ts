@@ -13,6 +13,10 @@ import {
 	formatActiveWork,
 	formatRecentChanges,
 	isSkippedPath,
+	extractFrontmatterField,
+	formatBrainIndex,
+	stripFrontmatter,
+	hasBrainContent,
 } from "../lib/session-start.ts";
 
 describe("take", () => {
@@ -91,5 +95,117 @@ describe("isSkippedPath", () => {
 	});
 	test("empty prefix list never skips", () => {
 		assert.equal(isSkippedPath(".git/foo", []), false);
+	});
+});
+
+describe("extractFrontmatterField", () => {
+	test("extracts double-quoted string value", () => {
+		const content = '---\ndescription: "hello world"\ntags:\n  - brain\n---\n\n# body';
+		assert.equal(extractFrontmatterField(content, "description"), "hello world");
+	});
+	test("extracts single-quoted string value", () => {
+		const content = "---\ndescription: 'hi there'\n---\n";
+		assert.equal(extractFrontmatterField(content, "description"), "hi there");
+	});
+	test("extracts bare value", () => {
+		const content = "---\ndescription: bare text here\ntags:\n  - brain\n---\n";
+		assert.equal(extractFrontmatterField(content, "description"), "bare text here");
+	});
+	test("returns null when field is present but empty", () => {
+		const content = "---\ndate:\ndescription: \"x\"\n---\n";
+		assert.equal(extractFrontmatterField(content, "date"), null);
+	});
+	test("returns null when field is absent", () => {
+		const content = "---\ntags:\n  - brain\n---\n";
+		assert.equal(extractFrontmatterField(content, "description"), null);
+	});
+	test("returns null when content has no frontmatter", () => {
+		assert.equal(extractFrontmatterField("# just a heading\n\nbody", "description"), null);
+	});
+	test("returns null when frontmatter is unterminated", () => {
+		assert.equal(extractFrontmatterField("---\ndescription: \"x\"\n", "description"), null);
+	});
+	test("ignores matches that appear only in the body", () => {
+		const content = "---\ntags: []\n---\n\ndescription: not frontmatter\n";
+		assert.equal(extractFrontmatterField(content, "description"), null);
+	});
+});
+
+describe("stripFrontmatter", () => {
+	test("removes a complete frontmatter block", () => {
+		const out = stripFrontmatter("---\ntags: []\n---\n\n# body\n");
+		assert.equal(out, "\n\n# body\n");
+	});
+	test("leaves content without frontmatter unchanged", () => {
+		assert.equal(stripFrontmatter("# just a heading\n"), "# just a heading\n");
+	});
+	test("leaves unterminated frontmatter unchanged", () => {
+		const content = "---\ntags: []\n# never closed\n";
+		assert.equal(stripFrontmatter(content), content);
+	});
+});
+
+describe("hasBrainContent", () => {
+	test("false when only a bare-hyphen placeholder exists", () => {
+		assert.equal(hasBrainContent("\n# Gotchas\n\nSome intro.\n\n-\n"), false);
+	});
+	test("true for a bullet with text", () => {
+		assert.equal(hasBrainContent("- first real gotcha\n"), true);
+	});
+	test("true for indented bullets", () => {
+		assert.equal(hasBrainContent("  - nested item\n"), true);
+	});
+	test("true for asterisk and plus markers", () => {
+		assert.equal(hasBrainContent("* item\n"), true);
+		assert.equal(hasBrainContent("+ item\n"), true);
+	});
+	test("false for empty body", () => {
+		assert.equal(hasBrainContent(""), false);
+	});
+	test("false for prose-only content with no bullets", () => {
+		assert.equal(hasBrainContent("Just a paragraph of prose.\n"), false);
+	});
+});
+
+describe("formatBrainIndex", () => {
+	test("renders one wikilink + description per entry", () => {
+		const out = formatBrainIndex([
+			{ name: "Patterns", description: "recurring patterns", hasContent: true },
+			{ name: "Gotchas", description: "things that bite", hasContent: true },
+		]);
+		assert.equal(
+			out,
+			"- [[Patterns]] — recurring patterns\n- [[Gotchas]] — things that bite",
+		);
+	});
+	test("appends '(empty)' for stub notes", () => {
+		const out = formatBrainIndex([
+			{ name: "Gotchas", description: "things that bite", hasContent: false },
+		]);
+		assert.equal(out, "- [[Gotchas]] — things that bite (empty)");
+	});
+	test("skips North Star and Memories (already surfaced elsewhere)", () => {
+		const out = formatBrainIndex([
+			{ name: "North Star", description: "goals", hasContent: true },
+			{ name: "Memories", description: "index", hasContent: true },
+			{ name: "Patterns", description: "patterns", hasContent: true },
+		]);
+		assert.equal(out, "- [[Patterns]] — patterns");
+	});
+	test("falls back to '(no description)' for null description", () => {
+		const out = formatBrainIndex([
+			{ name: "Patterns", description: null, hasContent: true },
+		]);
+		assert.equal(out, "- [[Patterns]] — (no description)");
+	});
+	test("empty input → '(none)'", () => {
+		assert.equal(formatBrainIndex([]), "(none)");
+	});
+	test("all-filtered-out → '(none)'", () => {
+		const out = formatBrainIndex([
+			{ name: "North Star", description: "x", hasContent: true },
+			{ name: "Memories", description: "y", hasContent: true },
+		]);
+		assert.equal(out, "(none)");
 	});
 });

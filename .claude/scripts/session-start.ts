@@ -23,6 +23,10 @@ import {
 	formatActiveWork,
 	formatRecentChanges,
 	isSkippedPath,
+	extractFrontmatterField,
+	formatBrainIndex,
+	stripFrontmatter,
+	hasBrainContent,
 } from "./lib/session-start.ts";
 
 const cwd =
@@ -99,6 +103,33 @@ function openTasks(): string {
 	return take(r.stdout, 10);
 }
 
+function brainIndex(): string {
+	let entries: Dirent[];
+	try {
+		entries = readdirSync("brain", { withFileTypes: true });
+	} catch {
+		return "(none)";
+	}
+	const files = entries
+		.filter((e) => e.isFile() && e.name.endsWith(".md"))
+		.map((e) => e.name)
+		.sort();
+	const parsed = files.map((f) => {
+		const name = f.replace(/\.md$/, "");
+		let description: string | null = null;
+		let hasContent = false;
+		try {
+			const content = readFileSync(join("brain", f), { encoding: "utf-8" });
+			description = extractFrontmatterField(content, "description");
+			hasContent = hasBrainContent(stripFrontmatter(content));
+		} catch {
+			/* unreadable file → show name with no description, treat as empty */
+		}
+		return { name, description, hasContent };
+	});
+	return formatBrainIndex(parsed);
+}
+
 function activeWork(): string {
 	let entries: Dirent[];
 	try {
@@ -145,6 +176,9 @@ const sections = [
 	"",
 	"### North Star (current goals)",
 	northStar(),
+	"",
+	"### Brain Topics (read on demand)",
+	brainIndex(),
 	"",
 	"### Recent Changes (last 48h)",
 	recentChanges(),

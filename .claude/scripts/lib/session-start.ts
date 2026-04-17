@@ -61,3 +61,80 @@ export function isSkippedPath(
 		(p) => pathRel === p || pathRel.startsWith(p + "/"),
 	);
 }
+
+/**
+ * Extract a string value for `field` from YAML frontmatter at the top of
+ * a markdown document. Supports quoted ("..."), single-quoted ('...'),
+ * and bare values on the same line as the key. Returns null when the
+ * frontmatter block or field is absent.
+ *
+ * This is a deliberately small parser — just enough for one-line string
+ * fields like `description:`. Multi-line/block YAML is out of scope.
+ */
+export function extractFrontmatterField(
+	content: string,
+	field: string,
+): string | null {
+	if (!content.startsWith("---")) return null;
+	const end = content.indexOf("\n---", 3);
+	if (end === -1) return null;
+	const fm = content.slice(3, end);
+	const re = new RegExp(`^${field}:[ \\t]*(.*?)[ \\t]*$`, "m");
+	const m = fm.match(re);
+	if (!m) return null;
+	const raw = m[1] ?? "";
+	if (raw === "") return null;
+	if (
+		(raw.startsWith('"') && raw.endsWith('"')) ||
+		(raw.startsWith("'") && raw.endsWith("'"))
+	) {
+		return raw.slice(1, -1);
+	}
+	return raw;
+}
+
+/**
+ * Return the body of a markdown document with its leading YAML frontmatter
+ * stripped. If there's no frontmatter block, returns the input unchanged.
+ */
+export function stripFrontmatter(content: string): string {
+	if (!content.startsWith("---")) return content;
+	const end = content.indexOf("\n---", 3);
+	if (end === -1) return content;
+	return content.slice(end + 4);
+}
+
+/**
+ * True if the body contains at least one list item with text content —
+ * i.e. a bullet like `- foo`, not a bare `-` placeholder. Brain topic
+ * notes are list-shaped by template, so this is the clearest signal of
+ * "has the user actually added anything here yet?"
+ */
+export function hasBrainContent(body: string): boolean {
+	return /^[ \t]*[-*+][ \t]+\S.*$/m.test(body);
+}
+
+/**
+ * Format the "Brain Topics" section — one line per brain/ note with its
+ * description from frontmatter, so Claude sees what topic notes exist
+ * without loading their full content. Omits North Star (already loaded
+ * in its own section) and Memories (an index that just points here).
+ * Appends "(empty)" when the note has no filled bullets, so Claude
+ * knows not to waste a read on a stub.
+ */
+export function formatBrainIndex(
+	entries: readonly {
+		readonly name: string;
+		readonly description: string | null;
+		readonly hasContent: boolean;
+	}[],
+): string {
+	const lines = entries
+		.filter((e) => e.name !== "North Star" && e.name !== "Memories")
+		.map((e) => {
+			const desc = e.description ?? "(no description)";
+			const suffix = e.hasContent ? "" : " (empty)";
+			return `- [[${e.name}]] — ${desc}${suffix}`;
+		});
+	return lines.length > 0 ? lines.join("\n") : "(none)";
+}
