@@ -176,6 +176,18 @@ describe("pickMarkers", () => {
 		assert.deepEqual(pickMarkers(added, GLOBS), [".mcp.json"]);
 	});
 
+	test("skips package.json and tsconfig.json (excluded from release zip)", () => {
+		// release.yml explicitly excludes .claude/scripts/{package,tsconfig}.json
+		// from the published zip. Using them as fingerprint markers would break
+		// version detection for zip-install users.
+		const added = [
+			".claude/scripts/package.json",
+			".claude/scripts/tsconfig.json",
+			".mcp.json",
+		];
+		assert.deepEqual(pickMarkers(added, GLOBS), [".mcp.json"]);
+	});
+
 	test("skips .test.ts files even outside a tests/ dir", () => {
 		const added = [".claude/scripts/manifest-check.test.ts", ".mcp.json"];
 		assert.deepEqual(pickMarkers(added, GLOBS), [".mcp.json"]);

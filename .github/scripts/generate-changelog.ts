@@ -218,12 +218,23 @@ function getAddedFiles(prevTag: string): string[] {
  * details — tests, internal libs, CI plumbing, vendored deps — that shouldn't
  * serve as stable version markers because they may be renamed or removed.
  */
+/**
+ * Paths to skip when picking fingerprint markers. Two rules they all serve:
+ * (1) skip volatile implementation details (tests, internal libs, vendored
+ * deps) because they may be renamed or removed; (2) skip paths that are
+ * **excluded from the release zip** (`.github/**`, `.claude/scripts/tests/**`,
+ * `.claude/scripts/{package,tsconfig}.json`, `.claude/scripts/node_modules/**`
+ * — see `.github/workflows/release.yml` zip -x entries). Zip-excluded paths
+ * would produce fingerprints that don't work for users who install from the
+ * published zip instead of a git clone.
+ */
 const MARKER_SKIP_PATTERNS: readonly RegExp[] = [
 	/(^|\/)tests?\//,
 	/(^|\/)lib\//,
 	/(^|\/)node_modules\//,
 	/\.github\//,
 	/\.test\.ts$/,
+	/(^|\/)(package|tsconfig)\.json$/,
 ];
 
 /**
@@ -333,6 +344,20 @@ function updateFingerprints(
 	if (!prevTag) return;
 
 	const fingerprints = manifest.version_fingerprints ?? {};
+	const key = toFingerprintKey(version);
+
+	// Re-running the release workflow for an existing version (e.g. after a
+	// hotfix rebuild) would re-derive markers from the current HEAD, which
+	// may differ from the HEAD at original-release time. That would silently
+	// invalidate version detection for vaults legitimately at the original
+	// release. Keep the original fingerprint untouched on re-runs.
+	if (key in fingerprints) {
+		process.stderr.write(
+			`Fingerprint for ${key} already exists; leaving untouched (re-run safe).\n`,
+		);
+		return;
+	}
+
 	const addedFiles = getAddedFiles(prevTag);
 	const globs = manifest.infrastructure ?? [];
 	const markers = pickMarkers(addedFiles, globs);
@@ -343,8 +368,6 @@ function updateFingerprints(
 		);
 		return;
 	}
-
-	const key = toFingerprintKey(version);
 
 	// Close out the previous open-ended fingerprint BEFORE adding the new
 	// one, so we don't look up the new entry as its own predecessor.

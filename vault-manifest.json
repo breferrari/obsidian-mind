@@ -119,15 +119,6 @@
         ".claude/commands/om-intake.md"
       ],
       "missing": [
-        ".github/workflows/manifest-check.yml"
-      ]
-    },
-    "v3.8": {
-      "exists": [
-        ".github/workflows/manifest-check.yml",
-        ".github/workflows/pr-title.yml"
-      ],
-      "missing": [
         "AGENTS.md"
       ]
     },
