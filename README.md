@@ -107,8 +107,8 @@ You: "wrap up"
 QMD is where most of the agent's retrieval intelligence comes from. Optional in the strict sense — the vault falls back to grep + the Obsidian CLI — but the experience is meaningfully better with it:
 
 - **Semantic recall.** Find "what did we decide about caching" even when the note is titled "Redis Migration ADR."
-- **Brain topics surface automatically.** Claude uses `qmd query` to pull relevant `brain/` guidance into the conversation on demand.
-- **Subagents get sharper context.** `context-loader`, `review-prep`, `brag-spotter`, and friends all lean on QMD first, grep second.
+- **Brain topics available on demand.** Claude is instructed (via `CLAUDE.md`) to consult `brain/` guidance through QMD when the conversation touches a listed topic.
+- **Subagents get sharper context.** `context-loader`, `review-prep`, `brag-spotter`, and friends consult QMD first, then fall back to grep.
 - **First-class MCP tools.** Registered via `.mcp.json` at the project root — when QMD is installed, its search tools appear directly in the Claude Code tool menu.
 
 ```bash
