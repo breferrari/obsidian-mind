@@ -8,56 +8,16 @@ on:
       - '.claude/scripts/**'
       - 'templates/**'
       - 'bases/**'
+      - 'vault-manifest.json'
+      - '.github/scripts/manifest-check.ts'
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Check manifest coverage
-        run: |
-          MISSING=()
-
-          # Read infrastructure globs from manifest
-          GLOBS=$(python3 -c "
-          import json
-          with open('vault-manifest.json') as f:
-              m = json.load(f)
-          for g in m.get('infrastructure', []):
-              print(g)
-          ")
-
-          # For each file in watched directories, check if any glob covers it
-          for f in .claude/commands/*.md .claude/agents/*.md .claude/scripts/*.py .claude/scripts/*.sh templates/*.md bases/*.base; do
-            [ -f "$f" ] || continue
-            COVERED=false
-            while IFS= read -r glob; do
-              # Check exact match
-              if [ "$f" = "$glob" ]; then
-                COVERED=true
-                break
-              fi
-              # Check glob coverage: ".claude/**" covers ".claude/commands/foo.md"
-              # Convert glob to regex: ** → .*, * → [^/]*
-              regex=$(echo "$glob" | sed 's|\*\*|__DOUBLESTAR__|g' | sed 's|\*|[^/]*|g' | sed 's|__DOUBLESTAR__|.*|g' | sed 's|\.|\\.|g' | sed 's|\\\.\*|.*|g' | sed 's|\\\[|[|g' | sed 's|\\\]|]|g')
-              if echo "$f" | grep -qE "^${regex}$"; then
-                COVERED=true
-                break
-              fi
-            done <<< "$GLOBS"
-
-            if [ "$COVERED" = false ]; then
-              MISSING+=("$f")
-            fi
-          done
-
-          if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::warning::The following files are not covered by vault-manifest.json infrastructure globs:"
-            for f in "${MISSING[@]}"; do
-              echo "  - $f"
-            done
-            echo ""
-            echo "If these are template infrastructure files, add them to the 'infrastructure' array in vault-manifest.json."
-            echo "Also consider adding a version_fingerprints entry if this is a new version-defining file."
-          fi
+        run: node --experimental-strip-types .github/scripts/manifest-check.ts

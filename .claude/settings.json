@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/session-start.sh",
+            "command": "node --experimental-strip-types .claude/scripts/session-start.ts",
             "timeout": 30
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/find-python.sh .claude/scripts/classify-message.py",
+            "command": "node --experimental-strip-types .claude/scripts/classify-message.ts",
             "timeout": 15
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/find-python.sh .claude/scripts/validate-write.py",
+            "command": "node --experimental-strip-types .claude/scripts/validate-write.ts",
             "timeout": 15
           }
         ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/pre-compact.sh",
+            "command": "node --experimental-strip-types .claude/scripts/pre-compact.ts",
             "timeout": 30
           }
         ]
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'INPUT=$(cat); ACTIVE=$(printf \"%s\" \"$INPUT\" | bash .claude/scripts/find-python.sh -c \"import json,sys; print(json.load(sys.stdin).get(\\\"stop_hook_active\\\",False))\" 2>/dev/null || echo False); [ \"$ACTIVE\" = \"True\" ] && exit 0; echo \"Session end checklist:\n- Archive completed projects? (work/active/ -> work/archive/YYYY/)\n- Update indexes? (Index.md, Memories.md, People & Context, Brag Doc)\n- New notes linked? (orphans are bugs)\n- Run /om-vault-audit if many notes were created/modified\"'",
+            "command": "node --experimental-strip-types .claude/scripts/stop-checklist.ts",
             "timeout": 5
           }
         ]

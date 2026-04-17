@@ -1,0 +1,133 @@
+/**
+ * Data-integrity tests for the SIGNALS table.
+ * New coverage — catches table edits that break invariants the runtime assumes.
+ */
+
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+import { SIGNALS } from "../lib/signals.ts";
+
+describe("SIGNALS table integrity", () => {
+	test("every signal has a non-empty name", () => {
+		for (const s of SIGNALS) {
+			assert.ok(s.name && s.name.length > 0, `signal name empty: ${JSON.stringify(s)}`);
+		}
+	});
+
+	test("signal names are unique", () => {
+		const names = SIGNALS.map((s) => s.name);
+		const unique = new Set(names);
+		assert.equal(unique.size, names.length, `duplicate names in SIGNALS: ${names}`);
+	});
+
+	test("every signal has a non-empty message", () => {
+		for (const s of SIGNALS) {
+			assert.ok(s.message.length > 0, `empty message for ${s.name}`);
+		}
+	});
+
+	test("every signal.message contains the signal.name", () => {
+		for (const s of SIGNALS) {
+			assert.ok(
+				s.message.includes(s.name),
+				`message for ${s.name} does not reference its name: ${s.message}`,
+			);
+		}
+	});
+
+	test("every signal has at least one pattern", () => {
+		for (const s of SIGNALS) {
+			assert.ok(s.patterns.length > 0, `no patterns for ${s.name}`);
+		}
+	});
+
+	test("no pattern is empty or whitespace-only", () => {
+		for (const s of SIGNALS) {
+			for (const p of s.patterns) {
+				assert.ok(p.trim().length > 0, `empty pattern in ${s.name}`);
+			}
+		}
+	});
+
+	test("patterns within a single signal are unique", () => {
+		for (const s of SIGNALS) {
+			const unique = new Set(s.patterns);
+			assert.equal(
+				unique.size,
+				s.patterns.length,
+				`duplicate patterns in ${s.name}`,
+			);
+		}
+	});
+
+	test("known cross-signal overlaps are preserved (WIN ↔ PROJECT UPDATE)", () => {
+		const win = SIGNALS.find((s) => s.name === "WIN");
+		const pu = SIGNALS.find((s) => s.name === "PROJECT UPDATE");
+		assert.ok(win && pu, "WIN and PROJECT UPDATE signals must exist");
+		// Intentional overlap: delivery verbs trigger both categories.
+		const shared = ["shipped", "launched", "deployed", "released", "completed"];
+		for (const verb of shared) {
+			assert.ok(
+				win.patterns.includes(verb),
+				`WIN must include delivery verb ${verb}`,
+			);
+			assert.ok(
+				pu.patterns.includes(verb),
+				`PROJECT UPDATE must include delivery verb ${verb}`,
+			);
+		}
+	});
+
+	test("cross-signal phrase sharing is limited to declared pairs", () => {
+		// Only WIN ↔ PROJECT UPDATE and WIN ↔ PROJECT UPDATE (via Chinese delivery
+		// verbs 发布了/上线了) should share patterns. Any other pair sharing a
+		// phrase is a table bug — patterns leak into unrelated categories.
+		const DECLARED_OVERLAP_PAIRS = new Set([
+			"WIN|PROJECT UPDATE",
+			"PROJECT UPDATE|WIN",
+		]);
+
+		const phraseToSignals = new Map<string, string[]>();
+		for (const s of SIGNALS) {
+			for (const p of s.patterns) {
+				const list = phraseToSignals.get(p) ?? [];
+				if (!list.includes(s.name)) list.push(s.name);
+				phraseToSignals.set(p, list);
+			}
+		}
+
+		for (const [phrase, names] of phraseToSignals) {
+			if (names.length < 2) continue;
+			// Sort to get canonical pair key
+			const pairs: string[] = [];
+			for (let i = 0; i < names.length; i++) {
+				for (let j = i + 1; j < names.length; j++) {
+					pairs.push(`${names[i]}|${names[j]}`);
+					pairs.push(`${names[j]}|${names[i]}`);
+				}
+			}
+			const allDeclared = pairs.every((p) => DECLARED_OVERLAP_PAIRS.has(p));
+			assert.ok(
+				allDeclared,
+				`Phrase "${phrase}" matches multiple signals ${JSON.stringify(names)}; only WIN↔PROJECT UPDATE sharing is declared.`,
+			);
+		}
+	});
+
+	test("known signal categories are present", () => {
+		// Guards against accidental deletion. Additions do not require a test update.
+		const names = new Set(SIGNALS.map((s) => s.name));
+		const required = [
+			"DECISION",
+			"INCIDENT",
+			"1:1 CONTENT",
+			"WIN",
+			"ARCHITECTURE",
+			"PERSON CONTEXT",
+			"PROJECT UPDATE",
+		];
+		for (const expected of required) {
+			assert.ok(names.has(expected), `missing signal: ${expected}`);
+		}
+	});
+});

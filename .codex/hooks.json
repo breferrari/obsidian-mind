@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/session-start.sh",
+            "command": "node --experimental-strip-types .claude/scripts/session-start.ts",
             "timeout": 30
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/find-python.sh .claude/scripts/classify-message.py",
+            "command": "node --experimental-strip-types .claude/scripts/classify-message.ts",
             "timeout": 15
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/find-python.sh .claude/scripts/validate-write.py",
+            "command": "node --experimental-strip-types .claude/scripts/validate-write.ts",
             "timeout": 15
           }
         ]

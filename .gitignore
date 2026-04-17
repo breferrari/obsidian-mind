@@ -16,3 +16,7 @@
 
 # Session logs (local transcripts)
 thinking/session-logs/
+
+# Node typecheck deps (CI + local dev only; runtime is zero-deps)
+node_modules/
+.claude/scripts/node_modules/

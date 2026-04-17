@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Release tooling for obsidian-mind. Executed by `node --experimental-strip-types`. This file marks .ts files as ESM for Node's module resolution and tsc typecheck — no runtime dependencies."
+}

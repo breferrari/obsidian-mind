@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "lib": ["es2023"],
+    "types": ["node"],
+    "resolveJsonModule": true
+  },
+  "include": ["**/*.ts", "../../.github/scripts/**/*.ts"],
+  "exclude": ["node_modules"]
+}

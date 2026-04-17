@@ -16,7 +16,7 @@
 [![Obsidian CLI](https://img.shields.io/badge/obsidian--cli-integrated-E6E6E6)](https://github.com/kepano/obsidian-cli)
 [![Obsidian Skills](https://img.shields.io/badge/obsidian--skills-integrated-8B5CF6)](https://github.com/kepano/obsidian-skills)
 [![QMD](https://img.shields.io/badge/qmd-semantic%20search-FF6B6B)](https://github.com/tobi/qmd)
-[![Python](https://img.shields.io/badge/python-3.8%2B-3776AB)](https://python.org)
+[![Node](https://img.shields.io/badge/node-22%2B-339933)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > **Claude Code가 모든 것을 기억하게 해주는 Obsidian 볼트.** 세션을 시작하고 하루에 대해 이야기하면, Claude가 나머지를 처리합니다 — 노트, 링크, 인덱스, 성과 추적까지. 모든 대화가 이전 대화 위에 쌓입니다.
@@ -123,9 +123,11 @@ qmd update && qmd embed
 
 - [Obsidian](https://obsidian.md) 1.12+ (CLI 지원)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- Python 3 (훅 스크립트용)
+- [Node 22+ LTS](https://nodejs.org) (훅 스크립트용 — Claude Code / Codex / Gemini CLI와 함께 이미 설치되어 있을 가능성이 큽니다)
 - Git (버전 히스토리용)
 - [QMD](https://github.com/tobi/qmd) (선택 사항, 시맨틱 검색용)
+
+> **Node 플래그에 관한 참고.** 훅 스크립트는 Node의 `--experimental-strip-types` 플래그로 TypeScript를 직접 실행합니다. 이 플래그는 Node 22.6+ (2024년 8월)부터 안정화되었고, Node 23.6+ 에서는 기본 동작이 되었습니다. 실험적(experimental)으로 표시되어 있지만 22 LTS와 24 LTS 전반에서 동작이 변경된 적은 없습니다. 향후 Node 릴리스에서 플래그가 폐지되거나 이름이 변경되면 `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`의 훅 명령어를 한 줄만 수정하면 됩니다.
 
 ---
 
@@ -164,11 +166,11 @@ obsidian-mind는 전체 볼트를 컨텍스트에 로드하지 **않습니다**.
 | **트리거** | PostToolUse 검증 | `.md` 작성 후 | ~200 토큰 |
 | **드물게** | 전체 파일 읽기 | 명시적으로 필요한 경우만 | 가변 |
 
-SessionStart는 **가벼운 컨텍스트**를 로드합니다 — 주요 파일의 짧은 발췌, 파일명, git 요약만 로드하며 전체 노트 내용은 읽지 않습니다. 에이전트는 QMD를 통해 의미 기반 검색 후 파일을 읽으므로 관련 정보만 가져옵니다. 분류 훅은 메시지당 가벼운 Python 호출 1회입니다. 검증 훅은 마크다운 쓰기 시에만 실행되며 제외된 경로는 건너뜁니다.
+SessionStart는 **가벼운 컨텍스트**를 로드합니다 — 주요 파일의 짧은 발췌, 파일명, git 요약만 로드하며 전체 노트 내용은 읽지 않습니다. 에이전트는 QMD를 통해 의미 기반 검색 후 파일을 읽으므로 관련 정보만 가져옵니다. 분류 훅은 메시지당 가벼운 Node 호출 1회입니다. 검증 훅은 마크다운 쓰기 시에만 실행되며 제외된 경로는 건너뜁니다.
 
 ### 🌐 다른 에이전트와 사용하기
 
-obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAUDE.md`의 볼트 규약, `.claude/scripts/`의 훅 스크립트, `.claude/commands/`의 18개 커맨드는 모두 에이전트 비의존적입니다 — 순수 Markdown, Python, 셸이며 SDK 의존성이 없습니다.
+obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAUDE.md`의 볼트 규약, `.claude/scripts/`의 훅 스크립트, `.claude/commands/`의 18개 커맨드는 모두 에이전트 비의존적입니다 — 순수 Markdown, TypeScript, 셸이며 SDK 의존성이 없습니다.
 
 **Claude Code** — 완전 지원. 훅, 커맨드, 서브에이전트, 메모리 시스템이 모두 기본으로 작동합니다.
 
@@ -328,7 +330,7 @@ templates/              YAML 프론트매터가 포함된 Obsidian 템플릿
 .claude/
   commands/             18개 슬래시 명령어
   agents/               9개 서브에이전트
-  scripts/              훅 스크립트 + charcount.sh 유틸리티
+  scripts/              훅 스크립트 + charcount.ts 유틸리티
   skills/               Obsidian + QMD 스킬
   settings.json         5개 훅 설정
 ```
@@ -450,9 +452,7 @@ cd ~/new-vault && claude   # 또는 codex, gemini
 
 ## 🗺️ 로드맵
 
-**Python에서 TypeScript로의 마이그레이션.** 훅 스크립트는 향후 릴리스에서 TypeScript로 이전될 예정입니다. 이 마이그레이션은 아직 공개되지 않은 다른 작업과 연관되어 있어, 직접 진행할 예정입니다. 이 마이그레이션을 제안하는 PR은 감사 인사와 함께 닫히게 됩니다.
-
-**다른 기여는 환영합니다.** 파일 하나를 초과하는 변경 사항은 먼저 이슈를 열어 주세요. 특히 훅, 설치, 또는 설치에 필요한 요구 사항에 관련된 변경은 필수입니다. 머지할 수 없는 것을 만드는 수고를 덜 수 있습니다.
+**기여는 환영합니다.** 파일 하나를 초과하는 변경 사항은 먼저 이슈를 열어 주세요. 특히 훅, 설치, 또는 설치에 필요한 요구 사항에 관련된 변경은 필수입니다. 머지할 수 없는 것을 만드는 수고를 덜 수 있습니다.
 
 ---
 

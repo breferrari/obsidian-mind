@@ -13,7 +13,7 @@
 [![Obsidian CLI](https://img.shields.io/badge/obsidian--cli-integrated-E6E6E6)](https://github.com/kepano/obsidian-cli)
 [![Obsidian Skills](https://img.shields.io/badge/obsidian--skills-integrated-8B5CF6)](https://github.com/kepano/obsidian-skills)
 [![QMD](https://img.shields.io/badge/qmd-semantic%20search-FF6B6B)](https://github.com/tobi/qmd)
-[![Python](https://img.shields.io/badge/python-3.8%2B-3776AB)](https://python.org)
+[![Node](https://img.shields.io/badge/node-22%2B-339933)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > **An Obsidian vault that gives AI coding agents persistent memory.** Built for Claude Code, with working hooks for Codex CLI and Gemini CLI. Start a session, talk about your day, and the agent handles the rest — notes, links, indexes, performance tracking. Every conversation builds on the last.
@@ -122,9 +122,11 @@ qmd update && qmd embed
 
 - [Obsidian](https://obsidian.md) 1.12+ (for CLI support)
 - An AI coding agent: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (full support), [Codex CLI](https://github.com/openai/codex), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
-- [Python 3.8+](https://python.org/downloads) (for hook scripts)
+- [Node 22+ LTS](https://nodejs.org) (for hook scripts — typically already installed alongside Claude Code / Codex / Gemini CLI)
 - Git (for version history)
 - [QMD](https://github.com/tobi/qmd) (optional, for semantic search)
+
+> **Note on the Node flag.** Hook scripts execute TypeScript directly via Node's `--experimental-strip-types` flag, stable in Node 22.6+ (Aug 2024) and the default behaviour in Node 23.6+. The flag is marked experimental but has been unchanged across 22 LTS and 24 LTS; if a future Node release retires or renames it, hook commands in `.claude/settings.json`, `.codex/hooks.json`, and `.gemini/settings.json` need a one-line update.
 
 ---
 
@@ -163,11 +165,11 @@ obsidian-mind does **not** dump your entire vault into context. It uses tiered l
 | **Triggered** | PostToolUse validation | After `.md` writes | ~200 tokens |
 | **Rare** | Full file reads | Only when explicitly needed | Variable |
 
-SessionStart loads **lightweight context** — small excerpts from key files, filenames, and git summary — not full note contents. The agent queries by meaning via QMD before reading files, so it pulls only what's relevant. The classification hook is one lightweight Python call per message. The validation hook only fires on markdown writes and skips excluded paths.
+SessionStart loads **lightweight context** — small excerpts from key files, filenames, and git summary — not full note contents. The agent queries by meaning via QMD before reading files, so it pulls only what's relevant. The classification hook is one lightweight Node call per message. The validation hook only fires on markdown writes and skips excluded paths.
 
 ### 🌐 Using with Other Agents
 
-obsidian-mind works with Claude Code, Codex CLI, and Gemini CLI. The vault conventions in `CLAUDE.md`, the hook scripts in `.claude/scripts/`, and the 18 commands in `.claude/commands/` are all agent-agnostic — pure Markdown, Python, and shell with no SDK dependencies.
+obsidian-mind works with Claude Code, Codex CLI, and Gemini CLI. The vault conventions in `CLAUDE.md`, the hook scripts in `.claude/scripts/`, and the 18 commands in `.claude/commands/` are all agent-agnostic — pure Markdown, TypeScript, and shell with no SDK dependencies.
 
 **Claude Code** — full support. Hooks, commands, subagents, and the memory system all work out of the box.
 
@@ -327,7 +329,7 @@ templates/              Obsidian templates with YAML frontmatter
 .claude/
   commands/             18 slash commands
   agents/               9 subagents
-  scripts/              Hook scripts + charcount.sh utility
+  scripts/              Hook scripts + charcount.ts utility
   skills/               Obsidian + QMD skills
   settings.json         5 hooks configuration
 ```
@@ -449,9 +451,7 @@ Your old vault is **never modified**. Use `--dry-run` to preview the plan withou
 
 ## 🗺️ Roadmap
 
-**Python to TypeScript migration.** The hook scripts are moving to TypeScript in a future release. I'm doing this one myself because it ties into other work already in motion. PRs that propose this migration will be closed with thanks.
-
-**Other contributions welcome.** Open an issue first for anything bigger than a one-file change. Especially anything that touches the hooks, the install, or what people need installed. Saves you from building something that can't be merged.
+**Contributions welcome.** Open an issue first for anything bigger than a one-file change. Especially anything that touches the hooks, the install, or what people need installed. Saves you from building something that can't be merged.
 
 ---
 

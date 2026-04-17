@@ -20,6 +20,6 @@
 ## Checklist
 
 - [ ] PR title follows `type: description` format
-- [ ] Tests pass (`python .claude/scripts/test_hooks.py`)
+- [ ] Tests pass (`cd .claude/scripts && npm test`)
 - [ ] Doc tables updated if adding commands/agents (CLAUDE.md, README, Skills.md, translations)
 - [ ] No changes to CHANGELOG.md or vault-manifest.json version (automated by release pipeline)
