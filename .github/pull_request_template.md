@@ -20,6 +20,6 @@
 ## Checklist
 
 - [ ] PR title follows `type: description` format
-- [ ] Tests pass (`node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts`)
+- [ ] Tests pass (`cd .claude/scripts && npm test`)
 - [ ] Doc tables updated if adding commands/agents (CLAUDE.md, README, Skills.md, translations)
 - [ ] No changes to CHANGELOG.md or vault-manifest.json version (automated by release pipeline)

@@ -10,6 +10,7 @@
 
 import { readFileSync, readdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type Manifest = { readonly infrastructure?: readonly string[] };
 
@@ -112,6 +113,6 @@ function main(): void {
 	);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 	main();
 }

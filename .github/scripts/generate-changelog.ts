@@ -12,6 +12,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const PREFIX_MAP: Readonly<Record<string, string>> = {
@@ -219,7 +220,7 @@ function main(): void {
 	if (!section.endsWith("\n")) process.stdout.write("\n");
 }
 
-// Only run main when invoked as a script (not when imported by parity harness)
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Only run main when invoked as a script (not when imported by tests).
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 	main();
 }

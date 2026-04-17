@@ -80,13 +80,13 @@ The release pipeline handles these automatically — **do not include in your PR
 - [ ] Counts match everywhere (commands, agents) if you added/removed any
 - [ ] New command/agent appears in ALL doc tables (CLAUDE.md + README + Skills.md)
 - [ ] Translations flagged if you changed README.md (maintainer can handle these)
-- [ ] Tests pass: `node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts`
+- [ ] Tests pass: `cd .claude/scripts && npm test`
 - [ ] Examples use generic dates and names, not specific to any company or person
 
 ## Running Tests
 
 ```bash
-node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts
+cd .claude/scripts && npm test
 ```
 
 Tests run automatically on PRs that touch `.claude/scripts/`.

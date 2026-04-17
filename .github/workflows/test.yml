@@ -32,7 +32,6 @@ jobs:
         working-directory: .claude/scripts
         run: npm run typecheck
       - name: Run hook tests
-        shell: bash
         working-directory: .claude/scripts
         run: npm test
 

@@ -16,6 +16,7 @@ import {
 	unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { debug, readStdinJson } from "./lib/hook-io.ts";
 
 type HookInput = {
@@ -56,8 +57,10 @@ export function pruneBackups(dir: string, retain: number): void {
 	}
 }
 
-// Only run main when invoked as a script.
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Only run main when invoked as a script (not when imported by tests).
+// fileURLToPath handles the file:// prefix and any URL-encoded segments;
+// process.argv[1] is already the absolute resolved script path at invocation.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 	const input = await readStdinJson<HookInput>();
 	if (!input) process.exit(0);
 
