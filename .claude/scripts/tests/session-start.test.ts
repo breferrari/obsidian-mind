@@ -129,12 +129,28 @@ describe("extractFrontmatterField", () => {
 		const content = "---\ntags: []\n---\n\ndescription: not frontmatter\n";
 		assert.equal(extractFrontmatterField(content, "description"), null);
 	});
+	test("handles CRLF line endings (Windows)", () => {
+		const content = '---\r\ndescription: "hello"\r\ntags: []\r\n---\r\n# body';
+		assert.equal(extractFrontmatterField(content, "description"), "hello");
+	});
+	test("does not mistake body line starting with --- for frontmatter terminator", () => {
+		const content =
+			'---\ndescription: "real"\n---\n\n---this-is-not-a-delimiter\n';
+		assert.equal(extractFrontmatterField(content, "description"), "real");
+	});
+	test("escapes regex metacharacters in field name", () => {
+		const content = "---\nfoo.bar: actual-value\n---\n";
+		assert.equal(extractFrontmatterField(content, "foo.bar"), "actual-value");
+		// An unescaped `.` would have matched `fooxbar:` — confirm it doesn't.
+		const decoy = "---\nfooxbar: decoy\n---\n";
+		assert.equal(extractFrontmatterField(decoy, "foo.bar"), null);
+	});
 });
 
 describe("stripFrontmatter", () => {
 	test("removes a complete frontmatter block", () => {
 		const out = stripFrontmatter("---\ntags: []\n---\n\n# body\n");
-		assert.equal(out, "\n\n# body\n");
+		assert.equal(out, "\n# body\n");
 	});
 	test("leaves content without frontmatter unchanged", () => {
 		assert.equal(stripFrontmatter("# just a heading\n"), "# just a heading\n");
@@ -142,6 +158,14 @@ describe("stripFrontmatter", () => {
 	test("leaves unterminated frontmatter unchanged", () => {
 		const content = "---\ntags: []\n# never closed\n";
 		assert.equal(stripFrontmatter(content), content);
+	});
+	test("handles CRLF line endings", () => {
+		const out = stripFrontmatter("---\r\ntags: []\r\n---\r\n# body\r\n");
+		assert.equal(out, "# body\r\n");
+	});
+	test("does not mistake body line starting with --- for terminator", () => {
+		const content = "---\ntags: []\n---\n\n---this-is-body\n";
+		assert.equal(stripFrontmatter(content), "\n---this-is-body\n");
 	});
 });
 
