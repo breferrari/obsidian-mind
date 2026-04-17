@@ -102,9 +102,14 @@ You: "wrap up"
 5. Fill in **`brain/North Star.md`** with your goals — this grounds every session
 6. Start talking about work
 
-### 🔍 Optional: QMD Semantic Search
+### 🔍 Recommended: QMD Semantic Search
 
-For semantic search across the vault (find "what did we decide about caching" even if the note is titled "Redis Migration ADR"):
+QMD is where most of the agent's retrieval intelligence comes from. Optional in the strict sense — the vault falls back to grep + the Obsidian CLI — but the experience is meaningfully better with it:
+
+- **Semantic recall.** Find "what did we decide about caching" even when the note is titled "Redis Migration ADR."
+- **Brain topics surface automatically.** Claude uses `qmd query` to pull relevant `brain/` guidance into the conversation on demand.
+- **Subagents get sharper context.** `context-loader`, `review-prep`, `brag-spotter`, and friends all lean on QMD first, grep second.
+- **First-class MCP tools.** Registered via `.mcp.json` at the project root — when QMD is installed, its search tools appear directly in the Claude Code tool menu.
 
 ```bash
 npm install -g @tobilu/qmd
@@ -114,7 +119,10 @@ qmd update && qmd embed
 ```
 
 > [!NOTE]
-> If QMD isn't installed, everything still works — the agent falls back to the Obsidian CLI and grep.
+> First-time `qmd embed` downloads a ~328MB embedding model. `qmd query` (with LLM reranking) also downloads a ~1.28GB model on first use — skip it with `qmd search` (BM25) or `qmd vsearch` (semantic only) if you want to avoid the larger download.
+
+> [!NOTE]
+> If QMD isn't installed, everything still works — the agent falls back to grep and the Obsidian CLI, and the MCP server entry is skipped with a harmless warning.
 
 ---
 
