@@ -85,7 +85,7 @@ The hook scripts, subagent prompts, command definitions, and vault conventions a
 
 ## The Manifest as Source of Truth
 
-`vault-manifest.json` is the one file that every layer reads. It answers four questions:
+`vault-manifest.json` is the one file that every layer reads. It answers five questions:
 
 | Question | Field |
 |----------|-------|
@@ -102,14 +102,14 @@ flowchart LR
     Manifest["vault-manifest.json<br/>qmd_index: obsidian-mind"]
     SessionStart["SessionStart hook<br/>(session-start.ts)"]
     MCP[".mcp.json wrapper<br/>(qmd-mcp.mjs)"]
-    Refresh["PostToolUse hook<br/>(qmd-refresh.ts)"]
+    Refresh["Mid-session refresh<br/>(PostToolUse / Stop / PreCompact<br/>→ qmd-refresh-run.ts worker)"]
     Store[("QMD SQLite store<br/>(named: obsidian-mind)")]
 
     Manifest --> SessionStart
     Manifest --> MCP
     Manifest --> Refresh
     SessionStart -->|re-index at startup| Store
-    Refresh -->|debounced mid-session refresh| Store
+    Refresh -->|debounced refresh| Store
     MCP -->|search tools| Store
 ```
 
@@ -164,9 +164,9 @@ A few specific design choices are worth calling out:
 
 - **`SessionStart` injects, it does not load.** It builds a ~2K-token briefing (filename listing, North Star excerpt, git summary, open tasks) and hands it to the agent. Full note contents never flow through this hook.
 - **`UserPromptSubmit` classifies, it does not route.** It tags the prompt with hints like `ARCHITECTURE discussion` or `DECISION`; the agent decides where to file. Keeping the hook opinion-free means the routing logic lives in `CLAUDE.md`, which is editable per-user without touching scripts.
-- **`PostToolUse` debounces QMD refresh.** Rapid successive edits (common during a brain dump) would otherwise re-index the whole vault repeatedly. The hook writes a tail-chase marker and a detached process picks it up once writes have settled.
-- **`PreCompact` is a backup, not a transformation.** It copies the current transcript out to `thinking/session-logs/` before the agent compacts its context, so long conversations remain recoverable.
-- **`Stop` is deliberately lightweight.** It prints a short checklist. For a thorough review, the user invokes `/om-wrap-up` explicitly. Putting heavy logic in a Stop hook would slow every session exit and surprise the user.
+- **QMD refresh is shared, debounced, and detached.** Three hook entries fire the same refresh helper — `PostToolUse` (after `.md` writes), `PreCompact` (before transcript backup; writes tend to cluster before compaction), and `Stop` (end of session) — sharing one sentinel file so a burst of events produces at most one worker per debounce window. The actual indexing runs in `.claude/scripts/qmd-refresh-run.ts` as a detached, stdio-silent worker (`qmd update` → `qmd embed` → tail-chase `qmd update`), so the parent hook returns in milliseconds and nothing flows to the agent's context.
+- **`PreCompact` also backs up the transcript.** In addition to kicking the QMD refresh, it copies the current session transcript out to `thinking/session-logs/` so long conversations remain recoverable after compaction.
+- **`Stop` is deliberately lightweight.** Beyond triggering the shared refresh, it only prints a short checklist. For a thorough review, the user invokes `/om-wrap-up` explicitly. Putting heavy logic in a Stop hook would slow every session exit and surprise the user.
 
 ---
 
@@ -176,9 +176,11 @@ QMD provides semantic search. It is the mechanism behind most of the agent's ret
 
 | Caller | Entry point | When |
 |--------|-------------|------|
-| Agent tool menu | `.mcp.json` → `qmd-mcp.mjs` | Any tool call from the agent |
+| Agent tool menu | `.mcp.json` → `qmd-mcp.mjs` | Every `mcp__qmd__*` tool call from the agent |
 | Session startup | `session-start.ts` | Re-index on every new session |
-| Mid-session refresh | `qmd-refresh.ts` | Debounced, after Markdown writes |
+| Mid-session refresh | `qmd-refresh.ts` / `stop-checklist.ts` / `pre-compact.ts` → shared debounce → `qmd-refresh-run.ts` | After `.md` writes, at session end, and before compaction |
+
+Every `qmd update` invocation re-reads the per-index YAML (`~/.config/qmd/<index>.yml`), so changes to the collection config — including the ignore list synced from `.obsidian/app.json` — propagate to every surface without a session restart.
 
 ```mermaid
 flowchart TB
@@ -186,19 +188,21 @@ flowchart TB
         MCP_get["mcp__qmd__get"]
         MCP_query["mcp__qmd__query"]
         MCP_multi["mcp__qmd__multi_get"]
+        MCP_status["mcp__qmd__status"]
     end
     subgraph Writer["Index maintenance"]
         Boot["qmd-bootstrap.ts<br/>(one-time)"]
         Session["session-start.ts<br/>(per session)"]
-        Refresh["qmd-refresh.ts<br/>(per write, debounced)"]
+        Refresh["qmd-refresh-run.ts<br/>(per write/stop/pre-compact,<br/>debounced, detached)"]
     end
     Wrapper["qmd-mcp.mjs<br/>(reads qmd_index from manifest)"]
-    CLI["qmd CLI<br/>(--index obsidian-mind)"]
+    CLI["qmd CLI<br/>(--index &lt;name&gt; from manifest)"]
     Store[("Named SQLite store<br/>+ embeddings")]
 
     MCP_get --> Wrapper
     MCP_query --> Wrapper
     MCP_multi --> Wrapper
+    MCP_status --> Wrapper
     Wrapper --> Store
     Boot --> CLI
     Session --> CLI
@@ -314,7 +318,7 @@ The rule that enforces this: "when asked to remember, write to the relevant `bra
 The template ships two categories of skills:
 
 - **Obsidian-native skills** (`kepano/obsidian-skills`) in `.claude/skills/` — teach the agent Obsidian-flavored Markdown, the Obsidian CLI, Bases, and JSON Canvas. Loaded automatically when relevant.
-- **A custom QMD skill** in `.claude/skills/qmd/` — teaches the agent to query QMD before reading files, and to check for duplicates after creating notes.
+- **A custom QMD skill** in `.claude/skills/qmd/` — teaches the agent the preference order for vault retrieval (MCP tools when registered → `qmd` CLI as fallback → Grep/Glob as last resort) and the signals that should trigger a proactive search (past decisions, incidents, people, architecture, duplicates before creating a note).
 
 Slash commands in `.claude/commands/` are operational workflows (e.g. `/om-standup`, `/om-wrap-up`, `/om-review-brief`). Each is a Markdown file with prompt instructions. Subagents in `.claude/agents/` are invoked by those commands to keep heavy operations (Slack archaeology, PR deep scans, vault migration) out of the main context window.
 
