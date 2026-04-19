@@ -31,6 +31,11 @@
             "type": "command",
             "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/validate-write.ts\"",
             "timeout": 15000
+          },
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/qmd-refresh.ts\"",
+            "timeout": 15000
           }
         ]
       }
@@ -51,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'printf \"Session end checklist:\\n- Archive completed projects?\\n- Update indexes?\\n- New notes linked? (orphans are bugs)\\n\"'",
+            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/stop-checklist.ts\"",
             "timeout": 5000
           }
         ]

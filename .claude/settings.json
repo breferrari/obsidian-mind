@@ -31,6 +31,11 @@
             "type": "command",
             "command": "node --experimental-strip-types \"${CLAUDE_PROJECT_DIR:-.}/.claude/scripts/validate-write.ts\"",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types \"${CLAUDE_PROJECT_DIR:-.}/.claude/scripts/qmd-refresh.ts\"",
+            "timeout": 15
           }
         ]
       }
