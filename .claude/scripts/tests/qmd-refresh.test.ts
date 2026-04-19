@@ -1,18 +1,26 @@
 /**
- * Unit tests for lib/qmd-refresh.ts pure helpers. Locks the path-skip
- * and debounce predicates so the PostToolUse and Stop hooks stay in
- * exact agreement — both consume these without fs side effects.
+ * Unit tests for lib/qmd-refresh.ts pure helpers.
  *
- * Integration tests for the entry scripts (qmd-refresh.ts and the Stop
- * hook extension) are deliberately omitted: both spawn detached
- * children whose timing is unreliable under `node --test`, and their
- * surface is already covered by the pure predicates here plus a live
- * smoke run on dev machines.
+ * Locks the predicates and composition logic the PostToolUse hook, the
+ * Stop hook, and the detached worker all depend on. Pure tests run
+ * identically on every OS in the CI matrix, so argv drift (wrong order,
+ * missing `--index`, dropped subcommand) fails here before any live qmd
+ * invocation would notice on macOS/Linux only.
+ *
+ * Subprocess integration coverage for the hook entry script lives in
+ * `qmd-refresh.integration.test.ts` — both are exercised by
+ * `npm test` in the hook-scripts package.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { isDebounced, shouldRefreshForPath } from "../lib/qmd-refresh.ts";
+import { sep as pathSep } from "node:path";
+import {
+	composeWorkerInvocations,
+	isDebounced,
+	resolveVaultRoot,
+	shouldRefreshForPath,
+} from "../lib/qmd-refresh.ts";
 
 describe("shouldRefreshForPath — accepts vault markdown", () => {
 	test("accepts a relative vault note", () => {
@@ -155,5 +163,90 @@ describe("isDebounced — absent or invalid sentinel", () => {
 	});
 	test("returns false when debounce window is zero", () => {
 		assert.equal(isDebounced(1_000, 1_000, 0), false);
+	});
+});
+
+describe("resolveVaultRoot", () => {
+	test("strips the .claude/scripts suffix from an absolute input", () => {
+		// path.resolve uses the platform-native separator, so we assemble
+		// the expected result with path.sep to stay cross-platform.
+		const result = resolveVaultRoot(
+			`${pathSep}Users${pathSep}me${pathSep}vault${pathSep}.claude${pathSep}scripts`,
+		);
+		const expected = `${pathSep}Users${pathSep}me${pathSep}vault`;
+		assert.equal(result, expected);
+	});
+	test("handles a trailing separator gracefully", () => {
+		const result = resolveVaultRoot(
+			`${pathSep}vault${pathSep}.claude${pathSep}scripts${pathSep}`,
+		);
+		assert.equal(result, `${pathSep}vault`);
+	});
+	test("always returns an absolute path (path.resolve guarantees this)", () => {
+		// path.resolve always returns an absolute path; a relative input
+		// is resolved against cwd. We only assert absoluteness here — the
+		// suffix-stripping semantics are locked by the absolute-input
+		// test above.
+		const result = resolveVaultRoot("a/b/.claude/scripts");
+		// Unix absolute: starts with "/". Windows absolute: drive letter
+		// like "C:\\" or a UNC "\\\\".
+		const isAbsolute = /^(?:[A-Za-z]:|\\\\)/.test(result) || result.startsWith("/");
+		assert.ok(isAbsolute, `expected absolute path, got: ${result}`);
+	});
+});
+
+describe("composeWorkerInvocations", () => {
+	test("returns update then embed in that order", () => {
+		const invs = composeWorkerInvocations(
+			"obsidian-mind",
+			"/opt/qmd/qmd.js",
+		);
+		assert.equal(invs.length, 2);
+		assert.ok(invs[0]?.args.includes("update"));
+		assert.ok(invs[1]?.args.includes("embed"));
+	});
+
+	test("threads --index <name> through both invocations when set", () => {
+		const invs = composeWorkerInvocations("vault-2", "/opt/qmd/qmd.js");
+		for (const inv of invs) {
+			assert.deepEqual(
+				inv.args.slice(0, 3),
+				["/opt/qmd/qmd.js", "--index", "vault-2"],
+				`expected --index vault-2 to precede the subcommand in ${inv.args.join(" ")}`,
+			);
+		}
+		assert.equal(invs[0]?.args.at(-1), "update");
+		assert.equal(invs[1]?.args.at(-1), "embed");
+	});
+
+	test("omits --index when qmdIndex is null (legacy / pre-named fork)", () => {
+		const invs = composeWorkerInvocations(null, "/opt/qmd/qmd.js");
+		for (const inv of invs) {
+			assert.equal(inv.args.includes("--index"), false);
+		}
+		assert.deepEqual(invs[0]?.args, ["/opt/qmd/qmd.js", "update"]);
+		assert.deepEqual(invs[1]?.args, ["/opt/qmd/qmd.js", "embed"]);
+	});
+
+	test("both invocations go through process.execPath when entry resolves", () => {
+		const invs = composeWorkerInvocations("v", "/opt/qmd/qmd.js");
+		for (const inv of invs) {
+			assert.equal(inv.cmd, process.execPath);
+			assert.equal(inv.shell, false);
+		}
+	});
+
+	test("falls back to bare `qmd` with shell: true when entry is null", () => {
+		const invs = composeWorkerInvocations("v", null);
+		for (const inv of invs) {
+			assert.equal(inv.cmd, "qmd");
+			assert.equal(inv.shell, true);
+		}
+	});
+
+	test("fallback preserves --index threading", () => {
+		const invs = composeWorkerInvocations("vault-2", null);
+		assert.deepEqual(invs[0]?.args, ["--index", "vault-2", "update"]);
+		assert.deepEqual(invs[1]?.args, ["--index", "vault-2", "embed"]);
 	});
 });

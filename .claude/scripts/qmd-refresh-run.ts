@@ -33,14 +33,27 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { debug } from "./lib/hook-io.ts";
-import { parseQmdIndex, qmdArgsWithIndex } from "./lib/session-start.ts";
-import { buildQmdCommand, resolveQmdEntry } from "./lib/qmd.ts";
+import { parseQmdIndex } from "./lib/session-start.ts";
+import { resolveQmdEntry } from "./lib/qmd.ts";
+import {
+	composeWorkerInvocations,
+	resolveVaultRoot,
+} from "./lib/qmd-refresh.ts";
+
+// 60s is enough for an incremental `update` on a 10k-note vault. First-
+// time `embed` can download the embedding model on fresh machines, so
+// the embed slot gets a 5-minute cap. Both are already detached, so
+// these budgets bound machine drag rather than user-facing latency.
+const UPDATE_TIMEOUT_MS = 60_000;
+const EMBED_TIMEOUT_MS = 300_000;
+const STEP_TIMEOUTS = [UPDATE_TIMEOUT_MS, EMBED_TIMEOUT_MS] as const;
 
 // Resolve the vault root from the worker's own location rather than cwd
-// or env vars. The script lives at <vault>/.claude/scripts/, so the vault
-// root is always two directories up.
+// or env vars. Hook scripts live at <vault>/.claude/scripts/, so
+// resolveVaultRoot reliably returns the vault root even when the parent
+// fires from a drifted shell cwd with no CLAUDE_PROJECT_DIR set.
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const VAULT_ROOT = resolvePath(SCRIPT_DIR, "..", "..");
+const VAULT_ROOT = resolveVaultRoot(SCRIPT_DIR);
 const MANIFEST_PATH = resolvePath(VAULT_ROOT, "vault-manifest.json");
 
 function readManifestRaw(): string | null {
@@ -51,38 +64,18 @@ function readManifestRaw(): string | null {
 	}
 }
 
-function runQmd(
-	subcommand: readonly string[],
-	qmdIndex: string | null,
-	entry: string | null,
-	timeoutMs: number,
-): void {
-	const built = buildQmdCommand(entry, qmdArgsWithIndex(qmdIndex, subcommand));
-	const result = spawnSync(built.cmd, built.args as string[], {
+const qmdIndex = parseQmdIndex(readManifestRaw());
+const invocations = composeWorkerInvocations(qmdIndex, resolveQmdEntry());
+
+invocations.forEach((inv, i) => {
+	const result = spawnSync(inv.cmd, inv.args as string[], {
 		stdio: "ignore",
-		timeout: timeoutMs,
-		shell: built.shell,
+		timeout: STEP_TIMEOUTS[i],
+		shell: inv.shell,
 		windowsHide: true,
 		cwd: VAULT_ROOT,
 	});
 	if (result.error) {
-		debug(
-			`qmd-refresh-run: ${subcommand.join(" ")} error: ${result.error.message}`,
-		);
+		debug(`qmd-refresh-run: step ${i} error: ${result.error.message}`);
 	}
-}
-
-const qmdIndex = parseQmdIndex(readManifestRaw());
-const entry = resolveQmdEntry();
-
-// 60s is enough for an incremental update on a 10k-note vault; bootstrap
-// on a fresh machine is the only time this would plausibly overflow, and
-// bootstrap is not our caller.
-runQmd(["update"], qmdIndex, entry, 60_000);
-
-// 5min for embed — first-time runs on fresh hardware can download the
-// embedding model. After the model is cached locally, incremental embeds
-// of a handful of new chunks take ~1-2s on an M1 Max and proportionally
-// longer on CPU-only machines. This cap is generous by design; the
-// parent hook has already exited so the user doesn't wait on us.
-runQmd(["embed"], qmdIndex, entry, 300_000);
+});
