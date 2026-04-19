@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 
 import { isMainModule } from "../lib/main-guard.ts";
+import { hostPath } from "./_helpers.ts";
 
 const ORIGINAL_ARGV1: string | undefined = process.argv[1];
 
@@ -25,15 +26,15 @@ afterEach(() => {
 
 describe("isMainModule", () => {
 	test("true when argv[1] matches the module path", () => {
-		const path = "/Users/dev/scripts/foo.ts";
+		const path = hostPath("/Users/dev/scripts/foo.ts");
 		process.argv[1] = path;
 		assert.equal(isMainModule(pathToFileURL(path).href), true);
 	});
 
 	test("false when argv[1] differs from the module path", () => {
-		process.argv[1] = "/Users/dev/scripts/other.ts";
+		process.argv[1] = hostPath("/Users/dev/scripts/other.ts");
 		assert.equal(
-			isMainModule(pathToFileURL("/Users/dev/scripts/foo.ts").href),
+			isMainModule(pathToFileURL(hostPath("/Users/dev/scripts/foo.ts")).href),
 			false,
 		);
 	});
@@ -43,13 +44,13 @@ describe("isMainModule", () => {
 		// without tripping tsc's rejection of `delete` on non-optional indexes.
 		process.argv.length = 1;
 		assert.equal(
-			isMainModule(pathToFileURL("/Users/dev/scripts/foo.ts").href),
+			isMainModule(pathToFileURL(hostPath("/Users/dev/scripts/foo.ts")).href),
 			false,
 		);
 	});
 
 	test("handles URL-encoded segments (spaces in path)", () => {
-		const path = "/Users/dev/my scripts/foo.ts";
+		const path = hostPath("/Users/dev/my scripts/foo.ts");
 		process.argv[1] = path;
 		// pathToFileURL encodes the space as %20; isMainModule must decode
 		// before comparing against the raw argv path.

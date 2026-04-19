@@ -5,9 +5,19 @@
  * `node --experimental-strip-types <script>` with JSON on stdin. Used by
  * classify-message.test.ts and validate-write.test.ts to exercise the
  * full stdin → stdout pipeline under the real runtime.
+ *
+ * hostPath normalizes POSIX-style literal test paths (e.g. `"/Users/x/foo"`)
+ * to the host platform via path.resolve. Needed on Windows, where the raw
+ * string is treated as drive-relative and pathToFileURL prepends the current
+ * drive letter — so a round trip stops matching the literal argv[1] value.
  */
 
 import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
+
+export function hostPath(literal: string): string {
+	return resolve(literal);
+}
 
 export type RunResult = {
 	readonly stdout: string;

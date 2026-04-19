@@ -11,7 +11,12 @@ This vault has [obsidian-skills](https://github.com/kepano/obsidian-skills) inst
 - **json-canvas**: Create `.canvas` files with nodes, edges, and visual layouts. See `references/EXAMPLES.md`.
 - **obsidian-bases**: Create `.base` files with views, filters, and formulas. Bases core plugin is enabled. See `references/FUNCTIONS_REFERENCE.md`.
 - **defuddle**: Extract clean markdown from web pages via `defuddle parse <url> --md`.
-- **qmd**: Semantic search across the vault via [QMD](https://github.com/tobi/qmd). Use PROACTIVELY before reading files -- `qmd --index <name> query "..."` for hybrid search, `qmd --index <name> search "..."` for keyword, `qmd --index <name> vsearch "..."` for semantic. **Always pass `--index <name>`** where `<name>` is the `qmd_index` field from `vault-manifest.json` -- this keeps the SQLite store isolated from any other vault that shares the machine. Also registered as an MCP server via `.mcp.json` using `.claude/scripts/qmd-mcp.mjs`, which reads the same manifest field so the CLI, MCP, and SessionStart hook all scope to the same store. On a fresh clone, run `node --experimental-strip-types scripts/qmd-bootstrap.ts` once to build the index. Falls back to grep/glob if QMD not installed.
+- **qmd**: Semantic search across the vault via [QMD](https://github.com/tobi/qmd). Use PROACTIVELY before reading files. **Preference order — pick the highest surface available and stop:**
+  1. **`mcp__qmd__query`, `mcp__qmd__get`, `mcp__qmd__multi_get`, `mcp__qmd__status`** — registered MCP tools. If you see them in your tool menu, they are live and pre-scoped to this vault's index. Use them first; no `--index` argument needed.
+  2. **`qmd --index <name> query|search|vsearch|get|multi-get`** — CLI fallback for one-off shell checks or when the MCP server is unavailable. Always pass `--index <name>` where `<name>` is the `qmd_index` field from `vault-manifest.json` so the SQLite store stays isolated from other vaults on the machine.
+  3. **Grep / Glob / Read** — last resort, only when QMD is not installed at all.
+
+  The MCP server (`.mcp.json` → `.claude/scripts/qmd-mcp.mjs`), the CLI, and the SessionStart hook all read the same manifest field, so every surface scopes to the same store. On a fresh clone, run `node --experimental-strip-types scripts/qmd-bootstrap.ts` once to build the index.
 
 ### Custom Slash Commands
 
@@ -274,7 +279,7 @@ When asked to "remember" something:
 
 The SessionStart hook injects a **Brain Topics (read on demand)** index listing each `brain/` topic note with its description and an `(empty)` marker for stub notes. Treat that index as a menu:
 
-- When the user's message touches a topic from the index (debugging → Gotchas, "how do we usually…" → Patterns, "why did we decide" → Key Decisions, "which command / slash" → Skills), query QMD **first** before answering — `qmd query "<topic keywords>"` searches the whole vault, so after the query filter or prioritize the results whose `file` path is under `brain/`. Do not assume the topic name alone scopes the search.
+- When the user's message touches a topic from the index (debugging → Gotchas, "how do we usually…" → Patterns, "why did we decide" → Key Decisions, "which command / slash" → Skills), query QMD **first** before answering — call `mcp__qmd__query` with a `query` argument describing the topic (or fall back to `qmd --index <name> query "<topic>"` if MCP is unavailable). The search covers the whole vault, so filter or prioritize results whose `file` path is under `brain/`. Do not assume the topic name alone scopes the search.
 - If QMD is unavailable, read the specific `brain/` note directly with the Read tool. Don't load all of `brain/` — only the one(s) matching the topic.
 - Skip notes marked `(empty)` in the index — they're stubs with no substantive content.
 - After answering, if the conversation produced durable knowledge, update the relevant brain note (see the "remember" workflow above).

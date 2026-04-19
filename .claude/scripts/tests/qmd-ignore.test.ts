@@ -271,7 +271,10 @@ describe("writeQmdIgnore — file IO wrapper", () => {
 describe("qmdConfigPath", () => {
 	test("composes path from homedir, .config/qmd, and index name", () => {
 		const p = qmdConfigPath("obsidian-mind");
-		assert.ok(p.endsWith("/.config/qmd/obsidian-mind.yml"));
+		// Normalize separators so the assertion works on both POSIX (`/`) and
+		// Windows (`\`). path.join picks the platform-native separator.
+		const normalized = p.replaceAll("\\", "/");
+		assert.ok(normalized.endsWith("/.config/qmd/obsidian-mind.yml"));
 		// Absolute path, not relative.
 		assert.ok(p.startsWith("/") || /^[A-Za-z]:[/\\]/.test(p));
 	});

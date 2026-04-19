@@ -120,8 +120,10 @@ qmd --index obsidian-mind update   # 批量编辑后
 qmd --index obsidian-mind embed    # 大量新笔记后
 ```
 
+**通过 MCP 原生集成为 Agent 工具。** 在 `.mcp.json` 中注册为 [Model Context Protocol](https://modelcontextprotocol.io) 服务器——当 QMD 已安装时，`mcp__qmd__query`、`mcp__qmd__get`、`mcp__qmd__multi_get` 会与 Read、Edit 一起出现在 Agent 的工具菜单中。子代理、斜杠命令和主对话都通过同一个带类型的契约进行调用。之后再接入其他 MCP 兼容工具（数据库、工单系统、日历），接入方式完全一致。
+
 > [!NOTE]
-> 如果没有安装 QMD，一切仍然正常运作——Agent 会回退到 Obsidian CLI 和 grep。
+> 如果没有安装 QMD，一切仍然正常运作——Agent 会回退到 Obsidian CLI 和 grep，MCP 服务器条目会以无害的警告被跳过。
 
 ---
 
@@ -138,6 +140,8 @@ qmd --index obsidian-mind embed    # 大量新笔记后
 ---
 
 ## ⚙️ 工作原理
+
+**过程化代码负责环境，Agent 负责内容。** `.claude/scripts/` 中的钩子处理分类、验证、索引和生命周期注入——可复现、可测试，对每个 Agent 都以相同方式运行。撰写笔记、归类、链接、起草简报——这些属于判断范畴，交由 Agent 处理。两侧通过小而清晰的交接相遇（钩子注入上下文，Agent 读取仓库），因此双方都不需要越界做对方的工作。
 
 **文件夹按用途组织，链接按含义组织。** 一个笔记存放在一个文件夹中（它的归属），但链接到许多笔记（它的上下文）。Agent 维护这个图谱——自动将工作笔记链接到人员、决策和能力项。当绩效评估季到来时，每个能力项笔记上的反向链接就是现成的证据链。一个没有链接的笔记就是一个 bug。
 
