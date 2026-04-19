@@ -14,7 +14,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { sep as pathSep } from "node:path";
+import { resolve as resolvePath, sep as pathSep } from "node:path";
 import {
 	composeWorkerInvocations,
 	isDebounced,
@@ -167,46 +167,53 @@ describe("isDebounced — absent or invalid sentinel", () => {
 });
 
 describe("resolveVaultRoot", () => {
+	// These tests compare `resolveVaultRoot` output to the platform's own
+	// `path.resolve` output on the expected vault root. Using resolvePath
+	// on both sides dodges Windows's drive-letter prepending (e.g.
+	// `/vault/.claude/scripts` becomes `D:\vault\.claude\scripts`) that
+	// tripped up an earlier version of these tests on the CI matrix.
 	test("strips the .claude/scripts suffix from an absolute input", () => {
-		// path.resolve uses the platform-native separator, so we assemble
-		// the expected result with path.sep to stay cross-platform.
 		const result = resolveVaultRoot(
-			`${pathSep}Users${pathSep}me${pathSep}vault${pathSep}.claude${pathSep}scripts`,
+			resolvePath("/Users/me/vault/.claude/scripts"),
 		);
-		const expected = `${pathSep}Users${pathSep}me${pathSep}vault`;
-		assert.equal(result, expected);
+		assert.equal(result, resolvePath("/Users/me/vault"));
 	});
 	test("handles a trailing separator gracefully", () => {
 		const result = resolveVaultRoot(
-			`${pathSep}vault${pathSep}.claude${pathSep}scripts${pathSep}`,
+			resolvePath("/vault/.claude/scripts") + pathSep,
 		);
-		assert.equal(result, `${pathSep}vault`);
+		assert.equal(result, resolvePath("/vault"));
 	});
 	test("always returns an absolute path (path.resolve guarantees this)", () => {
-		// path.resolve always returns an absolute path; a relative input
-		// is resolved against cwd. We only assert absoluteness here — the
-		// suffix-stripping semantics are locked by the absolute-input
-		// test above.
+		// Relative inputs get resolved against cwd; we only assert
+		// absoluteness here — the suffix-stripping semantics are locked
+		// by the absolute-input test above.
 		const result = resolveVaultRoot("a/b/.claude/scripts");
-		// Unix absolute: starts with "/". Windows absolute: drive letter
-		// like "C:\\" or a UNC "\\\\".
-		const isAbsolute = /^(?:[A-Za-z]:|\\\\)/.test(result) || result.startsWith("/");
+		const isAbsolute =
+			/^[A-Za-z]:[\\/]/.test(result) ||
+			result.startsWith("\\\\") ||
+			result.startsWith("/");
 		assert.ok(isAbsolute, `expected absolute path, got: ${result}`);
 	});
 });
 
 describe("composeWorkerInvocations", () => {
-	test("returns update then embed in that order", () => {
+	test("returns update, embed, and a tail-chase update in that order", () => {
 		const invs = composeWorkerInvocations(
 			"obsidian-mind",
 			"/opt/qmd/qmd.js",
 		);
-		assert.equal(invs.length, 2);
+		assert.equal(invs.length, 3);
 		assert.ok(invs[0]?.args.includes("update"));
 		assert.ok(invs[1]?.args.includes("embed"));
+		assert.ok(invs[2]?.args.includes("update"));
+		// The tail-chase step must NOT be an embed — keeping the worker
+		// bounded means we accept one cycle of vec-staleness for
+		// tail-landed content.
+		assert.equal(invs[2]?.args.includes("embed"), false);
 	});
 
-	test("threads --index <name> through both invocations when set", () => {
+	test("threads --index <name> through every invocation when set", () => {
 		const invs = composeWorkerInvocations("vault-2", "/opt/qmd/qmd.js");
 		for (const inv of invs) {
 			assert.deepEqual(
@@ -217,6 +224,7 @@ describe("composeWorkerInvocations", () => {
 		}
 		assert.equal(invs[0]?.args.at(-1), "update");
 		assert.equal(invs[1]?.args.at(-1), "embed");
+		assert.equal(invs[2]?.args.at(-1), "update");
 	});
 
 	test("omits --index when qmdIndex is null (legacy / pre-named fork)", () => {
@@ -226,9 +234,10 @@ describe("composeWorkerInvocations", () => {
 		}
 		assert.deepEqual(invs[0]?.args, ["/opt/qmd/qmd.js", "update"]);
 		assert.deepEqual(invs[1]?.args, ["/opt/qmd/qmd.js", "embed"]);
+		assert.deepEqual(invs[2]?.args, ["/opt/qmd/qmd.js", "update"]);
 	});
 
-	test("both invocations go through process.execPath when entry resolves", () => {
+	test("every invocation goes through process.execPath when entry resolves", () => {
 		const invs = composeWorkerInvocations("v", "/opt/qmd/qmd.js");
 		for (const inv of invs) {
 			assert.equal(inv.cmd, process.execPath);
@@ -244,20 +253,21 @@ describe("composeWorkerInvocations", () => {
 		}
 	});
 
-	test("fallback preserves --index threading", () => {
+	test("fallback preserves --index threading across all steps", () => {
 		const invs = composeWorkerInvocations("vault-2", null);
 		assert.deepEqual(invs[0]?.args, ["--index", "vault-2", "update"]);
 		assert.deepEqual(invs[1]?.args, ["--index", "vault-2", "embed"]);
+		assert.deepEqual(invs[2]?.args, ["--index", "vault-2", "update"]);
 	});
 
 	test("embed gets a longer budget than update (model download slot)", () => {
-		const [update, embed] = composeWorkerInvocations("v", "/opt/qmd.js");
-		// Update runs incrementally in seconds; embed may download a
-		// model on first run. Asserting the ordering locks the contract
-		// that embed isn't accidentally given the tighter budget.
+		const [update, embed, tail] = composeWorkerInvocations("v", "/opt/qmd.js");
 		assert.ok(
-			update && embed && embed.timeoutMs > update.timeoutMs,
+			update && embed && tail && embed.timeoutMs > update.timeoutMs,
 			`embed budget (${embed?.timeoutMs}) must exceed update budget (${update?.timeoutMs})`,
 		);
+		// Tail-chase update reuses the leading update's budget — same
+		// subcommand, same time shape.
+		assert.equal(tail?.timeoutMs, update?.timeoutMs);
 	});
 });

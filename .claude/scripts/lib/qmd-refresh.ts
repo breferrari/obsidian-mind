@@ -106,13 +106,17 @@ type QmdInvocation = {
 
 /**
  * Compose the invocation sequence the detached worker must spawn in
- * order: `update` (refresh BM25/FTS index) followed by `embed` (refresh
- * vector index) so both retrieval arms stay current.
+ * order: `update` (refresh BM25/FTS index), then `embed` (refresh
+ * vector index), then a tail-chase `update` that catches files written
+ * during the first two steps so they're BM25-searchable immediately
+ * rather than waiting 30s+ for the next trigger. The tail update's new
+ * content picks up vector coverage on the next refresh cycle.
  *
- * Per-step timeouts: `update` caps at 60s (enough for an incremental
- * re-index on a 10k-note vault); `embed` caps at 5 minutes (first run
- * may download the embedding model on a fresh machine). Both are
- * already detached — the budgets bound machine drag, not user latency.
+ * Per-step timeouts: `update` caps at 60s each (enough for an
+ * incremental re-index on a 10k-note vault); `embed` caps at 5 minutes
+ * (first run may download the embedding model on a fresh machine). All
+ * three run detached — the budgets bound machine drag, not user
+ * latency.
  *
  * Kept pure so tests can assert the full invocation list across
  * platforms without spawning anything. Locking argv and timeouts at the
@@ -123,16 +127,15 @@ export function composeWorkerInvocations(
 	qmdIndex: string | null,
 	entry: string | null,
 ): readonly QmdInvocation[] {
-	return [
-		{
-			...buildQmdCommand(entry, qmdArgsWithIndex(qmdIndex, ["update"])),
-			timeoutMs: 60_000,
-		},
-		{
-			...buildQmdCommand(entry, qmdArgsWithIndex(qmdIndex, ["embed"])),
-			timeoutMs: 300_000,
-		},
-	];
+	const update: QmdInvocation = {
+		...buildQmdCommand(entry, qmdArgsWithIndex(qmdIndex, ["update"])),
+		timeoutMs: 60_000,
+	};
+	const embed: QmdInvocation = {
+		...buildQmdCommand(entry, qmdArgsWithIndex(qmdIndex, ["embed"])),
+		timeoutMs: 300_000,
+	};
+	return [update, embed, update];
 }
 
 // --- Impure orchestration ---------------------------------------------------
