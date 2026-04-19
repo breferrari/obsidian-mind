@@ -11,11 +11,30 @@
 export function resolveQmdEntry(): string | null;
 
 /**
+ * Extract the `qmd_index` string from a vault-manifest.json source.
+ * Returns the named index or null when absent, malformed, or empty.
+ */
+export function readQmdIndex(manifestJson: string | null): string | null;
+
+/**
+ * Compute the SQLite store path qmd would use for a given named index,
+ * using the same rule as @tobilu/qmd's store.js.
+ */
+export function resolveIndexSqlitePath(
+	indexName: string,
+	env: NodeJS.ProcessEnv,
+	home: string,
+): string;
+
+/**
  * Build the (command, args, shell) tuple the spawn layer should invoke.
+ * When `qmdIndex` is a non-empty string, `--index <name>` is prepended to
+ * the mcp subcommand.
  */
 export function buildLaunchCommand(
 	entry: string | null,
 	extraArgs?: readonly string[],
+	qmdIndex?: string | null,
 ): {
 	readonly cmd: string;
 	readonly args: readonly string[];

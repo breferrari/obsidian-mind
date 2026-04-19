@@ -144,6 +144,49 @@ export function hasBrainContent(body: string): boolean {
 }
 
 /**
+ * Extract the `qmd_index` string from a `vault-manifest.json` source. Returns
+ * the configured named index (so QMD's storage is scoped to this vault) or
+ * null when the manifest is absent, malformed, or missing the field.
+ *
+ * Kept as a pure helper so the caller can own the fs read and tests can pass
+ * fixture strings. A null return means "use QMD's default global index" —
+ * backwards-compatible with forks that haven't adopted the field yet.
+ */
+export function parseQmdIndex(manifestJson: string | null): string | null {
+	if (manifestJson === null) return null;
+	try {
+		const parsed = JSON.parse(manifestJson) as unknown;
+		if (
+			parsed !== null &&
+			typeof parsed === "object" &&
+			"qmd_index" in parsed &&
+			typeof (parsed as Record<string, unknown>)["qmd_index"] === "string"
+		) {
+			const value = (parsed as Record<string, unknown>)["qmd_index"] as string;
+			return value.length > 0 ? value : null;
+		}
+	} catch {
+		/* malformed manifest → treat as missing */
+	}
+	return null;
+}
+
+/**
+ * Build the argv tail for a `qmd` CLI invocation, prepending `--index <name>`
+ * when the vault has configured a named index. Callers pass the subcommand
+ * and its args (e.g. `["update"]`, `["query", text, "--json"]`); the return
+ * value is the full argv after the `qmd` command itself.
+ */
+export function qmdArgsWithIndex(
+	index: string | null,
+	subcommandArgs: readonly string[],
+): string[] {
+	return index === null
+		? [...subcommandArgs]
+		: ["--index", index, ...subcommandArgs];
+}
+
+/**
  * Format the "Brain Topics" section — one line per brain/ note with its
  * description from frontmatter, so Claude sees what topic notes exist
  * without loading their full content. Omits North Star (already loaded

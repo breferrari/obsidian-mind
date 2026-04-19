@@ -109,9 +109,15 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ```bash
 npm install -g @tobilu/qmd
-qmd collection add . --name vault --mask "**/*.md"
-qmd context add qmd://vault "Engineer's work vault: projects, decisions, incidents, people, reviews, architecture"
-qmd update && qmd embed
+node --experimental-strip-types scripts/qmd-bootstrap.ts
+```
+
+引导脚本是幂等的，可以安全地重复运行。它读取 `vault-manifest.json` 中的 `qmd_index` 和 `qmd_context` 字段，注册命名索引并生成嵌入向量（默认索引名：`obsidian-mind`）。SessionStart 钩子、`.mcp.json` 封装脚本和 CLI 命令都读取同一个清单字段，因此同一台机器上的其他 vault 不会与本 vault 的 QMD 数据混淆。CLI 命令始终需要传递 `--index <名称>`：
+
+```bash
+qmd --index obsidian-mind query "我们关于缓存做了什么决策"
+qmd --index obsidian-mind update   # 批量编辑后
+qmd --index obsidian-mind embed    # 大量新笔记后
 ```
 
 > [!NOTE]

@@ -109,9 +109,15 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ```bash
 npm install -g @tobilu/qmd
-qmd collection add . --name vault --mask "**/*.md"
-qmd context add qmd://vault "Engineer's work vault: projects, decisions, incidents, people, reviews, architecture"
-qmd update && qmd embed
+node --experimental-strip-types scripts/qmd-bootstrap.ts
+```
+
+ブートストラップは冪等で、再実行しても安全です。`vault-manifest.json` の `qmd_index` と `qmd_context` フィールドを読み取り、名前付きインデックスを登録してエンベディングを生成します（デフォルトのインデックス名は `obsidian-mind`）。SessionStart フック、`.mcp.json` のラッパー、CLI コマンドはすべて同じマニフェストフィールドを参照するため、同一マシン上の他のボールトと QMD データが混ざりません。CLI 実行時は常に `--index <名前>` を渡してください:
+
+```bash
+qmd --index obsidian-mind query "キャッシュについて何を決めた？"
+qmd --index obsidian-mind update   # 一括編集後
+qmd --index obsidian-mind embed    # 多数の新規ノート後
 ```
 
 > [!NOTE]

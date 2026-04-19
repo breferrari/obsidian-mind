@@ -17,6 +17,8 @@ import {
 	formatBrainIndex,
 	stripFrontmatter,
 	hasBrainContent,
+	parseQmdIndex,
+	qmdArgsWithIndex,
 } from "../lib/session-start.ts";
 
 describe("take", () => {
@@ -188,6 +190,59 @@ describe("hasBrainContent", () => {
 	});
 	test("false for prose-only content with no bullets", () => {
 		assert.equal(hasBrainContent("Just a paragraph of prose.\n"), false);
+	});
+});
+
+describe("parseQmdIndex", () => {
+	test("extracts qmd_index when present as a non-empty string", () => {
+		const manifest = JSON.stringify({ qmd_index: "obsidian-mind" });
+		assert.equal(parseQmdIndex(manifest), "obsidian-mind");
+	});
+	test("returns null when qmd_index is an empty string", () => {
+		const manifest = JSON.stringify({ qmd_index: "" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index is missing from the manifest", () => {
+		const manifest = JSON.stringify({ template: "obsidian-mind" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index is not a string", () => {
+		const manifest = JSON.stringify({ qmd_index: 42 });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when the manifest source is null (missing file)", () => {
+		assert.equal(parseQmdIndex(null), null);
+	});
+	test("returns null when the manifest is malformed JSON", () => {
+		assert.equal(parseQmdIndex("{ not json"), null);
+	});
+	test("returns null when the manifest parses to a non-object", () => {
+		assert.equal(parseQmdIndex('"just a string"'), null);
+	});
+});
+
+describe("qmdArgsWithIndex", () => {
+	test("prepends --index <name> when an index is provided", () => {
+		assert.deepEqual(qmdArgsWithIndex("obsidian-mind", ["update"]), [
+			"--index",
+			"obsidian-mind",
+			"update",
+		]);
+	});
+	test("returns subcommand args unchanged when index is null", () => {
+		assert.deepEqual(qmdArgsWithIndex(null, ["update"]), ["update"]);
+	});
+	test("preserves multi-arg subcommand invocations", () => {
+		assert.deepEqual(
+			qmdArgsWithIndex("vault", ["query", "ShardMind", "--json"]),
+			["--index", "vault", "query", "ShardMind", "--json"],
+		);
+	});
+	test("returns a fresh array (does not mutate the input)", () => {
+		const input = ["update"];
+		const out = qmdArgsWithIndex(null, input);
+		assert.notEqual(out, input);
+		assert.deepEqual(out, input);
 	});
 });
 
