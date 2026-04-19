@@ -207,6 +207,65 @@ describe("upsertIgnoreInYaml — pure transform", () => {
 		const ignoreIdx = next.indexOf("    ignore:");
 		assert.ok(ignoreIdx > obsidianMindStart);
 	});
+
+	test("preserves other collections' existing ignore blocks when editing one", () => {
+		// Regression test: a previous version used a global IGNORE_BLOCK_RE
+		// strip that would silently delete other-vault's ignore entries on
+		// every bootstrap run against a multi-collection file.
+		const multi = `collections:
+  other-vault:
+    path: /other
+    pattern: "**/*.md"
+    ignore:
+      - "SECRETS.md"
+      - "private/"
+    context:
+      "": "other"
+  obsidian-mind:
+    path: /mine
+    pattern: "**/*.md"
+    context:
+      "": "mine"
+`;
+		const next = upsertIgnoreInYaml(multi, "obsidian-mind", [
+			"ARCHITECTURE.md",
+		]);
+		assert.ok(next !== null);
+		// other-vault's ignore list is untouched.
+		assert.ok(next.includes('      - "SECRETS.md"'));
+		assert.ok(next.includes('      - "private/"'));
+		// obsidian-mind got its own ignore block.
+		assert.ok(next.includes('      - "ARCHITECTURE.md"'));
+		// Exactly two ignore blocks in the file (one per collection).
+		assert.equal(next.match(/^    ignore:$/gm)?.length, 2);
+	});
+
+	test("empty patterns strips only the target collection's ignore block", () => {
+		const multi = `collections:
+  other-vault:
+    path: /other
+    pattern: "**/*.md"
+    ignore:
+      - "SECRETS.md"
+    context:
+      "": "other"
+  obsidian-mind:
+    path: /mine
+    pattern: "**/*.md"
+    ignore:
+      - "ARCHITECTURE.md"
+    context:
+      "": "mine"
+`;
+		const next = upsertIgnoreInYaml(multi, "obsidian-mind", []);
+		assert.ok(next !== null);
+		// other-vault's ignore survives.
+		assert.ok(next.includes('      - "SECRETS.md"'));
+		// obsidian-mind's ignore was stripped.
+		assert.ok(!next.includes('      - "ARCHITECTURE.md"'));
+		// Exactly one ignore block remains.
+		assert.equal(next.match(/^    ignore:$/gm)?.length, 1);
+	});
 });
 
 describe("writeQmdIgnore — file IO wrapper", () => {

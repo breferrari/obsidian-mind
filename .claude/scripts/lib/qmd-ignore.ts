@@ -88,32 +88,56 @@ export function qmdConfigPath(indexName: string): string {
 
 /**
  * Pure YAML transform: given the current file content, return new content with
- * the collection's `ignore:` block set to the supplied patterns. Empty patterns
- * strips any existing block. Returns null when the named collection isn't
- * present — distinct from "no change needed" so callers can warn on drift.
+ * the named collection's `ignore:` block set to the supplied patterns. Empty
+ * patterns strips the block within that collection only. Returns null when the
+ * named collection isn't present — distinct from "no change needed" so callers
+ * can warn on drift.
+ *
+ * The strip-and-reinject is scoped to the target collection's block, bounded
+ * by the next sibling-collection header or EOF. A naive global strip would
+ * silently delete ignore entries from unrelated collections in the same
+ * per-index YAML (QMD allows multi-collection configs), which would be silent
+ * data loss on every bootstrap run.
  */
 export function upsertIgnoreInYaml(
 	content: string,
 	collectionName: string,
 	patterns: readonly string[],
 ): string | null {
-	// Strip any existing ignore: block anywhere in the file. Safe even with
-	// multiple collections: we re-inject only into the named one below.
-	const stripped = content.replace(IGNORE_BLOCK_RE, "");
-	const headerRe = new RegExp(
-		`(^${COLLECTION_INDENT}${escapeRegex(collectionName)}:\\n(?:${FIELD_INDENT}[^\\n]*\\n)*?${FIELD_INDENT}pattern: [^\\n]*\\n)`,
+	// Match the entire target collection block: its header line plus every
+	// subsequent line that is NOT another sibling-collection header (2-space
+	// indent + non-space). The negative lookahead keeps the match scoped to
+	// this collection only.
+	const blockRe = new RegExp(
+		`^${COLLECTION_INDENT}${escapeRegex(collectionName)}:\\n(?:(?!^${COLLECTION_INDENT}\\S).*\\n)*`,
 		"m",
 	);
-	if (!headerRe.test(stripped)) return null;
-	if (patterns.length === 0) return stripped;
+	const match = blockRe.exec(content);
+	if (!match) return null;
+	const blockStart = match.index;
+	const blockEnd = blockStart + match[0].length;
+	let block = match[0];
 
-	const block =
-		`${FIELD_INDENT}ignore:\n` +
-		patterns
-			.map((p) => `${LIST_ITEM_INDENT}- ${JSON.stringify(p)}`)
-			.join("\n") +
-		"\n";
-	return stripped.replace(headerRe, `$1${block}`);
+	// Strip any existing ignore: block within THIS collection only. Other
+	// collections in the same file keep whatever they had.
+	block = block.replace(IGNORE_BLOCK_RE, "");
+
+	if (patterns.length > 0) {
+		const patternLineRe = new RegExp(
+			`(^${FIELD_INDENT}pattern: [^\\n]*\\n)`,
+			"m",
+		);
+		if (!patternLineRe.test(block)) return null;
+		const injected =
+			`${FIELD_INDENT}ignore:\n` +
+			patterns
+				.map((p) => `${LIST_ITEM_INDENT}- ${JSON.stringify(p)}`)
+				.join("\n") +
+			"\n";
+		block = block.replace(patternLineRe, `$1${injected}`);
+	}
+
+	return content.slice(0, blockStart) + block + content.slice(blockEnd);
 }
 
 /**

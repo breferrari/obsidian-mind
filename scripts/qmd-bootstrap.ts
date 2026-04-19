@@ -242,12 +242,18 @@ function main(): void {
 		}
 		qmdIgnore.push(glob);
 	}
-	process.stdout.write("→ Syncing ignore patterns from .obsidian/app.json\n");
+	// Print the step header only after the write succeeds or fails explicitly,
+	// so logs never show "→ Syncing..." as a completed step when writeQmdIgnore
+	// actually skipped (missing config, unknown collection — both emit a warn()
+	// of their own from inside the wrapper).
 	const wrote = writeQmdIgnore(qmdConfigPath(index), collectionName, qmdIgnore);
-	if (wrote && qmdIgnore.length > 0) {
-		process.stdout.write(
-			`  ${qmdIgnore.length} ignore pattern(s) synced from .obsidian/app.json\n`,
-		);
+	if (wrote) {
+		process.stdout.write("→ Syncing ignore patterns from .obsidian/app.json\n");
+		if (qmdIgnore.length > 0) {
+			process.stdout.write(
+				`  ${qmdIgnore.length} ignore pattern(s) synced from .obsidian/app.json\n`,
+			);
+		}
 	}
 
 	run(entry, ["--index", index, "update"], "Indexing vault files");

@@ -84,6 +84,7 @@ const WATCHED: ReadonlyArray<{
 // the corresponding entries in vault-manifest.json's `infrastructure` array.
 const WATCHED_ROOT_FILES: readonly string[] = [
 	"AGENTS.md",
+	"ARCHITECTURE.md",
 	"CLAUDE.md",
 	"CHANGELOG.md",
 	"CONTRIBUTING.md",
