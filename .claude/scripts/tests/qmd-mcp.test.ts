@@ -23,6 +23,9 @@ import { isAbsolute } from "node:path";
 import {
 	resolveQmdEntry,
 	buildLaunchCommand,
+	readQmdIndex,
+	resolveIndexSqlitePath,
+	resolveVaultRoot,
 } from "../qmd-mcp.mjs";
 
 describe("resolveQmdEntry", () => {
@@ -83,5 +86,159 @@ describe("buildLaunchCommand", () => {
 	test("fallback path still forwards extra argv", () => {
 		const { args } = buildLaunchCommand(null, ["--debug"]);
 		assert.deepEqual(args, ["mcp", "--debug"]);
+	});
+
+	test("prepends --index <name> when a qmdIndex is provided (resolved branch)", () => {
+		const { args } = buildLaunchCommand("/fake/qmd.js", [], "obsidian-mind");
+		assert.deepEqual(args, [
+			"/fake/qmd.js",
+			"--index",
+			"obsidian-mind",
+			"mcp",
+		]);
+	});
+
+	test("prepends --index <name> when a qmdIndex is provided (fallback branch)", () => {
+		const { args } = buildLaunchCommand(null, [], "my-vault");
+		assert.deepEqual(args, ["--index", "my-vault", "mcp"]);
+	});
+
+	test("qmdIndex + extra argv compose correctly", () => {
+		const { args } = buildLaunchCommand(
+			"/fake/qmd.js",
+			["--verbose"],
+			"vault-a",
+		);
+		assert.deepEqual(args, [
+			"/fake/qmd.js",
+			"--index",
+			"vault-a",
+			"mcp",
+			"--verbose",
+		]);
+	});
+});
+
+describe("readQmdIndex", () => {
+	test("extracts qmd_index when present as a non-empty string", () => {
+		const manifest = JSON.stringify({ qmd_index: "obsidian-mind" });
+		assert.equal(readQmdIndex(manifest), "obsidian-mind");
+	});
+	test("returns null when qmd_index is an empty string", () => {
+		assert.equal(readQmdIndex(JSON.stringify({ qmd_index: "" })), null);
+	});
+	test("returns null when qmd_index is missing from the manifest", () => {
+		assert.equal(readQmdIndex(JSON.stringify({ template: "obsidian-mind" })), null);
+	});
+	test("returns null when qmd_index is not a string", () => {
+		assert.equal(readQmdIndex(JSON.stringify({ qmd_index: 42 })), null);
+	});
+	test("returns null when manifest source is null (missing file)", () => {
+		assert.equal(readQmdIndex(null), null);
+	});
+	test("returns null when manifest is malformed JSON", () => {
+		assert.equal(readQmdIndex("{ not json"), null);
+	});
+	test("returns null when manifest parses to a non-object", () => {
+		assert.equal(readQmdIndex('"just a string"'), null);
+	});
+	test("returns null when qmd_index contains path separators (/ or \\)", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "vault/sub" })),
+			null,
+		);
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "vault\\sub" })),
+			null,
+		);
+	});
+	test("returns null when qmd_index is a parent-dir escape", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "../etc" })),
+			null,
+		);
+	});
+	test("returns null when qmd_index contains whitespace", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "my vault" })),
+			null,
+		);
+	});
+	test("returns null when qmd_index starts with non-alphanumeric", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "-lead" })),
+			null,
+		);
+	});
+	test("accepts dash, dot, and underscore inside the name", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "vault.2_a-b" })),
+			"vault.2_a-b",
+		);
+	});
+});
+
+describe("resolveVaultRoot", () => {
+	test("uses CLAUDE_PROJECT_DIR when set to an absolute path", () => {
+		const out = resolveVaultRoot(
+			"file:///some/vault/.claude/scripts/qmd-mcp.mjs",
+			{ CLAUDE_PROJECT_DIR: "/override/root" },
+		);
+		assert.equal(out, "/override/root");
+	});
+
+	test("ignores CLAUDE_PROJECT_DIR when value is empty", () => {
+		const out = resolveVaultRoot(
+			"file:///C:/vault/.claude/scripts/qmd-mcp.mjs",
+			{ CLAUDE_PROJECT_DIR: "" },
+		);
+		// Path math: two levels up from .claude/scripts/qmd-mcp.mjs → vault/
+		assert.match(out, /[\\/]vault$/, `expected vault-root shape, got: ${out}`);
+	});
+
+	test("ignores CLAUDE_PROJECT_DIR when value is a relative path (not trusted)", () => {
+		const out = resolveVaultRoot(
+			"file:///C:/vault/.claude/scripts/qmd-mcp.mjs",
+			{ CLAUDE_PROJECT_DIR: "relative/thing" },
+		);
+		assert.match(out, /[\\/]vault$/);
+	});
+
+	test("derives the vault root from import.meta.url when env is unset", () => {
+		// `fileURLToPath` requires a drive-letter prefix on Windows but not on
+		// POSIX. Pick an OS-appropriate fixture so the assertion — that the
+		// result walks two levels up from .claude/scripts/qmd-mcp.mjs — runs
+		// on every matrix leg.
+		const url =
+			process.platform === "win32"
+				? "file:///C:/home/me/my-vault/.claude/scripts/qmd-mcp.mjs"
+				: "file:///home/me/my-vault/.claude/scripts/qmd-mcp.mjs";
+		const out = resolveVaultRoot(url, {});
+		assert.match(out, /[\\/]my-vault$/);
+	});
+});
+
+describe("resolveIndexSqlitePath", () => {
+	test("joins XDG_CACHE_HOME + qmd + <name>.sqlite when the env var is set", () => {
+		const out = resolveIndexSqlitePath(
+			"vault-a",
+			{ XDG_CACHE_HOME: "/custom/cache" },
+			"/home/user",
+		);
+		assert.match(out, /[\\/]custom[\\/]cache[\\/]qmd[\\/]vault-a\.sqlite$/);
+	});
+	test("falls back to <home>/.cache/qmd/<name>.sqlite when XDG_CACHE_HOME is unset", () => {
+		const out = resolveIndexSqlitePath("my-vault", {}, "/home/user");
+		assert.match(out, /[\\/]home[\\/]user[\\/]\.cache[\\/]qmd[\\/]my-vault\.sqlite$/);
+	});
+	test("matches qmd's own getDefaultDbPath rule on all platforms (no Library/Caches, no AppData branch)", () => {
+		// This locks the contract: our INDEX_PATH override must point at the same
+		// file qmd's CLI would write to without the override. Regression here
+		// would mean MCP and CLI disagree about the store location.
+		const home = "/Users/test";
+		const out = resolveIndexSqlitePath("vault", {}, home);
+		assert.match(out, /[\\/]Users[\\/]test[\\/]\.cache[\\/]qmd[\\/]vault\.sqlite$/);
+		assert.doesNotMatch(out, /Library[\\/]Caches/);
+		assert.doesNotMatch(out, /AppData/);
 	});
 });

@@ -17,6 +17,9 @@ import {
 	formatBrainIndex,
 	stripFrontmatter,
 	hasBrainContent,
+	parseQmdIndex,
+	qmdArgsWithIndex,
+	isValidQmdIndex,
 } from "../lib/session-start.ts";
 
 describe("take", () => {
@@ -188,6 +191,111 @@ describe("hasBrainContent", () => {
 	});
 	test("false for prose-only content with no bullets", () => {
 		assert.equal(hasBrainContent("Just a paragraph of prose.\n"), false);
+	});
+});
+
+describe("parseQmdIndex", () => {
+	test("extracts qmd_index when present as a non-empty string", () => {
+		const manifest = JSON.stringify({ qmd_index: "obsidian-mind" });
+		assert.equal(parseQmdIndex(manifest), "obsidian-mind");
+	});
+	test("returns null when qmd_index is an empty string", () => {
+		const manifest = JSON.stringify({ qmd_index: "" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index is missing from the manifest", () => {
+		const manifest = JSON.stringify({ template: "obsidian-mind" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index is not a string", () => {
+		const manifest = JSON.stringify({ qmd_index: 42 });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when the manifest source is null (missing file)", () => {
+		assert.equal(parseQmdIndex(null), null);
+	});
+	test("returns null when the manifest is malformed JSON", () => {
+		assert.equal(parseQmdIndex("{ not json"), null);
+	});
+	test("returns null when the manifest parses to a non-object", () => {
+		assert.equal(parseQmdIndex('"just a string"'), null);
+	});
+	test("returns null when qmd_index contains a forward-slash path separator", () => {
+		const manifest = JSON.stringify({ qmd_index: "vault/subdir" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index contains a backslash path separator", () => {
+		const manifest = JSON.stringify({ qmd_index: "vault\\subdir" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index is a parent-dir escape attempt", () => {
+		const manifest = JSON.stringify({ qmd_index: "../../etc/passwd" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index contains whitespace", () => {
+		const manifest = JSON.stringify({ qmd_index: "my vault" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index is whitespace-only", () => {
+		const manifest = JSON.stringify({ qmd_index: "   " });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index starts with a non-alphanumeric character", () => {
+		const manifest = JSON.stringify({ qmd_index: "-leading-dash" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("accepts dash, dot, and underscore inside the name", () => {
+		const manifest = JSON.stringify({ qmd_index: "vault-a_b.2" });
+		assert.equal(parseQmdIndex(manifest), "vault-a_b.2");
+	});
+});
+
+describe("isValidQmdIndex", () => {
+	test("accepts standard names", () => {
+		assert.equal(isValidQmdIndex("obsidian-mind"), true);
+		assert.equal(isValidQmdIndex("vigil"), true);
+		assert.equal(isValidQmdIndex("vault.2_final"), true);
+	});
+	test("rejects path separators, whitespace, empty, and leading punctuation", () => {
+		assert.equal(isValidQmdIndex(""), false);
+		assert.equal(isValidQmdIndex(" "), false);
+		assert.equal(isValidQmdIndex("a b"), false);
+		assert.equal(isValidQmdIndex("a/b"), false);
+		assert.equal(isValidQmdIndex("a\\b"), false);
+		assert.equal(isValidQmdIndex("../x"), false);
+		assert.equal(isValidQmdIndex("-leading"), false);
+		assert.equal(isValidQmdIndex(".leading"), false);
+	});
+	test("rejects non-string values", () => {
+		assert.equal(isValidQmdIndex(undefined), false);
+		assert.equal(isValidQmdIndex(null), false);
+		assert.equal(isValidQmdIndex(42), false);
+		assert.equal(isValidQmdIndex({}), false);
+	});
+});
+
+describe("qmdArgsWithIndex", () => {
+	test("prepends --index <name> when an index is provided", () => {
+		assert.deepEqual(qmdArgsWithIndex("obsidian-mind", ["update"]), [
+			"--index",
+			"obsidian-mind",
+			"update",
+		]);
+	});
+	test("returns subcommand args unchanged when index is null", () => {
+		assert.deepEqual(qmdArgsWithIndex(null, ["update"]), ["update"]);
+	});
+	test("preserves multi-arg subcommand invocations", () => {
+		assert.deepEqual(
+			qmdArgsWithIndex("vault", ["query", "ShardMind", "--json"]),
+			["--index", "vault", "query", "ShardMind", "--json"],
+		);
+	});
+	test("returns a fresh array (does not mutate the input)", () => {
+		const input = ["update"];
+		const out = qmdArgsWithIndex(null, input);
+		assert.notEqual(out, input);
+		assert.deepEqual(out, input);
 	});
 });
 

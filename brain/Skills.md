@@ -108,14 +108,14 @@ Subagents run in isolated context windows via `.claude/agents/`. They don't poll
 
 ## Semantic Search (QMD)
 
-If QMD is installed (`npm install -g @tobilu/qmd`), the vault has semantic search:
+If QMD is installed (`npm install -g @tobilu/qmd`), the vault has semantic search. Every command takes `--index <name>` where `<name>` is `vault-manifest.json`'s `qmd_index` field (default: `obsidian-mind`):
 
-- `qmd query "..."` — hybrid BM25 + vector + LLM reranking (best quality)
-- `qmd search "..."` — fast BM25 keyword search
-- `qmd vsearch "..."` — semantic vector search (exploratory)
-- `qmd update && qmd embed` — refresh index after bulk changes
+- `qmd --index <name> query "..."` — hybrid BM25 + vector + LLM reranking (best quality)
+- `qmd --index <name> search "..."` — fast BM25 keyword search
+- `qmd --index <name> vsearch "..."` — semantic vector search (exploratory)
+- `qmd --index <name> update && qmd --index <name> embed` — refresh index after bulk changes
 
-SessionStart hook runs `qmd update` automatically. See `.claude/skills/qmd/SKILL.md` for full reference.
+SessionStart hook runs `qmd --index <name> update` automatically, reading the index name from the manifest. First-time setup on a fresh clone: `node --experimental-strip-types scripts/qmd-bootstrap.ts`. See `.claude/skills/qmd/SKILL.md` for full reference, and [[Memories]] for the topics QMD is most often asked to find across the vault.
 
 ## Workflow: Weekly Review
 

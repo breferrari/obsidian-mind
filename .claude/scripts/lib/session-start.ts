@@ -144,6 +144,67 @@ export function hasBrainContent(body: string): boolean {
 }
 
 /**
+ * Restricted character set for `qmd_index`. The value ends up in both CLI
+ * argv and a filesystem path (`~/.cache/qmd/<name>.sqlite`), so path
+ * separators, parent-dir refs, whitespace, and shell metacharacters must
+ * not be accepted. Mirrors the shape of npm package names / git branch
+ * segments: alnum + dot + dash + underscore, must start with an alnum.
+ */
+const QMD_INDEX_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * True when `value` is a string that's safe to use as a qmd named index.
+ * Exported so callers that read the manifest from other surfaces (the MCP
+ * wrapper, the bootstrap script) can apply the same rule.
+ */
+export function isValidQmdIndex(value: unknown): value is string {
+	return typeof value === "string" && QMD_INDEX_PATTERN.test(value);
+}
+
+/**
+ * Extract the `qmd_index` string from a `vault-manifest.json` source. Returns
+ * the configured named index (so QMD's storage is scoped to this vault) or
+ * null when the manifest is absent, malformed, missing the field, or the
+ * value fails validation (path separators, whitespace, empty, etc.).
+ *
+ * Kept as a pure helper so the caller can own the fs read and tests can pass
+ * fixture strings. A null return means "use QMD's default global index" —
+ * backwards-compatible with forks that haven't adopted the field yet.
+ */
+export function parseQmdIndex(manifestJson: string | null): string | null {
+	if (manifestJson === null) return null;
+	try {
+		const parsed = JSON.parse(manifestJson) as unknown;
+		if (
+			parsed !== null &&
+			typeof parsed === "object" &&
+			"qmd_index" in parsed
+		) {
+			const value = (parsed as Record<string, unknown>)["qmd_index"];
+			if (isValidQmdIndex(value)) return value;
+		}
+	} catch {
+		/* malformed manifest → treat as missing */
+	}
+	return null;
+}
+
+/**
+ * Build the argv tail for a `qmd` CLI invocation, prepending `--index <name>`
+ * when the vault has configured a named index. Callers pass the subcommand
+ * and its args (e.g. `["update"]`, `["query", text, "--json"]`); the return
+ * value is the full argv after the `qmd` command itself.
+ */
+export function qmdArgsWithIndex(
+	index: string | null,
+	subcommandArgs: readonly string[],
+): string[] {
+	return index === null
+		? [...subcommandArgs]
+		: ["--index", index, ...subcommandArgs];
+}
+
+/**
  * Format the "Brain Topics" section — one line per brain/ note with its
  * description from frontmatter, so Claude sees what topic notes exist
  * without loading their full content. Omits North Star (already loaded

@@ -27,7 +27,18 @@ import {
 	formatBrainIndex,
 	stripFrontmatter,
 	hasBrainContent,
+	parseQmdIndex,
+	qmdArgsWithIndex,
 } from "./lib/session-start.ts";
+import { buildQmdCommand, resolveQmdEntry } from "./lib/qmd.ts";
+
+function readManifestRaw(): string | null {
+	try {
+		return readFileSync("vault-manifest.json", { encoding: "utf-8" });
+	} catch {
+		return null;
+	}
+}
 
 const cwd =
 	process.env["CLAUDE_PROJECT_DIR"] ??
@@ -47,7 +58,23 @@ if (envFile) {
 }
 
 // Incremental QMD re-index. Fire-and-forget; ignore failures (qmd is optional).
-spawnSync("qmd", ["update"], { stdio: "ignore", timeout: 30_000 });
+// Scope to this vault's named index when the manifest declares one, so vaults
+// sharing a machine don't blend results in QMD's default global index. Falls
+// back silently for forks that haven't adopted the `qmd_index` manifest field.
+//
+// Route through `buildQmdCommand` so the same shim-bypass logic that fixes
+// the MCP wrapper applies here too — `node qmd.js update` runs identically
+// on Windows, macOS, and Linux; no platform conditionals.
+const qmdIndex = parseQmdIndex(readManifestRaw());
+const qmdUpdate = buildQmdCommand(
+	resolveQmdEntry(),
+	qmdArgsWithIndex(qmdIndex, ["update"]),
+);
+spawnSync(qmdUpdate.cmd, qmdUpdate.args as string[], {
+	stdio: "ignore",
+	timeout: 30_000,
+	shell: qmdUpdate.shell,
+});
 
 type CmdResult =
 	| { readonly kind: "ok"; readonly stdout: string }
