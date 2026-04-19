@@ -19,6 +19,7 @@ import {
 	hasBrainContent,
 	parseQmdIndex,
 	qmdArgsWithIndex,
+	isValidQmdIndex,
 } from "../lib/session-start.ts";
 
 describe("take", () => {
@@ -218,6 +219,58 @@ describe("parseQmdIndex", () => {
 	});
 	test("returns null when the manifest parses to a non-object", () => {
 		assert.equal(parseQmdIndex('"just a string"'), null);
+	});
+	test("returns null when qmd_index contains a forward-slash path separator", () => {
+		const manifest = JSON.stringify({ qmd_index: "vault/subdir" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index contains a backslash path separator", () => {
+		const manifest = JSON.stringify({ qmd_index: "vault\\subdir" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index is a parent-dir escape attempt", () => {
+		const manifest = JSON.stringify({ qmd_index: "../../etc/passwd" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index contains whitespace", () => {
+		const manifest = JSON.stringify({ qmd_index: "my vault" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index is whitespace-only", () => {
+		const manifest = JSON.stringify({ qmd_index: "   " });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("returns null when qmd_index starts with a non-alphanumeric character", () => {
+		const manifest = JSON.stringify({ qmd_index: "-leading-dash" });
+		assert.equal(parseQmdIndex(manifest), null);
+	});
+	test("accepts dash, dot, and underscore inside the name", () => {
+		const manifest = JSON.stringify({ qmd_index: "vault-a_b.2" });
+		assert.equal(parseQmdIndex(manifest), "vault-a_b.2");
+	});
+});
+
+describe("isValidQmdIndex", () => {
+	test("accepts standard names", () => {
+		assert.equal(isValidQmdIndex("obsidian-mind"), true);
+		assert.equal(isValidQmdIndex("vigil"), true);
+		assert.equal(isValidQmdIndex("vault.2_final"), true);
+	});
+	test("rejects path separators, whitespace, empty, and leading punctuation", () => {
+		assert.equal(isValidQmdIndex(""), false);
+		assert.equal(isValidQmdIndex(" "), false);
+		assert.equal(isValidQmdIndex("a b"), false);
+		assert.equal(isValidQmdIndex("a/b"), false);
+		assert.equal(isValidQmdIndex("a\\b"), false);
+		assert.equal(isValidQmdIndex("../x"), false);
+		assert.equal(isValidQmdIndex("-leading"), false);
+		assert.equal(isValidQmdIndex(".leading"), false);
+	});
+	test("rejects non-string values", () => {
+		assert.equal(isValidQmdIndex(undefined), false);
+		assert.equal(isValidQmdIndex(null), false);
+		assert.equal(isValidQmdIndex(42), false);
+		assert.equal(isValidQmdIndex({}), false);
 	});
 });
 

@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Top-level user-facing scripts (qmd-bootstrap, etc.). ESM-only, executed via `node --experimental-strip-types`. The `type: module` field exists so TypeScript's verbatimModuleSyntax treats these .ts files as ESM during typecheck, matching their runtime behavior."
+}

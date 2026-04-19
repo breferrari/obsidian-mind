@@ -17,21 +17,32 @@
  * ~/.cache/qmd/<index>.sqlite (derived data, not version-controlled), which
  * is why this script is the portable instruction set for regenerating it.
  *
+ * Cross-platform: every spawn routes through `buildQmdCommand`, which resolves
+ * @tobilu/qmd's real JS entry and runs it with the current Node binary. No
+ * platform conditionals — the same command path executes on Windows, macOS,
+ * and Linux.
+ *
  * Usage:
  *   node --experimental-strip-types scripts/qmd-bootstrap.ts
- *
- * Or, once QMD is on PATH, users can invoke the bundled `qmd` commands
- * directly — this script just encodes the canonical ordering.
  */
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+
+import { buildQmdCommand, resolveQmdEntry } from "../.claude/scripts/lib/qmd.ts";
 
 type ManifestSubset = {
 	readonly qmd_index?: string;
 	readonly qmd_context?: string;
 	readonly template?: string;
 };
+
+/**
+ * Same validation rule as `.claude/scripts/lib/session-start.ts:QMD_INDEX_PATTERN`.
+ * Rejects path separators, whitespace, empty, and parent-dir refs before the
+ * name hits argv or a filesystem path.
+ */
+const QMD_INDEX_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function readManifest(): ManifestSubset | null {
 	try {
@@ -46,22 +57,36 @@ function readManifest(): ManifestSubset | null {
 	return null;
 }
 
-function ensureQmd(): void {
-	const probe = spawnSync("qmd", ["--version"], { stdio: "ignore" });
+function spawnQmd(
+	entry: string | null,
+	subcommandArgs: readonly string[],
+	inherit: boolean,
+): { readonly status: number | null; readonly signal: NodeJS.Signals | null } {
+	const { cmd, args, shell } = buildQmdCommand(entry, subcommandArgs);
+	const r = spawnSync(cmd, args as string[], {
+		stdio: inherit ? "inherit" : "ignore",
+		shell,
+	});
+	return { status: r.status, signal: r.signal };
+}
+
+function ensureQmd(entry: string | null): void {
+	const probe = spawnQmd(entry, ["--version"], false);
 	if (probe.status !== 0) {
 		process.stderr.write(
-			"qmd not found on PATH. Install it first: npm i -g @tobilu/qmd\n",
+			"qmd not found. Install it first: npm i -g @tobilu/qmd\n",
 		);
 		process.exit(1);
 	}
 }
 
-function run(args: readonly string[], description: string): void {
+function run(
+	entry: string | null,
+	args: readonly string[],
+	description: string,
+): void {
 	process.stdout.write(`→ ${description}\n`);
-	const r = spawnSync("qmd", args as string[], {
-		stdio: "inherit",
-		shell: process.platform === "win32",
-	});
+	const r = spawnQmd(entry, args, true);
 	if (r.status !== 0) {
 		process.stderr.write(
 			`qmd exited with code ${r.status ?? "?"} during: ${description}\n`,
@@ -71,14 +96,12 @@ function run(args: readonly string[], description: string): void {
 }
 
 function runAllowingFailure(
+	entry: string | null,
 	args: readonly string[],
 	description: string,
 ): void {
 	process.stdout.write(`→ ${description}\n`);
-	spawnSync("qmd", args as string[], {
-		stdio: "inherit",
-		shell: process.platform === "win32",
-	});
+	spawnQmd(entry, args, true);
 }
 
 function main(): void {
@@ -97,8 +120,19 @@ function main(): void {
 		);
 		process.exit(1);
 	}
+	if (!QMD_INDEX_PATTERN.test(index)) {
+		process.stderr.write(
+			`vault-manifest.json \`qmd_index\` value ${JSON.stringify(index)} is not a valid index name.\n` +
+				"Allowed: alphanumerics, dot, dash, underscore; must start with an alphanumeric.\n" +
+				"(The value is used both in CLI argv and a filesystem path, so path separators and whitespace aren't accepted.)\n",
+		);
+		process.exit(1);
+	}
 
-	ensureQmd();
+	// Resolve once up front so every downstream spawn reuses the same entry.
+	const entry = resolveQmdEntry();
+
+	ensureQmd(entry);
 
 	const collectionName = manifest.template ?? index;
 	const contextPath = `qmd://${collectionName}/`;
@@ -110,6 +144,7 @@ function main(): void {
 
 	// `collection add` reports "already exists" on re-run — intended.
 	runAllowingFailure(
+		entry,
 		[
 			"--index",
 			index,
@@ -126,16 +161,18 @@ function main(): void {
 	// Re-attach the context string so edits to vault-manifest.json propagate.
 	// Remove-then-add is safe; remove failure is ignored when nothing is there.
 	runAllowingFailure(
+		entry,
 		["--index", index, "context", "rm", contextPath],
 		"Clearing previous context (if any)",
 	);
 	run(
+		entry,
 		["--index", index, "context", "add", contextPath, contextText],
 		"Attaching vault context from manifest",
 	);
 
-	run(["--index", index, "update"], "Indexing vault files");
-	run(["--index", index, "embed"], "Generating embeddings");
+	run(entry, ["--index", index, "update"], "Indexing vault files");
+	run(entry, ["--index", index, "embed"], "Generating embeddings");
 
 	process.stdout.write(
 		`\n✓ QMD index '${index}' ready. Test with:\n  qmd --index ${index} query "<topic>"\n`,

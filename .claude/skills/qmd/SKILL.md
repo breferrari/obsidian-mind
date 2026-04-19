@@ -13,14 +13,18 @@ This vault declares a **named QMD index** in `vault-manifest.json` under `qmd_in
 
 The MCP server (`.mcp.json`) and the SessionStart hook read the same field, so all three surfaces (CLI, MCP, hook) point at the same SQLite store.
 
-**Read the index name from the manifest** before running commands:
+**Read the index name from the manifest** before running commands. This snippet prints a clear error when the field is missing instead of silently running `qmd --index undefined`:
 
 ```bash
-INDEX=$(node -e "console.log(JSON.parse(require('fs').readFileSync('vault-manifest.json','utf8')).qmd_index)")
+INDEX=$(node -e '
+  const m = JSON.parse(require("fs").readFileSync("vault-manifest.json", "utf8"));
+  if (!m.qmd_index) { process.stderr.write("qmd_index not set in vault-manifest.json\n"); process.exit(1); }
+  process.stdout.write(m.qmd_index);
+') || exit 1
 qmd --index "$INDEX" query "..."
 ```
 
-In-session, substitute the value of `qmd_index` directly in your commands (the index name is stable across the vault's lifetime).
+In-session, substitute the value of `qmd_index` directly in your commands (the index name is stable across the vault's lifetime). The default in a fresh template is `obsidian-mind`.
 
 ## Commands
 

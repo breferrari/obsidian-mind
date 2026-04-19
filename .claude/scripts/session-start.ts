@@ -30,6 +30,7 @@ import {
 	parseQmdIndex,
 	qmdArgsWithIndex,
 } from "./lib/session-start.ts";
+import { buildQmdCommand, resolveQmdEntry } from "./lib/qmd.ts";
 
 function readManifestRaw(): string | null {
 	try {
@@ -60,10 +61,19 @@ if (envFile) {
 // Scope to this vault's named index when the manifest declares one, so vaults
 // sharing a machine don't blend results in QMD's default global index. Falls
 // back silently for forks that haven't adopted the `qmd_index` manifest field.
+//
+// Route through `buildQmdCommand` so the same shim-bypass logic that fixes
+// the MCP wrapper applies here too — `node qmd.js update` runs identically
+// on Windows, macOS, and Linux; no platform conditionals.
 const qmdIndex = parseQmdIndex(readManifestRaw());
-spawnSync("qmd", qmdArgsWithIndex(qmdIndex, ["update"]), {
+const qmdUpdate = buildQmdCommand(
+	resolveQmdEntry(),
+	qmdArgsWithIndex(qmdIndex, ["update"]),
+);
+spawnSync(qmdUpdate.cmd, qmdUpdate.args as string[], {
 	stdio: "ignore",
 	timeout: 30_000,
+	shell: qmdUpdate.shell,
 });
 
 type CmdResult =

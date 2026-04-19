@@ -75,9 +75,19 @@ export function resolveQmdEntry() {
 }
 
 /**
+ * Restricted character set for `qmd_index`. Duplicated from
+ * `lib/session-start.ts:QMD_INDEX_PATTERN` (this file is .mjs and can't
+ * import from the .ts lib at strip-types runtime). The shape is asserted
+ * by the tests — alnum + dot + dash + underscore, must start with alnum.
+ * Rejects path separators, parent-dir refs, whitespace, empty strings.
+ */
+const QMD_INDEX_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
  * Extract the `qmd_index` string from a vault-manifest.json source. Returns
  * the configured named index (so QMD's storage is scoped to this vault) or
- * null when the manifest is absent, malformed, or missing the field.
+ * null when the manifest is absent, malformed, missing the field, or the
+ * value fails validation.
  *
  * Kept as a pure helper so tests can pass fixture strings. A null return
  * means "use QMD's default global index" — backwards-compatible with forks
@@ -91,7 +101,7 @@ export function readQmdIndex(manifestJson) {
 			parsed !== null &&
 			typeof parsed === "object" &&
 			typeof parsed.qmd_index === "string" &&
-			parsed.qmd_index.length > 0
+			QMD_INDEX_PATTERN.test(parsed.qmd_index)
 		) {
 			return parsed.qmd_index;
 		}

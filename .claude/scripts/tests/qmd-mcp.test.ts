@@ -141,6 +141,40 @@ describe("readQmdIndex", () => {
 	test("returns null when manifest parses to a non-object", () => {
 		assert.equal(readQmdIndex('"just a string"'), null);
 	});
+	test("returns null when qmd_index contains path separators (/ or \\)", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "vault/sub" })),
+			null,
+		);
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "vault\\sub" })),
+			null,
+		);
+	});
+	test("returns null when qmd_index is a parent-dir escape", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "../etc" })),
+			null,
+		);
+	});
+	test("returns null when qmd_index contains whitespace", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "my vault" })),
+			null,
+		);
+	});
+	test("returns null when qmd_index starts with non-alphanumeric", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "-lead" })),
+			null,
+		);
+	});
+	test("accepts dash, dot, and underscore inside the name", () => {
+		assert.equal(
+			readQmdIndex(JSON.stringify({ qmd_index: "vault.2_a-b" })),
+			"vault.2_a-b",
+		);
+	});
 });
 
 describe("resolveIndexSqlitePath", () => {
