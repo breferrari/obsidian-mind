@@ -210,7 +210,7 @@ flowchart TB
     CLI --> Store
 ```
 
-QMD is technically optional. When it isn't installed at all, the agent falls back through a preference order defined in `CLAUDE.md` and the qmd skill: MCP tools first when registered, then the `qmd` CLI, then Grep/Glob/Read as a last resort. The template is designed so every fallback step is silent: `.mcp.json` entries that fail to launch are skipped without warning, the hook scripts detect a missing `qmd` binary and no-op, and the operating manual tells the agent what to reach for next.
+QMD is technically optional. When it isn't installed at all, the agent falls back through a preference order defined in `CLAUDE.md` and the qmd skill: MCP tools first when registered, then the `qmd` CLI, then Grep/Glob/Read as a last resort. Every fallback step is non-fatal: `.mcp.json` entries that fail to launch are skipped with a harmless warning, the hook scripts detect a missing `qmd` binary and no-op, and the operating manual tells the agent what to reach for next.
 
 ### MCP as the agent-facing contract
 

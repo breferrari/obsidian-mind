@@ -76,7 +76,7 @@ describe("readObsidianIgnore", () => {
 
 	test.after(() => rmSync(tmp, { recursive: true, force: true }));
 
-	test("missing file returns empty array", () => {
+	test("missing file (ENOENT) returns empty array — user has no filters", () => {
 		assert.deepEqual(readObsidianIgnore(join(tmp, "does-not-exist.json")), []);
 	});
 
@@ -110,10 +110,13 @@ describe("readObsidianIgnore", () => {
 		assert.deepEqual(readObsidianIgnore(path), ["ok.md", "also-ok.md"]);
 	});
 
-	test("malformed JSON returns empty array (no throw)", () => {
+	test("malformed JSON returns null so the caller skips propagation", () => {
+		// Coercing a parse error to [] would cause writeQmdIgnore([]) to strip
+		// the existing QMD ignore block — a user typo in app.json shouldn't
+		// silently re-expose hidden files. null signals "skip, leave YAML."
 		const path = join(tmp, "broken.json");
 		writeFileSync(path, "{not valid json");
-		assert.deepEqual(readObsidianIgnore(path), []);
+		assert.equal(readObsidianIgnore(path), null);
 	});
 });
 

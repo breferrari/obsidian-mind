@@ -230,29 +230,39 @@ function main(): void {
 	// Propagate Obsidian's userIgnoreFilters into QMD's YAML so both engines
 	// honor the same hidden-file list. Runs after `collection add` because
 	// that call overwrites the collection entry without preserving `ignore`.
+	// readObsidianIgnore returns null when app.json is unreadable/unparseable —
+	// we skip propagation in that case so a user typo doesn't strip the
+	// existing QMD ignore block. A warn() has already been emitted.
 	const obsidianIgnore = readObsidianIgnore();
-	const qmdIgnore: string[] = [];
-	for (const p of obsidianIgnore) {
-		const glob = translateToGlob(p);
-		if (glob === null) {
-			warn(
-				`Skipping regex pattern ${JSON.stringify(p)} — QMD ignore field accepts globs only.`,
-			);
-			continue;
+	if (obsidianIgnore !== null) {
+		const qmdIgnore: string[] = [];
+		for (const p of obsidianIgnore) {
+			const glob = translateToGlob(p);
+			if (glob === null) {
+				warn(
+					`Skipping regex pattern ${JSON.stringify(p)} — QMD ignore field accepts globs only.`,
+				);
+				continue;
+			}
+			qmdIgnore.push(glob);
 		}
-		qmdIgnore.push(glob);
-	}
-	// Print the step header only after the write succeeds or fails explicitly,
-	// so logs never show "→ Syncing..." as a completed step when writeQmdIgnore
-	// actually skipped (missing config, unknown collection — both emit a warn()
-	// of their own from inside the wrapper).
-	const wrote = writeQmdIgnore(qmdConfigPath(index), collectionName, qmdIgnore);
-	if (wrote) {
-		process.stdout.write("→ Syncing ignore patterns from .obsidian/app.json\n");
-		if (qmdIgnore.length > 0) {
+		// Print the step header only after the write succeeds, so logs never
+		// show "→ Syncing..." as a completed step when writeQmdIgnore actually
+		// skipped (missing config or unknown collection — both already warn()).
+		const wrote = writeQmdIgnore(
+			qmdConfigPath(index),
+			collectionName,
+			qmdIgnore,
+		);
+		if (wrote) {
 			process.stdout.write(
-				`  ${qmdIgnore.length} ignore pattern(s) synced from .obsidian/app.json\n`,
+				"→ Syncing ignore patterns from .obsidian/app.json\n",
 			);
+			if (qmdIgnore.length > 0) {
+				process.stdout.write(
+					`  ${qmdIgnore.length} ignore pattern(s) synced from .obsidian/app.json\n`,
+				);
+			}
 		}
 	}
 

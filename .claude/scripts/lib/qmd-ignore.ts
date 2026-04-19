@@ -44,25 +44,45 @@ const IGNORE_BLOCK_RE = new RegExp(
  * what's hidden from both Obsidian and QMD search. Bootstrap reads it and
  * writes the patterns to the QMD YAML so `qmd update` skips the same files.
  *
+ * Returns:
+ * - `[]` when the file is absent (ENOENT) or present but has no filters.
+ *   These are the "user has no ignore list" cases — correct to treat alike.
+ * - `null` when the file exists but can't be read or parsed (bad JSON,
+ *   permission error, I/O). Coercing these to `[]` would silently cause
+ *   `writeQmdIgnore([])` to strip an existing QMD ignore block on the next
+ *   bootstrap run — a user typo in app.json should not re-expose previously
+ *   hidden files. Callers MUST treat null as "skip propagation, leave the
+ *   YAML alone." A warn() is emitted so the drift is visible.
+ *
  * Path defaults to `.obsidian/app.json` resolved against the current working
  * directory — the script is expected to run from the vault root. Tests inject
  * a temp path through the parameter.
  */
 export function readObsidianIgnore(
 	appJsonPath: string = ".obsidian/app.json",
-): readonly string[] {
-	// No existsSync pre-check: the catch below already returns [] on ENOENT,
-	// so an extra syscall to pre-verify only buys a TOCTOU race.
+): readonly string[] | null {
+	let raw: string;
 	try {
-		const parsed = JSON.parse(readFileSync(appJsonPath, "utf-8")) as {
-			userIgnoreFilters?: unknown;
-		};
-		const raw = parsed.userIgnoreFilters;
-		if (!Array.isArray(raw)) return [];
-		return raw.filter((v): v is string => typeof v === "string");
-	} catch {
-		return [];
+		raw = readFileSync(appJsonPath, "utf-8");
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+		warn(
+			`Failed to read ${appJsonPath}: ${(err as Error).message}. Skipping ignore propagation to avoid clearing the existing QMD ignore list.`,
+		);
+		return null;
 	}
+	let parsed: { userIgnoreFilters?: unknown };
+	try {
+		parsed = JSON.parse(raw) as { userIgnoreFilters?: unknown };
+	} catch (err) {
+		warn(
+			`Failed to parse ${appJsonPath}: ${(err as Error).message}. Skipping ignore propagation to avoid clearing the existing QMD ignore list.`,
+		);
+		return null;
+	}
+	const filters = parsed.userIgnoreFilters;
+	if (!Array.isArray(filters)) return [];
+	return filters.filter((v): v is string => typeof v === "string");
 }
 
 /**
