@@ -16,6 +16,15 @@ export function debug(msg: string): void {
 	}
 }
 
+/**
+ * Emit a user-facing warning to stderr with the standard `⚠` prefix. Use for
+ * non-fatal conditions the user should see (missing config, unexpected input
+ * shape, etc.) so warning formatting stays consistent across scripts.
+ */
+export function warn(msg: string): void {
+	process.stderr.write(`  ⚠ ${msg}\n`);
+}
+
 export async function readStdinJson<T = unknown>(): Promise<T | null> {
 	try {
 		const chunks: Buffer[] = [];

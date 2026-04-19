@@ -7,11 +7,8 @@
  * lookarounds enforce Latin word boundaries while allowing CJK adjacency.
  */
 
+import { escapeRegex } from "./regex.ts";
 import { SIGNALS } from "./signals.ts";
-
-function escapeRegex(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function compileMatcher(phrases: readonly string[]): RegExp {
 	const body = phrases.map(escapeRegex).join("|");

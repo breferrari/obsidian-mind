@@ -4,6 +4,8 @@
  * system, or invoking the Obsidian CLI.
  */
 
+import { escapeRegex } from "./regex.ts";
+
 export function take(stdout: string, n: number): string {
 	return stdout.split("\n").slice(0, n).join("\n");
 }
@@ -60,14 +62,6 @@ export function isSkippedPath(
 	return skipPrefixes.some(
 		(p) => pathRel === p || pathRel.startsWith(p + "/"),
 	);
-}
-
-/**
- * Escape regex metacharacters in a string so it can be embedded safely
- * inside a `new RegExp(...)` pattern as a literal.
- */
-function escapeRegex(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

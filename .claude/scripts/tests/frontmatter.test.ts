@@ -25,8 +25,14 @@ describe("shouldSkipFile — skip rules", () => {
 	test("skips CHANGELOG.md", () => {
 		assert.equal(shouldSkipFile("/some/path/CHANGELOG.md"), true);
 	});
-	test("skips CLAUDE / AGENTS / GEMINI / CONTRIBUTING", () => {
-		for (const f of ["CLAUDE.md", "AGENTS.md", "GEMINI.md", "CONTRIBUTING.md"]) {
+	test("skips CLAUDE / AGENTS / GEMINI / CONTRIBUTING / ARCHITECTURE", () => {
+		for (const f of [
+			"CLAUDE.md",
+			"AGENTS.md",
+			"GEMINI.md",
+			"CONTRIBUTING.md",
+			"ARCHITECTURE.md",
+		]) {
 			assert.equal(shouldSkipFile(`/vault/${f}`), true);
 		}
 	});

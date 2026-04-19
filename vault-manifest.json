@@ -13,6 +13,7 @@
     "README.*.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
+    "ARCHITECTURE.md",
     "LICENSE",
     ".gitignore",
     ".mcp.json",

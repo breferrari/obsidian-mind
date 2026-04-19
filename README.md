@@ -109,7 +109,7 @@ QMD is where most of the agent's retrieval intelligence comes from. Optional in 
 - **Semantic recall.** Find "what did we decide about caching" even when the note is titled "Redis Migration ADR."
 - **Brain topics available on demand.** Claude is instructed (via `CLAUDE.md`) to consult `brain/` guidance through QMD when the conversation touches a listed topic.
 - **Subagents get sharper context.** `context-loader`, `review-prep`, `brag-spotter`, and friends consult QMD first, then fall back to grep.
-- **First-class MCP tools.** Registered via `.mcp.json` at the project root — when QMD is installed, its search tools appear directly in the Claude Code tool menu.
+- **Native agent tools via MCP.** Registered as a [Model Context Protocol](https://modelcontextprotocol.io) server in `.mcp.json` — when QMD is installed, `mcp__qmd__query`, `mcp__qmd__get`, and `mcp__qmd__multi_get` appear in the agent's tool menu alongside Read and Edit. Subagents, slash commands, and the main conversation all call the same typed contract. Add another MCP-aware tool later (a database, a ticketing system, a calendar) and it plugs in the same way.
 
 ```bash
 npm install -g @tobilu/qmd
@@ -147,6 +147,8 @@ qmd --index obsidian-mind embed    # after many new notes
 ---
 
 ## ⚙️ How It Works
+
+**Procedural code owns the environment. The agent owns content.** The hooks in `.claude/scripts/` handle classification, validation, indexing, and lifecycle injection — deterministic, testable, runs the same for every agent. Writing notes, filing them, linking them, drafting briefs — those are judgments, and they stay with the agent. The two halves meet at small handoffs (hooks inject context, agent reads the vault) so neither has to do the other's job.
 
 **Folders group by purpose. Links group by meaning.** A note lives in one folder (its home) but links to many notes (its context). Your agent maintains this graph — linking work notes to people, decisions, and competencies automatically. When review season arrives, the backlinks on each competency note are already the evidence trail. A note without links is a bug.
 

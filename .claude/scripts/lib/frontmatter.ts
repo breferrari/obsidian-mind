@@ -10,6 +10,7 @@ const ROOT_FILES: ReadonlySet<string> = new Set([
 	"README.md",
 	"CHANGELOG.md",
 	"CONTRIBUTING.md",
+	"ARCHITECTURE.md",
 	"CLAUDE.md",
 	"AGENTS.md",
 	"GEMINI.md",

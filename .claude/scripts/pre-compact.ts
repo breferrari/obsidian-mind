@@ -18,6 +18,7 @@ import {
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { debug, readStdinJson } from "./lib/hook-io.ts";
+import { isMainModule } from "./lib/main-guard.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 
 type HookInput = {
@@ -58,10 +59,7 @@ export function pruneBackups(dir: string, retain: number): void {
 	}
 }
 
-// Only run main when invoked as a script (not when imported by tests).
-// fileURLToPath handles the file:// prefix and any URL-encoded segments;
-// process.argv[1] is already the absolute resolved script path at invocation.
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isMainModule(import.meta.url)) {
 	const input = await readStdinJson<HookInput>();
 	if (!input) process.exit(0);
 

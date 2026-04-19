@@ -12,8 +12,10 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync } from "node:fs";
+
+import { isMainModule } from "../../.claude/scripts/lib/main-guard.ts";
+import { escapeRegex } from "../../.claude/scripts/lib/regex.ts";
 import { isCovered } from "./manifest-check.ts";
 
 const PREFIX_MAP: Readonly<Record<string, string>> = {
@@ -121,10 +123,6 @@ export function generateSection(version: string, commits: readonly string[]): st
 	}
 
 	return lines.join("\n");
-}
-
-function escapeRegex(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function prependToChangelog(section: string, version: string): void {
@@ -430,7 +428,4 @@ function main(): void {
 	if (!section.endsWith("\n")) process.stdout.write("\n");
 }
 
-// Only run main when invoked as a script (not when imported by tests).
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-	main();
-}
+if (isMainModule(import.meta.url)) main();

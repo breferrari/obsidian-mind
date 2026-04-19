@@ -8,8 +8,10 @@
  *      in vault-manifest.json (`qmd_index`).
  *   2. Attach the vault's context string (`qmd_context`) so QMD's snippets
  *      and rerank step know what this collection is.
- *   3. Walk the vault and build the sparse index.
- *   4. Generate vector embeddings.
+ *   3. Sync `.obsidian/app.json` userIgnoreFilters into the QMD YAML config
+ *      so both engines hide the same files from search.
+ *   4. Walk the vault and build the sparse index.
+ *   5. Generate vector embeddings.
  *
  * Safe to re-run. Every step reports current state rather than failing on
  * "already exists" — the context string is re-attached so updates to
@@ -29,7 +31,15 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
+import { warn } from "../.claude/scripts/lib/hook-io.ts";
+import { isMainModule } from "../.claude/scripts/lib/main-guard.ts";
 import { buildQmdCommand, resolveQmdEntry } from "../.claude/scripts/lib/qmd.ts";
+import {
+	qmdConfigPath,
+	readObsidianIgnore,
+	translateToGlob,
+	writeQmdIgnore,
+} from "../.claude/scripts/lib/qmd-ignore.ts";
 import { isValidQmdIndex } from "../.claude/scripts/lib/session-start.ts";
 
 type ManifestSubset = {
@@ -217,6 +227,29 @@ function main(): void {
 		"Attaching vault context from manifest",
 	);
 
+	// Propagate Obsidian's userIgnoreFilters into QMD's YAML so both engines
+	// honor the same hidden-file list. Runs after `collection add` because
+	// that call overwrites the collection entry without preserving `ignore`.
+	const obsidianIgnore = readObsidianIgnore();
+	const qmdIgnore: string[] = [];
+	for (const p of obsidianIgnore) {
+		const glob = translateToGlob(p);
+		if (glob === null) {
+			warn(
+				`Skipping regex pattern ${JSON.stringify(p)} — QMD ignore field accepts globs only.`,
+			);
+			continue;
+		}
+		qmdIgnore.push(glob);
+	}
+	process.stdout.write("→ Syncing ignore patterns from .obsidian/app.json\n");
+	const wrote = writeQmdIgnore(qmdConfigPath(index), collectionName, qmdIgnore);
+	if (wrote && qmdIgnore.length > 0) {
+		process.stdout.write(
+			`  ${qmdIgnore.length} ignore pattern(s) synced from .obsidian/app.json\n`,
+		);
+	}
+
 	run(entry, ["--index", index, "update"], "Indexing vault files");
 	run(entry, ["--index", index, "embed"], "Generating embeddings");
 
@@ -225,4 +258,4 @@ function main(): void {
 	);
 }
 
-main();
+if (isMainModule(import.meta.url)) main();
