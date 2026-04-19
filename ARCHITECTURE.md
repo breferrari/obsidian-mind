@@ -206,15 +206,15 @@ flowchart TB
     CLI --> Store
 ```
 
-QMD is technically optional — when absent, the agent falls back to grep and the Obsidian CLI. The template is designed so the fallback is silent: `.mcp.json` entries that fail to launch are skipped without warning, and the hook scripts detect a missing `qmd` binary and no-op.
+QMD is technically optional. When it isn't installed at all, the agent falls back through a preference order defined in `CLAUDE.md` and the qmd skill: MCP tools first when registered, then the `qmd` CLI, then Grep/Glob/Read as a last resort. The template is designed so every fallback step is silent: `.mcp.json` entries that fail to launch are skipped without warning, the hook scripts detect a missing `qmd` binary and no-op, and the operating manual tells the agent what to reach for next.
 
 ### MCP as the agent-facing contract
 
-The agent does not know QMD exists as a CLI. It sees `mcp__qmd__query`, `mcp__qmd__get`, `mcp__qmd__multi_get`, and `mcp__qmd__status` in its tool menu — the same shape as Read or Edit. These come from the [Model Context Protocol](https://modelcontextprotocol.io) server registered in `.mcp.json`, launched by a thin wrapper (`.claude/scripts/qmd-mcp.mjs`) that reads `qmd_index` from the manifest and invokes `qmd mcp` underneath.
+When the MCP server is registered, the agent's normal path to QMD is through typed tools — `mcp__qmd__query`, `mcp__qmd__get`, `mcp__qmd__multi_get`, and `mcp__qmd__status` — that appear in its tool menu alongside Read and Edit. These come from the [Model Context Protocol](https://modelcontextprotocol.io) server declared in `.mcp.json`, launched by a thin wrapper (`.claude/scripts/qmd-mcp.mjs`) that reads `qmd_index` from the manifest and invokes `qmd mcp` underneath. The CLI remains available — and is documented as the fallback — but during a session with MCP live, the agent goes through typed tools, not shell.
 
 The wrapper exists so that each vault can run its own isolated index without users hand-editing `.mcp.json`. The index name flows from the manifest into the wrapper, the wrapper into QMD, QMD into its per-vault SQLite store.
 
-The contract matters because the alternative — teaching every subagent and slash command to shell out to `qmd search` — would couple each one to QMD's CLI surface, duplicate parse/retry logic across files, and force every prompt to re-explain the tool. MCP collapses all of that into one typed interface. When QMD changes its CLI, only the wrapper has to follow; the rest of the template is insulated. When another MCP-aware service needs to join the vault (a bug tracker, a docs search, a calendar), it registers in `.mcp.json` and gains the same privileged position.
+The contract matters because the alternative — teaching every subagent and slash command to shell out to `qmd search` on every call — would couple each prompt to QMD's CLI surface, duplicate parse/retry logic across files, and force every prompt to re-explain the tool. MCP collapses all of that into one typed interface for the in-session path. When QMD changes its CLI, the wrapper adapts; the rest of the template is insulated. When another MCP-aware service needs to join the vault (a bug tracker, a docs search, a calendar), it registers in `.mcp.json` and gains the same privileged position.
 
 ### One ignore list, two engines
 
