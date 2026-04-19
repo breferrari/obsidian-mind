@@ -28,12 +28,30 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 
 const require = createRequire(import.meta.url);
+
+/**
+ * Resolve the wrapper's vault root from a `file://` URL and optional env
+ * override. Kept as a pure helper (both inputs passed in) so tests can lock
+ * the path math without depending on the current process's working directory
+ * or CLAUDE_PROJECT_DIR. Layout assumption: the wrapper lives at
+ * `<vault>/.claude/scripts/qmd-mcp.mjs`, so the vault root is two levels up.
+ */
+export function resolveVaultRoot(metaUrl, env = process.env) {
+	const envRoot = env["CLAUDE_PROJECT_DIR"];
+	if (envRoot && isAbsolute(envRoot)) return envRoot;
+	return resolve(dirname(fileURLToPath(metaUrl)), "..", "..");
+}
+
+// Resolved once at module load. Manifest lookups use this instead of the
+// current working directory, so a drifted MCP-host CWD can't silently break
+// per-vault isolation.
+const VAULT_ROOT = resolveVaultRoot(import.meta.url);
 
 /**
  * Locate @tobilu/qmd's real JS entrypoint. Returns an absolute path when
@@ -139,7 +157,9 @@ export function buildLaunchCommand(entry, extraArgs = [], qmdIndex = null) {
 
 function readManifestRaw() {
 	try {
-		return readFileSync("vault-manifest.json", { encoding: "utf-8" });
+		return readFileSync(join(VAULT_ROOT, "vault-manifest.json"), {
+			encoding: "utf-8",
+		});
 	} catch {
 		return null;
 	}

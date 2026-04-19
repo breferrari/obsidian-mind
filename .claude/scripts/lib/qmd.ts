@@ -14,7 +14,10 @@
  * Shared with `.claude/scripts/qmd-mcp.mjs` by duplicated implementation —
  * that file is .mjs (MCP servers run as their own entry), so it can't import
  * this .ts helper at Node's `--experimental-strip-types` runtime. The two
- * copies are kept in sync by asserting the same shape in tests.
+ * copies are asserted independently: `tests/qmd.test.ts` locks this file's
+ * `resolveQmdEntry` + `buildQmdCommand` shape, and `tests/qmd-mcp.test.ts`
+ * locks the .mjs wrapper's equivalents. Drift between the two shows up as
+ * a test failure on the CI matrix rather than a silent platform bug.
  */
 
 import { spawnSync } from "node:child_process";

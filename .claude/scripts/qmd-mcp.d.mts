@@ -11,6 +11,16 @@
 export function resolveQmdEntry(): string | null;
 
 /**
+ * Resolve the vault root directory from a `file://` URL and optional env.
+ * The env argument is read for `CLAUDE_PROJECT_DIR` (Claude Code's
+ * project-dir signal); when absent, the root is computed from the URL.
+ */
+export function resolveVaultRoot(
+	metaUrl: string,
+	env?: NodeJS.ProcessEnv,
+): string;
+
+/**
  * Extract the `qmd_index` string from a vault-manifest.json source.
  * Returns the named index or null when absent, malformed, or empty.
  */

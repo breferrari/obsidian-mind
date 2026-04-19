@@ -25,6 +25,7 @@ import {
 	buildLaunchCommand,
 	readQmdIndex,
 	resolveIndexSqlitePath,
+	resolveVaultRoot,
 } from "../qmd-mcp.mjs";
 
 describe("resolveQmdEntry", () => {
@@ -174,6 +175,46 @@ describe("readQmdIndex", () => {
 			readQmdIndex(JSON.stringify({ qmd_index: "vault.2_a-b" })),
 			"vault.2_a-b",
 		);
+	});
+});
+
+describe("resolveVaultRoot", () => {
+	test("uses CLAUDE_PROJECT_DIR when set to an absolute path", () => {
+		const out = resolveVaultRoot(
+			"file:///some/vault/.claude/scripts/qmd-mcp.mjs",
+			{ CLAUDE_PROJECT_DIR: "/override/root" },
+		);
+		assert.equal(out, "/override/root");
+	});
+
+	test("ignores CLAUDE_PROJECT_DIR when value is empty", () => {
+		const out = resolveVaultRoot(
+			"file:///C:/vault/.claude/scripts/qmd-mcp.mjs",
+			{ CLAUDE_PROJECT_DIR: "" },
+		);
+		// Path math: two levels up from .claude/scripts/qmd-mcp.mjs → vault/
+		assert.match(out, /[\\/]vault$/, `expected vault-root shape, got: ${out}`);
+	});
+
+	test("ignores CLAUDE_PROJECT_DIR when value is a relative path (not trusted)", () => {
+		const out = resolveVaultRoot(
+			"file:///C:/vault/.claude/scripts/qmd-mcp.mjs",
+			{ CLAUDE_PROJECT_DIR: "relative/thing" },
+		);
+		assert.match(out, /[\\/]vault$/);
+	});
+
+	test("derives the vault root from import.meta.url when env is unset", () => {
+		// `fileURLToPath` requires a drive-letter prefix on Windows but not on
+		// POSIX. Pick an OS-appropriate fixture so the assertion — that the
+		// result walks two levels up from .claude/scripts/qmd-mcp.mjs — runs
+		// on every matrix leg.
+		const url =
+			process.platform === "win32"
+				? "file:///C:/home/me/my-vault/.claude/scripts/qmd-mcp.mjs"
+				: "file:///home/me/my-vault/.claude/scripts/qmd-mcp.mjs";
+		const out = resolveVaultRoot(url, {});
+		assert.match(out, /[\\/]my-vault$/);
 	});
 });
 
