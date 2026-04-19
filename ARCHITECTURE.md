@@ -287,17 +287,19 @@ There are two memory systems, and the distinction is load-bearing:
 
 ```mermaid
 flowchart LR
+    SessionStart["SessionStart hook<br/>(.claude/scripts/session-start.ts)"]
     subgraph Ephemeral["~/.claude/ (not git-tracked)"]
         MemIndex["MEMORY.md<br/>(auto-loaded index)"]
     end
     subgraph Durable["Vault (git-tracked)"]
+        NorthStar["brain/North Star.md"]
         BrainIdx["brain/Memories.md<br/>(topic index)"]
         Gotchas["brain/Gotchas.md"]
         Patterns["brain/Patterns.md"]
         Decisions["brain/Key Decisions.md"]
-        NorthStar["brain/North Star.md"]
     end
 
+    SessionStart ==>|reads every session| NorthStar
     MemIndex -->|points at| BrainIdx
     MemIndex -->|points at| Gotchas
     MemIndex -->|points at| Patterns
@@ -307,7 +309,12 @@ flowchart LR
     BrainIdx --> Decisions
 ```
 
-`~/.claude/` is Claude Code's private auto-memory directory. The template uses it only to hold a thin index (`MEMORY.md`) that points at vault locations. All actual memory content lives in `brain/` as real Obsidian notes — queryable by QMD, visible in the graph, and shared across every agent (Claude Code, Codex, Gemini) because they all read the same vault.
+Two load paths into a session, both landing in the vault:
+
+- **Pointer indirection** — `~/.claude/.../MEMORY.md` is Claude Code's private auto-memory directory. The template uses it only to hold a thin index that points at vault locations. Topics fire on demand when the conversation touches them.
+- **Direct injection** — `brain/North Star.md` is loaded by the `SessionStart` hook on every session as its own context block. It's the goals document; it needs to be present every time, not only when triggered.
+
+All actual memory content lives in `brain/` as real Obsidian notes — queryable by QMD, visible in the graph, and shared across every agent (Claude Code, Codex, Gemini) because they all read the same vault.
 
 The rule that enforces this: "when asked to remember, write to the relevant `brain/` topic note, not to `~/.claude/`." It is restated in `CLAUDE.md` because it is the easiest rule to break and the hardest to detect breaking.
 
