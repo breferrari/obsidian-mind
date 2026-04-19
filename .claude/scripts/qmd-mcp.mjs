@@ -16,52 +16,78 @@
  * with shell: true so the global shim is still attempted.
  */
 
-import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { createRequire } from 'node:module';
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
+import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
 function resolveQmdEntry() {
-  try {
-    return require.resolve('@tobilu/qmd/dist/cli/qmd.js');
-  } catch {}
+	try {
+		return require.resolve("@tobilu/qmd/dist/cli/qmd.js");
+	} catch {}
 
-  // Fallback for global npm installs that aren't on this package's resolution
-  // path — ask npm directly where global packages live.
-  const npmRoot = spawnSync('npm', ['root', '-g'], {
-    shell: true,
-    encoding: 'utf8',
-  });
-  if (npmRoot.status === 0) {
-    const entry = join(
-      npmRoot.stdout.trim(),
-      '@tobilu',
-      'qmd',
-      'dist',
-      'cli',
-      'qmd.js'
-    );
-    if (existsSync(entry)) return entry;
-  }
+	// Fallback for global npm installs that aren't on this package's resolution
+	// path — ask npm directly where global packages live. Bounded timeout so a
+	// hung npm process can't block MCP server startup indefinitely.
+	const npmRoot = spawnSync("npm", ["root", "-g"], {
+		shell: true,
+		encoding: "utf8",
+		timeout: 3000,
+	});
+	if (
+		npmRoot.error ||
+		npmRoot.signal !== null ||
+		npmRoot.status !== 0
+	) {
+		return null;
+	}
 
-  return null;
+	// Guard against success-with-empty-stdout or a relative path — either would
+	// make join() produce a path anchored at cwd, and existsSync could then
+	// match a local folder by accident.
+	const root = npmRoot.stdout.trim();
+	if (root === "" || !isAbsolute(root)) {
+		return null;
+	}
+
+	const entry = join(root, "@tobilu", "qmd", "dist", "cli", "qmd.js");
+	return existsSync(entry) ? entry : null;
 }
 
 const entry = resolveQmdEntry();
-const qmdArgs = ['mcp', ...process.argv.slice(2)];
+const qmdArgs = ["mcp", ...process.argv.slice(2)];
 
 const [cmd, args] = entry
-  ? [process.execPath, [entry, ...qmdArgs]]
-  : ['qmd', qmdArgs];
+	? [process.execPath, [entry, ...qmdArgs]]
+	: ["qmd", qmdArgs];
 
 const child = spawn(cmd, args, {
-  stdio: 'inherit',
-  shell: !entry,
+	stdio: "inherit",
+	shell: !entry,
 });
 
-child.on('exit', (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  else process.exit(code ?? 0);
+// spawn() emits 'error' when the command can't be invoked at all (e.g., qmd
+// not on PATH in the fallback branch). Without a handler Node would crash
+// with a stack trace — write a concise message and exit cleanly instead.
+child.on("error", (err) => {
+	process.stderr.write(`qmd-mcp: failed to start qmd: ${err.message}\n`);
+	process.exit(1);
+});
+
+child.on("exit", (code, signal) => {
+	if (signal !== null) {
+		// Re-raise the signal against ourselves so the parent sees the same
+		// termination cause. Some POSIX signals (SIGKILL, SIGSTOP) or names
+		// unknown on this platform will cause process.kill to throw — in that
+		// case fall back to a conventional non-zero exit.
+		try {
+			process.kill(process.pid, signal);
+		} catch {
+			process.exit(1);
+		}
+		return;
+	}
+	process.exit(code ?? 0);
 });
