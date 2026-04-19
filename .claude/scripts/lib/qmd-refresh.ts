@@ -1,17 +1,24 @@
 /**
- * Pure helpers for the mid-session QMD refresh flow — unit-testable
- * without touching the filesystem or spawning processes. The PostToolUse
- * hook and Stop hook share these predicates so eligibility, debouncing,
- * and spawn composition have exactly one definition.
+ * Mid-session QMD refresh — pure predicates, spawn composition, and the
+ * shared debounced-trigger flow. Consumed by the PostToolUse hook
+ * (`.claude/scripts/qmd-refresh.ts`), the Stop hook
+ * (`.claude/scripts/stop-checklist.ts`), and the detached worker
+ * (`.claude/scripts/qmd-refresh-run.ts`). Centralizing the lifecycle
+ * here guarantees both hook entries honor the same debounce contract
+ * and spawn shape — the only way to drift is to bypass this module.
  *
- * Paired with `.claude/scripts/qmd-refresh.ts` (the hook entry that spawns
- * the detached worker) and `.claude/scripts/qmd-refresh-run.ts` (the
- * worker that invokes qmd update + embed). All three live in the same
- * directory; platform-specific spawn shape is delegated to `lib/qmd.ts`.
+ * The pure helpers at the top of this file (path filter, debounce math,
+ * vault-root resolver, invocation composer) run identically on Windows,
+ * macOS, and Linux and are exercised in the CI matrix without side
+ * effects. The impure orchestration at the bottom (sentinel + spawn)
+ * delegates platform-specific spawn shape to `lib/qmd.ts`.
  */
 
+import { spawn } from "node:child_process";
+import { statSync, writeFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
-import { buildQmdCommand } from "./qmd.ts";
+import { buildQmdCommand, resolveQmdEntry } from "./qmd.ts";
+import { debug } from "./hook-io.ts";
 import { qmdArgsWithIndex } from "./session-start.ts";
 
 /**
@@ -84,33 +91,133 @@ export function resolveVaultRoot(scriptDirAbsolute: string): string {
 }
 
 /**
- * Shape returned by `lib/qmd.ts:buildQmdCommand`. Duplicated here as a
- * local alias so callers don't need to import the same tuple twice when
- * all they want is the readonly shape.
+ * A single qmd subcommand spawn — cmd, args, shell flag (from
+ * `buildQmdCommand`) plus the per-step timeout budget. Pairing the
+ * timeout with its invocation keeps the worker's execution loop from
+ * needing a parallel positional array; reordering the pipeline can
+ * never silently swap timeouts onto the wrong step.
  */
-export type QmdInvocation = {
+type QmdInvocation = {
 	readonly cmd: string;
 	readonly args: readonly string[];
 	readonly shell: boolean;
+	readonly timeoutMs: number;
 };
 
 /**
- * Compose the (cmd, args, shell) tuples the detached worker must spawn
- * in sequence. Currently `update` (refresh BM25/FTS index) followed by
- * `embed` (refresh vector index) so both retrieval arms stay current.
+ * Compose the invocation sequence the detached worker must spawn in
+ * order: `update` (refresh BM25/FTS index) followed by `embed` (refresh
+ * vector index) so both retrieval arms stay current.
+ *
+ * Per-step timeouts: `update` caps at 60s (enough for an incremental
+ * re-index on a 10k-note vault); `embed` caps at 5 minutes (first run
+ * may download the embedding model on a fresh machine). Both are
+ * already detached — the budgets bound machine drag, not user latency.
  *
  * Kept pure so tests can assert the full invocation list across
- * platforms without spawning anything. Locking the list at the unit
- * level means the CI matrix catches argv drift (wrong order, missing
- * `--index`, dropped subcommand) on every OS, not just the OS where a
- * live qmd happens to be installed.
+ * platforms without spawning anything. Locking argv and timeouts at the
+ * unit level means the CI matrix catches drift on every OS, not just
+ * the OS where a live qmd happens to be installed.
  */
 export function composeWorkerInvocations(
 	qmdIndex: string | null,
 	entry: string | null,
 ): readonly QmdInvocation[] {
 	return [
-		buildQmdCommand(entry, qmdArgsWithIndex(qmdIndex, ["update"])),
-		buildQmdCommand(entry, qmdArgsWithIndex(qmdIndex, ["embed"])),
+		{
+			...buildQmdCommand(entry, qmdArgsWithIndex(qmdIndex, ["update"])),
+			timeoutMs: 60_000,
+		},
+		{
+			...buildQmdCommand(entry, qmdArgsWithIndex(qmdIndex, ["embed"])),
+			timeoutMs: 300_000,
+		},
 	];
+}
+
+// --- Impure orchestration ---------------------------------------------------
+
+/**
+ * Read the debounce sentinel's mtime, or null when it doesn't exist.
+ * Any fs error (permission, race against deletion) collapses to null
+ * and the caller treats it as "no prior refresh" — the worst outcome
+ * is an extra worker spawn, which qmd serializes internally.
+ */
+function readSentinelMtime(sentinelPath: string): number | null {
+	try {
+		return statSync(sentinelPath).mtimeMs;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Stamp the sentinel so subsequent triggers within `debounceMs` skip.
+ * A single `writeFileSync` is one syscall on Windows and POSIX alike
+ * and atomically bumps mtime — simpler than an open/futimes/close
+ * dance, and the sentinel's contents are never read (only its mtime).
+ */
+function touchSentinel(sentinelPath: string): void {
+	try {
+		writeFileSync(sentinelPath, "");
+	} catch (err) {
+		debug(
+			`qmd-refresh: sentinel write failed: ${(err as Error)?.message ?? "?"}`,
+		);
+	}
+}
+
+/**
+ * Spawn the detached worker. `stdio: 'ignore'` + `.unref()` + `detached`
+ * survive parent exit without leaving file descriptors open, and
+ * `windowsHide: true` suppresses the transient console window that a
+ * naked `spawn` creates on Windows. Errors are logged under HOOK_DEBUG
+ * only — production is silent per the hook protocol.
+ */
+function spawnDetachedWorker(workerPath: string, logPrefix: string): void {
+	const child = spawn(
+		process.execPath,
+		["--experimental-strip-types", workerPath],
+		{
+			detached: true,
+			stdio: "ignore",
+			windowsHide: true,
+			cwd: process.cwd(),
+		},
+	);
+	child.on("error", (err) => {
+		debug(`${logPrefix}: worker spawn error: ${err.message}`);
+	});
+	child.unref();
+}
+
+/**
+ * The end-to-end refresh trigger both hook entries call: check the
+ * debounce window, bail if qmd isn't resolvable, otherwise stamp the
+ * sentinel and fire the detached worker. Returns immediately — every
+ * path is non-blocking.
+ *
+ * Callers set their own `logPrefix` so HOOK_DEBUG traces distinguish
+ * the PostToolUse path ("qmd-refresh") from the Stop path
+ * ("stop-checklist"). Both share the same sentinel + debounce window
+ * so a Stop firing seconds after a PostToolUse refresh won't spawn a
+ * redundant second worker.
+ */
+export function triggerDebouncedRefresh(opts: {
+	readonly sentinelPath: string;
+	readonly workerPath: string;
+	readonly debounceMs: number;
+	readonly logPrefix: string;
+}): void {
+	const mtime = readSentinelMtime(opts.sentinelPath);
+	if (isDebounced(mtime, Date.now(), opts.debounceMs)) {
+		debug(`${opts.logPrefix}: debounced`);
+		return;
+	}
+	if (resolveQmdEntry() === null) {
+		debug(`${opts.logPrefix}: qmd not resolvable; skipping`);
+		return;
+	}
+	touchSentinel(opts.sentinelPath);
+	spawnDetachedWorker(opts.workerPath, opts.logPrefix);
 }

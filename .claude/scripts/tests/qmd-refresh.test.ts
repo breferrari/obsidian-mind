@@ -249,4 +249,15 @@ describe("composeWorkerInvocations", () => {
 		assert.deepEqual(invs[0]?.args, ["--index", "vault-2", "update"]);
 		assert.deepEqual(invs[1]?.args, ["--index", "vault-2", "embed"]);
 	});
+
+	test("embed gets a longer budget than update (model download slot)", () => {
+		const [update, embed] = composeWorkerInvocations("v", "/opt/qmd.js");
+		// Update runs incrementally in seconds; embed may download a
+		// model on first run. Asserting the ordering locks the contract
+		// that embed isn't accidentally given the tighter budget.
+		assert.ok(
+			update && embed && embed.timeoutMs > update.timeoutMs,
+			`embed budget (${embed?.timeoutMs}) must exceed update budget (${update?.timeoutMs})`,
+		);
+	});
 });

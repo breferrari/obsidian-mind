@@ -21,84 +21,27 @@
  * `windowsHide: true` to prevent a transient console window on Windows.
  */
 
-import { spawn } from "node:child_process";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-	dirname,
-	join,
-	resolve as resolvePath,
-} from "node:path";
-import {
-	closeSync,
-	futimesSync,
-	openSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
 import { debug, readStdinJson } from "./lib/hook-io.ts";
-import { isDebounced, shouldRefreshForPath } from "./lib/qmd-refresh.ts";
-import { resolveQmdEntry } from "./lib/qmd.ts";
+import {
+	shouldRefreshForPath,
+	triggerDebouncedRefresh,
+} from "./lib/qmd-refresh.ts";
 
 const DEBOUNCE_MS = 30_000;
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SENTINEL_PATH = join(SCRIPT_DIR, ".qmd-refresh-sentinel");
+// QMD_REFRESH_SENTINEL lets tests route the debounce sentinel into a
+// per-file tmp path so parallel test workers don't race on the shared
+// repo sentinel. Production never sets it, so the default applies.
+const SENTINEL_PATH =
+	process.env["QMD_REFRESH_SENTINEL"] ??
+	join(SCRIPT_DIR, ".qmd-refresh-sentinel");
 const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
 
 type HookInput = {
 	readonly tool_input?: unknown;
 };
-
-function readSentinelMtime(): number | null {
-	try {
-		return statSync(SENTINEL_PATH).mtimeMs;
-	} catch {
-		return null;
-	}
-}
-
-function touchSentinel(): void {
-	try {
-		const now = new Date();
-		try {
-			const fd = openSync(SENTINEL_PATH, "a");
-			try {
-				futimesSync(fd, now, now);
-			} finally {
-				closeSync(fd);
-			}
-		} catch {
-			// fallback: create the file (covers the first-run case on systems
-			// where `open('a')` fails because the parent directory has just been
-			// recreated, e.g. after a checkout)
-			writeFileSync(SENTINEL_PATH, "");
-		}
-	} catch (err) {
-		debug(
-			`qmd-refresh: sentinel write failed: ${(err as Error)?.message ?? "?"}`,
-		);
-	}
-}
-
-function spawnWorker(): void {
-	// Detached child: survives parent exit, writes no output, no console
-	// window on Windows. Node re-executes itself with the strip-types flag
-	// so the worker runs without a build step, matching how the rest of
-	// the hook scripts are invoked from settings.json.
-	const child = spawn(
-		process.execPath,
-		["--experimental-strip-types", WORKER_PATH],
-		{
-			detached: true,
-			stdio: "ignore",
-			windowsHide: true,
-			cwd: process.cwd(),
-		},
-	);
-	child.on("error", (err) => {
-		debug(`qmd-refresh: worker spawn error: ${err.message}`);
-	});
-	child.unref();
-}
 
 const input = await readStdinJson<HookInput>();
 if (!input) {
@@ -123,19 +66,10 @@ if (!shouldRefreshForPath(filePath)) {
 	process.exit(0);
 }
 
-if (isDebounced(readSentinelMtime(), Date.now(), DEBOUNCE_MS)) {
-	debug(`qmd-refresh: debounced ${filePath}`);
-	process.exit(0);
-}
-
-// Skip silently when qmd isn't installed. Same pattern as session-start.ts
-// — no shim resolution, no spawn, no orphaned child processes.
-if (resolveQmdEntry() === null) {
-	debug("qmd-refresh: qmd not resolvable; skipping");
-	process.exit(0);
-}
-
-touchSentinel();
-spawnWorker();
-debug(`qmd-refresh: triggered for ${filePath}`);
+triggerDebouncedRefresh({
+	sentinelPath: SENTINEL_PATH,
+	workerPath: WORKER_PATH,
+	debounceMs: DEBOUNCE_MS,
+	logPrefix: "qmd-refresh",
+});
 process.exit(0);

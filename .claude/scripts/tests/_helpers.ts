@@ -18,6 +18,7 @@ export type RunResult = {
 export function runScript(
 	scriptPath: string,
 	stdin: string | object | null,
+	envOverrides?: Readonly<Record<string, string>>,
 ): RunResult {
 	const input =
 		stdin === null
@@ -28,7 +29,14 @@ export function runScript(
 	const proc = spawnSync(
 		process.execPath,
 		["--experimental-strip-types", scriptPath],
-		{ input, encoding: "utf-8", timeout: 10_000 },
+		{
+			input,
+			encoding: "utf-8",
+			timeout: 10_000,
+			env: envOverrides
+				? { ...process.env, ...envOverrides }
+				: process.env,
+		},
 	);
 	return {
 		stdout: proc.stdout ?? "",

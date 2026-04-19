@@ -1,49 +1,34 @@
 #!/usr/bin/env node
 /**
  * Stop hook — remind the user of session-wrap-up tasks and kick a
- * detached QMD refresh so the next session opens against a current index.
+ * debounced QMD refresh so the next session opens against a current
+ * index.
  *
- * Silently exits when the hook is being re-entered by a secondary agent
- * (stop_hook_active=true) to avoid recursive reminder output and
+ * Silently exits when the hook is being re-entered by a secondary
+ * agent (stop_hook_active=true) to avoid recursive reminder output and
  * duplicated refresh spawns. Otherwise prints the vault-hygiene
- * checklist and fires the same fire-and-forget worker the PostToolUse
- * hook uses. Both write paths converge on one detached Node process so
- * there's exactly one debounce contract and one spawn shape to maintain.
+ * checklist and routes through the same `triggerDebouncedRefresh`
+ * entry the PostToolUse hook uses — one debounce contract, one spawn
+ * shape, zero drift between the two paths.
  */
 
-import { spawn } from "node:child_process";
-import { dirname, resolve as resolvePath } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { debug, readStdinJson } from "./lib/hook-io.ts";
-import { resolveQmdEntry } from "./lib/qmd.ts";
+import { readStdinJson } from "./lib/hook-io.ts";
+import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 
+const DEBOUNCE_MS = 30_000;
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+// See qmd-refresh.ts for the rationale behind the env override — it
+// keeps parallel test workers from racing on the shared repo sentinel.
+const SENTINEL_PATH =
+	process.env["QMD_REFRESH_SENTINEL"] ??
+	join(SCRIPT_DIR, ".qmd-refresh-sentinel");
 const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
 
 type HookInput = {
 	readonly stop_hook_active?: unknown;
 };
-
-function spawnRefreshWorker(): void {
-	if (resolveQmdEntry() === null) {
-		debug("stop-checklist: qmd not resolvable; skipping refresh");
-		return;
-	}
-	const child = spawn(
-		process.execPath,
-		["--experimental-strip-types", WORKER_PATH],
-		{
-			detached: true,
-			stdio: "ignore",
-			windowsHide: true,
-			cwd: process.cwd(),
-		},
-	);
-	child.on("error", (err) => {
-		debug(`stop-checklist: worker spawn error: ${err.message}`);
-	});
-	child.unref();
-}
 
 const input = await readStdinJson<HookInput>();
 if (input?.stop_hook_active === true) process.exit(0);
@@ -58,4 +43,9 @@ const checklist = [
 
 process.stdout.write(checklist + "\n");
 
-spawnRefreshWorker();
+triggerDebouncedRefresh({
+	sentinelPath: SENTINEL_PATH,
+	workerPath: WORKER_PATH,
+	debounceMs: DEBOUNCE_MS,
+	logPrefix: "stop-checklist",
+});

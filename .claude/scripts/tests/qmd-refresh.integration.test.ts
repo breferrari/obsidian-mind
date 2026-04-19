@@ -20,32 +20,46 @@
  * that powers validate-write.test.ts and stop-checklist.test.ts.
  */
 
-import { test, describe, before, after, beforeEach } from "node:test";
+import { test, describe, after, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import {
-	existsSync,
+	mkdtempSync,
 	rmSync,
 	statSync,
 	utimesSync,
 	writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { runScript as spawnHook } from "./_helpers.ts";
 import { resolveQmdEntry } from "../lib/qmd.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(SCRIPT_DIR, "../qmd-refresh.ts");
-const SENTINEL = resolve(SCRIPT_DIR, "..", ".qmd-refresh-sentinel");
 
-// Worker path for post-test reap. When qmd IS installed, the hook will
-// detach a real worker that reads the repo manifest and runs `qmd update`
-// + `qmd embed` against the configured index. That's fine on a dev
-// machine but we want to avoid test output pollution — the detached
-// worker's stdio is 'ignore'd, so no output reaches node --test anyway.
+// Route the hook's debounce sentinel through a per-file tmp path so
+// this test can't race with any other test file (notably
+// stop-checklist.test.ts, which also invokes triggerDebouncedRefresh
+// and would otherwise share the repo's .claude/scripts/.qmd-refresh-
+// sentinel). The hook reads QMD_REFRESH_SENTINEL when set.
+let TMP_DIR = "";
+let SENTINEL = "";
+
+before(() => {
+	TMP_DIR = mkdtempSync(join(tmpdir(), "qmd-refresh-integration-"));
+	SENTINEL = join(TMP_DIR, ".qmd-refresh-sentinel");
+});
+
+after(() => {
+	if (TMP_DIR) rmSync(TMP_DIR, { recursive: true, force: true });
+});
+
+// Used to build realistic absolute `file_path` fixtures for hook payloads.
 const VAULT_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
 
-const runHook = (stdin: string | object | null) => spawnHook(SCRIPT, stdin);
+const runHook = (stdin: string | object | null) =>
+	spawnHook(SCRIPT, stdin, { QMD_REFRESH_SENTINEL: SENTINEL });
 
 function clearSentinel(): void {
 	try {
@@ -73,16 +87,8 @@ function makeStaleSentinel(minutesAgo: number): void {
 	utimesSync(SENTINEL, staleSec, staleSec);
 }
 
-// Every test starts from a clean slate — the repo's `.qmd-refresh-sentinel`
-// is gitignored, so we're free to mutate it.
+// Every test starts from a clean slate.
 beforeEach(() => {
-	clearSentinel();
-});
-
-// Restore known state after the suite so interactive sessions (or a
-// subsequent `npm test` run) don't accidentally debounce their first
-// real refresh against a stale test sentinel.
-after(() => {
 	clearSentinel();
 });
 
@@ -233,15 +239,3 @@ describe("qmd-refresh — eligible .md path", () => {
 	});
 });
 
-// --- Harness sanity: entrypoint must exist (catches a moved script path) ---
-describe("qmd-refresh — script layout", () => {
-	before(() => {
-		assert.ok(
-			existsSync(SCRIPT),
-			`qmd-refresh.ts not found at expected path: ${SCRIPT}`,
-		);
-	});
-	test("entry script is present", () => {
-		assert.ok(existsSync(SCRIPT));
-	});
-});
