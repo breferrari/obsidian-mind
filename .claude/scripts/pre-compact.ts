@@ -15,9 +15,10 @@ import {
 	statSync,
 	unlinkSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { debug, readStdinJson } from "./lib/hook-io.ts";
+import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 
 type HookInput = {
 	readonly transcript_path?: unknown;
@@ -63,6 +64,23 @@ export function pruneBackups(dir: string, retain: number): void {
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 	const input = await readStdinJson<HookInput>();
 	if (!input) process.exit(0);
+
+	// Fire a debounced QMD refresh before (or alongside) the backup.
+	// Writes tend to cluster right before compaction, and catching them
+	// now means the session-resume SessionStart runs `qmd update` against
+	// an index that's already current. Uses the same sentinel as the
+	// PostToolUse and Stop hooks so we never spawn a redundant worker.
+	{
+		const scriptDir = dirname(fileURLToPath(import.meta.url));
+		triggerDebouncedRefresh({
+			sentinelPath:
+				process.env["QMD_REFRESH_SENTINEL"] ??
+				join(scriptDir, ".qmd-refresh-sentinel"),
+			workerPath: resolvePath(scriptDir, "qmd-refresh-run.ts"),
+			debounceMs: 30_000,
+			logPrefix: "pre-compact",
+		});
+	}
 
 	const transcriptPath =
 		typeof input.transcript_path === "string" ? input.transcript_path : "";
