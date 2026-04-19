@@ -3,6 +3,18 @@
 
 
 
+
+## v5.1 — 2026-04-19
+
+### Added
+- ARCHITECTURE.md, Obsidian-QMD ignore sync, lib cleanup, MCP-first
+- keep QMD index fresh mid-session via detached hooks
+- per-vault QMD named index, manifest-driven context, bootstrap
+
+### Fixed
+- resolve qmd MCP failure on Windows via Node wrapper
+- add .claude/scripts/.gitignore to block accidental node_modules commits
+
 ## v5.0 — 2026-04-17
 
 ### Added
