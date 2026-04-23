@@ -1,59 +1,59 @@
 # Obsidian Mind
 
-This vault is built for [Claude Code](https://claude.ai/code) with a full operating manual in `CLAUDE.md`.
+Dieser Vault ist für [Claude Code](https://claude.ai/code) erstellt und enthält ein vollständiges Betriebshandbuch in `CLAUDE.md`.
 
-**Read `CLAUDE.md` for all vault conventions** — structure, note types, linking rules, frontmatter schemas, indexes, and workflows. Most of the content is agent-agnostic.
+**Lesen Sie `CLAUDE.md` für alle Vault-Konventionen** – Struktur, Notiztypen, Verknüpfungsregeln, Frontmatter-Schemata, Indizes und Workflows. Der Großteil des Inhalts ist agentenunabhängig.
 
 ## Hooks
 
-The hook scripts in `.claude/scripts/` are agent-agnostic TypeScript and shell, executed natively by Node via `--experimental-strip-types` — no build step, no runtime dependencies, no Claude SDK. Hook configs are provided for three agents:
+Die Hook-Skripte in `.claude/scripts/` sind agentenunabhängiges TypeScript und Shell, die nativ von Node über `--experimental-strip-types` ausgeführt werden – kein Build-Schritt, keine Laufzeitabhängigkeiten, kein Claude SDK. Hook-Konfigurationen werden für drei Agenten bereitgestellt:
 
-| Agent | Config | Status |
+| Agent | Konfiguration | Status |
 |-------|--------|--------|
-| Claude Code | `.claude/settings.json` | Full support |
-| Codex CLI | `.codex/hooks.json` | Shared hook scripts |
-| Gemini CLI | `.gemini/settings.json` | Shared hook scripts |
+| Claude Code | `.claude/settings.json` | Volle Unterstützung |
+| Codex CLI | `.codex/hooks.json` | Geteilte Hook-Skripte |
+| Gemini CLI | `.gemini/settings.json` | Geteilte Hook-Skripte |
 
-| Script | Purpose | Claude event | Codex event | Gemini event |
+| Skript | Zweck | Claude-Ereignis | Codex-Ereignis | Gemini-Ereignis |
 |--------|---------|--------------|-------------|--------------|
-| `session-start.ts` | Inject vault context at startup | SessionStart | SessionStart | SessionStart |
-| `classify-message.ts` | Classify messages, inject routing hints | UserPromptSubmit | UserPromptSubmit | BeforeAgent |
-| `validate-write.ts` | Validate frontmatter and wikilinks | PostToolUse | PostToolUse | AfterTool |
-| `pre-compact.ts` | Back up transcript before compaction | PreCompact | — | PreCompress |
+| `session-start.ts` | Vault-Kontext beim Start injizieren | SessionStart | SessionStart | SessionStart |
+| `classify-message.ts` | Nachrichten klassifizieren, Routing-Hinweise injizieren | UserPromptSubmit | UserPromptSubmit | BeforeAgent |
+| `validate-write.ts` | Frontmatter und Wikilinks validieren | PostToolUse | PostToolUse | AfterTool |
+| `pre-compact.ts` | Transkript vor der Komprimierung sichern | PreCompact | — | PreCompress |
 
-## Commands
+## Befehle
 
-18 commands in `.claude/commands/` — agent-agnostic markdown with YAML frontmatter.
+18 Befehle in `.claude/commands/` – agentenunabhängiges Markdown mit YAML-Frontmatter.
 
-- **Claude Code / Gemini CLI**: invoke as `/om-standup`, `/om-dump`, etc.
-- **Codex CLI**: type the command name as a regular prompt without the `/` prefix (e.g. `om-standup`). Codex will find and execute the command file.
+- **Claude Code / Gemini CLI**: aufrufen als `/om-standup`, `/om-dump`, etc.
+- **Codex CLI**: Geben Sie den Befehlsnamen als regulären Prompt ohne das `/`-Präfix ein (z. B. `om-standup`). Codex wird die Befehlsdatei finden und ausführen.
 
-## Memory
+## Gedächtnis
 
-The vault's memory lives in `brain/` — `Memories.md`, `Patterns.md`, `Key Decisions.md`, `Gotchas.md`. These are plain markdown files that any agent can read and write. When you learn something worth remembering, write it to the relevant `brain/` topic note with a wikilink to context.
+Das Gedächtnis des Vaults befindet sich in `brain/` – `Memories.md`, `Patterns.md`, `Key Decisions.md`, `Gotchas.md`. Dies sind einfache Markdown-Dateien, die jeder Agent lesen und schreiben kann. Wenn Sie etwas lernen, das es wert ist, sich daran zu erinnern, schreiben Sie es in die entsprechende `brain/`-Themennotiz mit einem Wikilink zum Kontext.
 
-The `~/.claude/` auto-loaded memory index is Claude Code-specific — skip that section in `CLAUDE.md`. The vault-side `brain/` notes are the source of truth.
+Der automatisch geladene Gedächtnisindex in `~/.claude/` ist spezifisch für Claude Code – überspringen Sie diesen Abschnitt in `CLAUDE.md`. Die `brain/`-Notizen auf der Vault-Seite sind die Quelle der Wahrheit.
 
-## Subagents
+## Subagenten
 
-9 subagents in `.claude/agents/` handle isolated tasks (brag spotting, vault auditing, cross-linking, etc.). The prompt content is agent-agnostic markdown. Codex CLI (`.codex/agents/`) and Gemini CLI (`.gemini/agents/`) support the same pattern — copy the files and adapt the YAML frontmatter fields to your agent's schema.
+9 Subagenten in `.claude/agents/` erledigen isolierte Aufgaben (Brag-Spotting, Vault-Auditing, Cross-Linking usw.). Der Prompt-Inhalt ist agentenunabhängiges Markdown. Codex CLI (`.codex/agents/`) und Gemini CLI (`.gemini/agents/`) unterstützen dasselbe Muster – kopieren Sie die Dateien und passen Sie die YAML-Frontmatter-Felder an das Schema Ihres Agenten an.
 
-## What's Claude Code-specific
+## Was ist spezifisch für Claude Code
 
-Only the `~/.claude/` auto-memory loader is truly Claude Code-specific. Everything else — hooks, commands, subagent prompts, vault memory — is portable.
+Nur der `~/.claude/` Auto-Memory-Loader ist wirklich spezifisch für Claude Code. Alles andere – Hooks, Befehle, Subagenten-Prompts, Vault-Gedächtnis – ist portabel.
 
-## Setup
+## Einrichtung
 
-**Codex CLI**: Reads `AGENTS.md` natively. For direct access to `CLAUDE.md`, add to `~/.codex/config.toml`:
+**Codex CLI**: Liest `AGENTS.md` nativ. Für direkten Zugriff auf `CLAUDE.md`, fügen Sie Folgendes zu `~/.codex/config.toml` hinzu:
 ```toml
 project_doc_fallback_filenames = ["CLAUDE.md"]
 ```
 
-**Gemini CLI**: Reads `GEMINI.md` natively. For direct access to `CLAUDE.md`, add to `~/.gemini/settings.json`:
+**Gemini CLI**: Liest `GEMINI.md` nativ. Für direkten Zugriff auf `CLAUDE.md`, fügen Sie Folgendes zu `~/.gemini/settings.json` hinzu:
 ```json
 { "context": { "fileName": ["GEMINI.md", "CLAUDE.md"] } }
 ```
 
-**Other agents** (Cursor, Windsurf, Copilot): Read `AGENTS.md` for vault conventions. Hook support varies by agent.
+**Andere Agenten** (Cursor, Windsurf, Copilot): Lesen Sie `AGENTS.md` für Vault-Konventionen. Die Hook-Unterstützung variiert je nach Agent.
 
-For more information, see the [README](README.md).
+Für weitere Informationen, siehe die [README](README.md).

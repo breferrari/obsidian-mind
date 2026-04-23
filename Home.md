@@ -1,32 +1,32 @@
 ---
-description: "Vault entry point — embedded dashboards, quick links, current focus"
+description: "Einstiegspunkt für den Vault – eingebettete Dashboards, Schnelllinks, aktueller Fokus"
 tags:
   - index
 ---
 
-# Home
+# Startseite
 
-## Current Focus
+## Aktueller Fokus
 
 ![[North Star#Current Focus]]
 
-## Active Work
+## Aktive Arbeit
 
 ![[Work Dashboard.base#Active Work]]
 
-## Incidents
+## Vorfälle
 
 ![[Incidents.base#All Incidents]]
 
-## Quick Links
+## Schnelllinks
 
-- [[Index|Work Notes]] | [[People & Context]] | [[Brag Doc]]
-- [[Memories]] | [[North Star]] | [[Skills]]
+- [[Index|Arbeitsnotizen]] | [[People & Context|Personen & Kontext]] | [[Brag Doc|Erfolgsdokument]]
+- [[Memories|Erinnerungen]] | [[North Star|Leitstern]] | [[Skills|Fähigkeiten]]
 
-## Recent 1:1s
+## Letzte 1:1s
 
 ![[1-1 History.base#All 1:1s]]
 
-## People
+## Personen
 
 ![[People Directory.base#By Team]]

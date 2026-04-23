@@ -1,6 +1,6 @@
 ---
 date:
-description: "Living document of goals, focus areas, and aspirations — read at session start, updated when direction shifts"
+description: "Lebendes Dokument mit Zielen, Schwerpunktbereichen und Bestrebungen – zu Beginn der Sitzung lesen, bei Richtungsänderungen aktualisieren"
 tags:
   - brain
   - north-star
@@ -9,46 +9,46 @@ aliases:
   - Focus
 ---
 
-# North Star
+# Leitstern
 
-A living document of goals, aspirations, and current focus areas. Both you and Claude write to this. Claude reads it at the start of meaningful work sessions and references it when making suggestions.
+Ein lebendiges Dokument mit Zielen, Bestrebungen und aktuellen Schwerpunktbereichen. Sowohl Sie als auch Claude schreiben hier hinein. Claude liest es zu Beginn sinnvoller Arbeitssitzungen und bezieht sich darauf, wenn Vorschläge gemacht werden.
 
-## Current Focus
+## Aktueller Fokus
 
-_What am I working toward right now?_
-
--
-
-## Goals
-
-### Short-term (This Quarter)
+_Woran arbeite ich gerade?_
 
 -
 
-### Medium-term (This Half)
+## Ziele
+
+### Kurzfristig (Dieses Quartal)
 
 -
 
-### Long-term (This Year+)
+### Mittelfristig (Dieses Halbjahr)
 
 -
 
-## Aspirations
-
-_What kind of engineer/person am I becoming?_
+### Langfristig (Dieses Jahr und länger)
 
 -
 
-## Anti-goals
+## Bestrebungen
 
-_What am I explicitly NOT optimizing for?_
+_Welche Art von Ingenieur/Person werde ich?_
 
 -
 
-## Shifts Log
+## Anti-Ziele
 
-Record when focus changes, with date and reason.
+_Wofür optimiere ich explizit NICHT?_
 
-| Date | Shift | Reason |
+-
+
+## Änderungsprotokoll
+
+Zeichnen Sie auf, wann sich der Fokus ändert, mit Datum und Grund.
+
+| Datum | Änderung | Grund |
 |------|-------|--------|
-|      | Created North Star | Initial setup |
+|      | Leitstern erstellt | Ersteinrichtung |

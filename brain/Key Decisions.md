@@ -1,11 +1,11 @@
 ---
-description: "Architectural and workflow decisions worth recalling across sessions — each links to its source work note"
+description: "Architektur- und Workflow-Entscheidungen, die es wert sind, sitzungsübergreifend in Erinnerung gerufen zu werden – jede verweist auf ihre ursprüngliche Arbeitsnotiz"
 tags:
   - brain
 ---
 
-# Key Decisions
+# Wichtige Entscheidungen
 
-Architectural or workflow decisions worth recalling. Link to the full [[Decision Record]] when one exists.
+Architektur- oder Workflow-Entscheidungen, die es wert sind, in Erinnerung gerufen zu werden. Verlinken Sie auf das vollständige [[Decision Record|Entscheidungsprotokoll]], wenn eines existiert.
 
 -

@@ -1,11 +1,11 @@
 ---
-description: "Recurring patterns and conventions discovered across work — architecture, naming, tooling, and implementation patterns"
+description: "Wiederkehrende Muster und Konventionen, die bei der Arbeit entdeckt wurden – Architektur-, Benennungs-, Tooling- und Implementierungsmuster"
 tags:
   - brain
 ---
 
-# Patterns
+# Muster
 
-Recurring patterns discovered across work.
+Wiederkehrende Muster, die bei der Arbeit entdeckt wurden.
 
 -

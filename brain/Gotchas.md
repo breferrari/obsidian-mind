@@ -1,11 +1,11 @@
 ---
-description: "Things that have bitten before and will bite again — pitfalls, edge cases, and testing traps"
+description: "Dinge, die schon einmal zu Problemen geführt haben und wieder zu Problemen führen werden – Fallstricke, Grenzfälle und Testfallen"
 tags:
   - brain
 ---
 
-# Gotchas
+# Fallstricke
 
-Things that have bitten before and will bite again.
+Dinge, die schon einmal zu Problemen geführt haben und wieder zu Problemen führen werden.
 
 -
