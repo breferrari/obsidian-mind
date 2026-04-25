@@ -5,6 +5,12 @@ schema_version: 1
 # ---------------------------------------------------------------------------
 # Values — what goes inside files.
 # Four questions. One TUI screen. Done in 30 seconds.
+#
+# Every value declares a `default` (Invariant 1: defaults must produce a
+# vault byte-equivalent to `git clone`). `required: true` here pairs with
+# an empty default — the post-install hook personalizes North Star only
+# when ctx.valuesAreDefaults === false (Invariant 2), so an unset name
+# leaves managed files untouched.
 # ---------------------------------------------------------------------------
 
 values:
@@ -13,6 +19,7 @@ values:
     required: true
     message: "Your name"
     placeholder: "Jane Engineer"
+    default: ""
     group: setup
 
   org_name:
@@ -31,6 +38,7 @@ values:
       - { value: research,    label: "Research",     description: "Sources, findings, hypotheses, wiki" }
       - { value: freelance,   label: "Freelance",    description: "Clients, projects, milestones" }
       - { value: general,     label: "General",      description: "Flexible knowledge work" }
+    default: engineering
     group: setup
 
   qmd_enabled:
@@ -47,15 +55,30 @@ groups:
 
 # ---------------------------------------------------------------------------
 # Modules — what files exist.
-# Four core (always included), four removable. All default to included;
-# users deselect during the module-review step of install.
+#
+# Eleven modules in three tiers:
+#
+#   * 4 always-on content modules (`removable: false`): brain, work,
+#     reference, thinking. The vault's spine.
+#   * 4 removable content modules: org, perf, incidents, one_on_ones.
+#     Deselected modules drop their paths AND their per-name commands /
+#     agents under `.claude/{commands,agents}/`.
+#   * 3 removable agent modules: claude, codex, gemini. Deselect to omit
+#     CLAUDE.md / AGENTS.md / GEMINI.md and the matching dotfolder
+#     contents — but `.claude/scripts/` (shared hook implementations
+#     referenced by all three agents via `${*_PROJECT_DIR:-.}/.claude/scripts/`)
+#     stays always-on by virtue of being claimed by no module.
+#
+# Bases (`bases/*.base`) are listed by exact path under their owning
+# module's `paths` — the engine's `mod.bases` field only matches
+# `.base.njk` (see ShardMind source/core/modules.ts §classifyModule),
+# and obsidian-mind's bases ship as plain `.base`.
 # ---------------------------------------------------------------------------
 
 modules:
   brain:
     label: "Operational memory — Memories, Decisions, Patterns, Gotchas, North Star, Skills"
     paths: ["brain/"]
-    partials: ["claude/_brain.md.njk"]
     removable: false
 
   work:
@@ -65,55 +88,82 @@ modules:
       - "work/active/"
       - "work/archive/"
       - "work/meetings/"
-    partials: ["claude/_work.md.njk"]
-    bases: ["Work Dashboard"]
+      - "bases/Work Dashboard.base"
     commands: ["om-meeting", "om-intake", "om-project-archive"]
     removable: false
 
   reference:
     label: "Codebase knowledge, architecture maps, runbooks"
     paths: ["reference/"]
-    partials: ["claude/_reference.md.njk"]
     removable: false
 
   thinking:
     label: "Scratchpad for drafts and reasoning"
     paths: ["thinking/"]
-    partials: ["claude/_thinking.md.njk"]
     removable: false
 
   org:
     label: "People and teams — who you work with"
-    paths: ["org/"]
-    partials: ["claude/_org.md.njk"]
-    bases: ["People Directory"]
+    paths:
+      - "org/"
+      - "bases/People Directory.base"
     agents: ["people-profiler"]
     removable: true
 
   perf:
     label: "Performance — brag doc, competencies, reviews, PR evidence"
-    paths: ["perf/"]
-    partials: ["claude/_perf.md.njk"]
-    bases: ["Competency Map", "Review Evidence"]
+    paths:
+      - "perf/"
+      - "bases/Competency Map.base"
+      - "bases/Review Evidence.base"
     commands: ["om-peer-scan", "om-review-brief", "om-self-review", "om-review-peer", "om-slack-scan"]
     agents: ["brag-spotter", "review-fact-checker", "review-prep"]
     removable: true
 
   incidents:
     label: "Incident tracking — outages, RCAs, deep dives"
-    paths: ["work/incidents/"]
-    partials: ["claude/_incidents.md.njk"]
-    bases: ["Incidents"]
+    paths:
+      - "work/incidents/"
+      - "bases/Incidents.base"
     commands: ["om-incident-capture"]
     agents: ["slack-archaeologist"]
     removable: true
 
-  1on1s:
+  one_on_ones:
     label: "1:1 meeting notes"
-    paths: ["work/1-1/"]
-    partials: ["claude/_1on1s.md.njk"]
-    bases: ["1-1 History"]
+    paths:
+      - "work/1-1/"
+      - "bases/1-1 History.base"
     commands: ["om-capture-1on1", "om-prep-1on1"]
+    removable: true
+
+  claude:
+    label: "Claude (Anthropic) agent — CLAUDE.md, .claude/agents, .claude/skills, .claude/commands, .claude-plugin"
+    paths:
+      - "CLAUDE.md"
+      - ".claude/agents/"
+      - ".claude/skills/"
+      - ".claude/commands/"
+      - ".claude/memory-template.md"
+      - ".claude/settings.json"
+      - ".claude-plugin/"
+    agents: ["claude"]
+    removable: true
+
+  codex:
+    label: "Codex (OpenAI) agent — AGENTS.md, .codex/"
+    paths:
+      - "AGENTS.md"
+      - ".codex/"
+    agents: ["codex"]
+    removable: true
+
+  gemini:
+    label: "Gemini (Google) agent — GEMINI.md, .gemini/"
+    paths:
+      - "GEMINI.md"
+      - ".gemini/"
+    agents: ["gemini"]
     removable: true
 
 # ---------------------------------------------------------------------------
@@ -158,7 +208,7 @@ signals:
   - id: ONE_ON_ONE
     description: "1:1 meeting content — takeaways, feedback, action items"
     routes_to: "work/1-1/<Person> YYYY-MM-DD.md and org/people/<person>.md"
-    module: 1on1s
+    module: one_on_ones
 
 # ---------------------------------------------------------------------------
 # Frontmatter — per-note-type validation rules consumed by the PostToolUse
