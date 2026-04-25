@@ -7,16 +7,26 @@
  *
  * Responsibilities (all idempotent, all skippable):
  *   1. Initialize a git repo at the vault root if one doesn't already exist.
- *      The vault is meant to be git-tracked; doing this here saves every user
- *      from `cd <vault> && git init` as a first step.
- *   2. Bootstrap the QMD semantic index when the user answered `qmd_enabled: true`.
- *      Skips silently if the `qmd` binary isn't on PATH — the user gets a note
- *      in stdout telling them how to install it later. We never hard-fail on
- *      optional tooling.
+ *      Creates an *unmanaged* `.git/` directory — Invariant 2 doesn't apply
+ *      (only managed-file edits are gated on `valuesAreDefaults`).
+ *   2. Personalize the managed `brain/North Star.md` with the user's name —
+ *      gated on `!ctx.valuesAreDefaults` per Invariant 2 (with all values at
+ *      defaults, the install must remain byte-equivalent to `git clone`).
+ *      The engine re-hashes managed files after the hook exits, so state.json
+ *      reflects the post-edit content (#75).
+ *   3. Bootstrap the QMD semantic index when `qmd_enabled === true`. Creates
+ *      `.qmd/` (unmanaged), so this branch ignores `valuesAreDefaults` and
+ *      runs unconditionally inside the `qmd_enabled` gate. Skips silently if
+ *      the `qmd` binary isn't on PATH — the user gets a note in stdout
+ *      telling them how to install it later. We never hard-fail on optional
+ *      tooling.
+ *
+ * `personalizeNorthStar` and `ensureGitRepo` are exported by name so the
+ * test suite can drive them with synthetic vault layouts.
  */
 
 import { spawn } from 'node:child_process';
-import { access } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 // Local mirror of ShardMind's HookContext shape. Inlined (rather than imported
@@ -38,12 +48,24 @@ interface HookCtx {
 
 export default async function postInstall(ctx: HookCtx): Promise<void> {
   await ensureGitRepo(ctx.vaultRoot);
+
+  // Invariant 2: managed-file edits are gated on `!valuesAreDefaults`. With
+  // every value at its schema default, the install MUST stay byte-equivalent
+  // to `git clone` — so we leave North Star alone. When the user supplied a
+  // non-default name (or any other value), personalize the heading.
+  if (!ctx.valuesAreDefaults) {
+    const userName = typeof ctx.values['user_name'] === 'string' ? ctx.values['user_name'] : '';
+    if (userName.trim().length > 0) {
+      await personalizeNorthStar(ctx.vaultRoot, userName);
+    }
+  }
+
   if (ctx.values['qmd_enabled'] === true) {
     await bootstrapQmd(ctx.vaultRoot);
   }
 }
 
-async function ensureGitRepo(vaultRoot: string): Promise<void> {
+export async function ensureGitRepo(vaultRoot: string): Promise<void> {
   try {
     await access(join(vaultRoot, '.git'));
     console.log('git: repository already present — skipping git init');
@@ -58,6 +80,39 @@ async function ensureGitRepo(vaultRoot: string): Promise<void> {
   } else {
     console.error('git: init failed — install succeeded but the vault is not version-controlled. Run `git init` manually.');
   }
+}
+
+/**
+ * Replace `# North Star` with `# North Star — <userName>` once. Idempotent:
+ * a heading already personalized (with this name or any other) is left
+ * alone — the regex anchors to the literal verbatim form. ENOENT-tolerant:
+ * if `brain/` was deselected (the `brain` module is `removable: false`,
+ * so this shouldn't happen in practice, but the guard costs nothing) or
+ * the file moved upstream, the hook exits cleanly.
+ */
+export async function personalizeNorthStar(vaultRoot: string, userName: string): Promise<void> {
+  const target = join(vaultRoot, 'brain', 'North Star.md');
+  let original: string;
+  try {
+    original = await readFile(target, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      console.log(`obsidian-mind: ${target} not present — skipping North Star personalization.`);
+      return;
+    }
+    throw err;
+  }
+
+  // Anchor to the verbatim heading. If the file has already been personalized
+  // (heading reads `# North Star — <something>`), `^# North Star$/m` won't
+  // match and the file is left untouched — making the hook idempotent.
+  if (!/^# North Star$/m.test(original)) {
+    return;
+  }
+
+  const personalized = original.replace(/^# North Star$/m, `# North Star — ${userName}`);
+  await writeFile(target, personalized, 'utf-8');
+  console.log(`obsidian-mind: personalized brain/North Star.md for ${userName}`);
 }
 
 async function bootstrapQmd(vaultRoot: string): Promise<void> {
