@@ -11,9 +11,20 @@
  * branch here on `ctx.previousVersion`.
  */
 
-import type { HookContext } from 'shardmind/runtime';
+// Local mirror of ShardMind's HookContext shape. See post-install.ts for the
+// rationale (no shardmind dep; types erased at runtime).
+interface HookCtx {
+  vaultRoot: string;
+  values: Record<string, unknown>;
+  modules: Record<string, 'included' | 'excluded'>;
+  shard: { name: string; version: string };
+  previousVersion?: string;
+  valuesAreDefaults: boolean;
+  newFiles: string[];
+  removedFiles: string[];
+}
 
-export default async function postUpdate(ctx: HookContext): Promise<void> {
+export default async function postUpdate(ctx: HookCtx): Promise<void> {
   const prev = ctx.previousVersion ?? 'unknown';
   console.log(`obsidian-mind: updated from ${prev} to ${ctx.shard.version}.`);
 

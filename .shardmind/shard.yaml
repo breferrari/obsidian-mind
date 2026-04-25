@@ -16,7 +16,7 @@ requires:
   node: ">=22.6.0"
 
 hooks:
-  post-install: hooks/post-install.ts
-  post-update: hooks/post-update.ts
+  post-install: .shardmind/hooks/post-install.ts
+  post-update: .shardmind/hooks/post-update.ts
   # 60 s to accommodate first-run qmd bootstrap (index creation + initial embed pass).
   timeout_ms: 60000

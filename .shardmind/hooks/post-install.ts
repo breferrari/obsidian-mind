@@ -18,9 +18,25 @@
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { HookContext } from 'shardmind/runtime';
 
-export default async function postInstall(ctx: HookContext): Promise<void> {
+// Local mirror of ShardMind's HookContext shape. Inlined (rather than imported
+// from `shardmind/runtime`) so obsidian-mind has no shardmind dependency —
+// the engine's hook runner spawns this file via tsx and the types are erased
+// at runtime. Kept in sync with `source/runtime/types.ts::HookContext` in
+// the shardmind repo. See ShardMind docs/SHARD-LAYOUT.md §Hooks, state, and
+// re-hash semantics.
+interface HookCtx {
+  vaultRoot: string;
+  values: Record<string, unknown>;
+  modules: Record<string, 'included' | 'excluded'>;
+  shard: { name: string; version: string };
+  previousVersion?: string;
+  valuesAreDefaults: boolean;
+  newFiles: string[];
+  removedFiles: string[];
+}
+
+export default async function postInstall(ctx: HookCtx): Promise<void> {
   await ensureGitRepo(ctx.vaultRoot);
   if (ctx.values['qmd_enabled'] === true) {
     await bootstrapQmd(ctx.vaultRoot);

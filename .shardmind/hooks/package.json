@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "ShardMind lifecycle hooks for obsidian-mind. Runtime has zero dependencies — executed by ShardMind's hook runner via the bundled tsx loader. The `type: module` field exists so TypeScript's verbatimModuleSyntax treats these .ts files as ESM during typecheck (run from `.claude/scripts/`), matching their runtime behavior."
+}
