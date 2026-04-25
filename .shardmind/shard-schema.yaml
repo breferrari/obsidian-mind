@@ -58,16 +58,22 @@ groups:
 #
 # Eleven modules in three tiers:
 #
-#   * 4 always-on content modules (`removable: false`): brain, work,
-#     reference, thinking. The vault's spine.
+#   * 5 always-on modules (`removable: false`): the 4 content spines —
+#     brain, work, reference, thinking — plus claude. Claude is the
+#     canonical agent layer: every per-feature module gates files under
+#     `.claude/{agents,commands}/` (e.g. `org.agents: ["people-profiler"]`
+#     gates `.claude/agents/people-profiler.md`), and Codex + Gemini's
+#     hook configs reference `${*_PROJECT_DIR:-.}/.claude/scripts/...`.
+#     Deselecting Claude would orphan every cross-module gating reference
+#     and break Codex/Gemini's hook resolution. Codex and Gemini are
+#     additive integrations layered on top of the Claude infra.
 #   * 4 removable content modules: org, perf, incidents, one_on_ones.
 #     Deselected modules drop their paths AND their per-name commands /
 #     agents under `.claude/{commands,agents}/`.
-#   * 3 removable agent modules: claude, codex, gemini. Deselect to omit
-#     CLAUDE.md / AGENTS.md / GEMINI.md and the matching dotfolder
-#     contents — but `.claude/scripts/` (shared hook implementations
-#     referenced by all three agents via `${*_PROJECT_DIR:-.}/.claude/scripts/`)
-#     stays always-on by virtue of being claimed by no module.
+#   * 2 removable agent modules: codex, gemini. Deselect to omit
+#     AGENTS.md / GEMINI.md and the matching dotfolder contents.
+#     `.claude/scripts/` (shared hook implementations) stays always-on
+#     by virtue of being claimed by no module.
 #
 # Bases (`bases/*.base`) are listed by exact path under their owning
 # module's `paths` — the engine's `mod.bases` field only matches
@@ -149,7 +155,13 @@ modules:
       - ".claude/update-skills.ts"
       - ".claude-plugin/"
     agents: ["claude"]
-    removable: true
+    # Always-on. Per-feature modules (org/perf/incidents/one_on_ones) gate
+    # files under `.claude/{agents,commands}/` via their `agents:` /
+    # `commands:` fields; Codex + Gemini hook configs reference
+    # `${*_PROJECT_DIR:-.}/.claude/scripts/...`. Deselecting Claude would
+    # orphan every cross-module gating reference and break the other two
+    # agents' hook resolution.
+    removable: false
 
   codex:
     label: "Codex (OpenAI) agent — AGENTS.md, .codex/"
