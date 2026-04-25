@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/breferrari/shardmind/main/schemas/shard.schema.json
+
+apiVersion: v1
+name: obsidian-mind
+namespace: breferrari
+version: 6.0.0-beta.1
+description: "AI-augmented Obsidian vault for multi-agent knowledge work"
+persona: "Engineers, researchers, freelancers — anyone using Claude Code, Codex, or Gemini CLI as a thinking partner"
+license: MIT
+homepage: https://github.com/breferrari/obsidian-mind
+
+requires:
+  obsidian: ">=1.12.0"
+  # `--experimental-strip-types` + ESM; required by `.claude/scripts/*.ts`
+  # which are executed natively by Node without a build step.
+  node: ">=22.6.0"
+
+hooks:
+  post-install: hooks/post-install.ts
+  post-update: hooks/post-update.ts
+  # 60 s to accommodate first-run qmd bootstrap (index creation + initial embed pass).
+  timeout_ms: 60000

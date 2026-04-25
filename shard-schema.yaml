@@ -1,0 +1,204 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/breferrari/shardmind/main/schemas/shard-schema.schema.json
+
+schema_version: 1
+
+# ---------------------------------------------------------------------------
+# Values — what goes inside files.
+# Four questions. One TUI screen. Done in 30 seconds.
+# ---------------------------------------------------------------------------
+
+values:
+  user_name:
+    type: string
+    required: true
+    message: "Your name"
+    placeholder: "Jane Engineer"
+    group: setup
+
+  org_name:
+    type: string
+    message: "Organization (or 'Independent')"
+    default: "Independent"
+    group: setup
+
+  vault_purpose:
+    type: select
+    required: true
+    message: "How will you use this vault?"
+    hint: "Chooses the primary lens. You can edit this later in shard-values.yaml."
+    options:
+      - { value: engineering, label: "Engineering",  description: "Projects, incidents, decisions, reviews" }
+      - { value: research,    label: "Research",     description: "Sources, findings, hypotheses, wiki" }
+      - { value: freelance,   label: "Freelance",    description: "Clients, projects, milestones" }
+      - { value: general,     label: "General",      description: "Flexible knowledge work" }
+    group: setup
+
+  qmd_enabled:
+    type: boolean
+    message: "Enable QMD semantic search?"
+    default: true
+    hint: "Requires: npm install -g @tobilu/qmd"
+    group: setup
+
+groups:
+  - id: setup
+    label: "Quick Setup"
+    description: "Four questions. Press Enter after each."
+
+# ---------------------------------------------------------------------------
+# Modules — what files exist.
+# Four core (always included), four removable. All default to included;
+# users deselect during the module-review step of install.
+# ---------------------------------------------------------------------------
+
+modules:
+  brain:
+    label: "Operational memory — Memories, Decisions, Patterns, Gotchas, North Star, Skills"
+    paths: ["brain/"]
+    partials: ["claude/_brain.md.njk"]
+    removable: false
+
+  work:
+    label: "Active projects, archive, meetings"
+    paths:
+      - "work/Index.md"
+      - "work/active/"
+      - "work/archive/"
+      - "work/meetings/"
+    partials: ["claude/_work.md.njk"]
+    bases: ["Work Dashboard"]
+    commands: ["om-meeting", "om-intake", "om-project-archive"]
+    removable: false
+
+  reference:
+    label: "Codebase knowledge, architecture maps, runbooks"
+    paths: ["reference/"]
+    partials: ["claude/_reference.md.njk"]
+    removable: false
+
+  thinking:
+    label: "Scratchpad for drafts and reasoning"
+    paths: ["thinking/"]
+    partials: ["claude/_thinking.md.njk"]
+    removable: false
+
+  org:
+    label: "People and teams — who you work with"
+    paths: ["org/"]
+    partials: ["claude/_org.md.njk"]
+    bases: ["People Directory"]
+    agents: ["people-profiler"]
+    removable: true
+
+  perf:
+    label: "Performance — brag doc, competencies, reviews, PR evidence"
+    paths: ["perf/"]
+    partials: ["claude/_perf.md.njk"]
+    bases: ["Competency Map", "Review Evidence"]
+    commands: ["om-peer-scan", "om-review-brief", "om-self-review", "om-review-peer", "om-slack-scan"]
+    agents: ["brag-spotter", "review-fact-checker", "review-prep"]
+    removable: true
+
+  incidents:
+    label: "Incident tracking — outages, RCAs, deep dives"
+    paths: ["work/incidents/"]
+    partials: ["claude/_incidents.md.njk"]
+    bases: ["Incidents"]
+    commands: ["om-incident-capture"]
+    agents: ["slack-archaeologist"]
+    removable: true
+
+  1on1s:
+    label: "1:1 meeting notes"
+    paths: ["work/1-1/"]
+    partials: ["claude/_1on1s.md.njk"]
+    bases: ["1-1 History"]
+    commands: ["om-capture-1on1", "om-prep-1on1"]
+    removable: true
+
+# ---------------------------------------------------------------------------
+# Signals — classification patterns consumed by the UserPromptSubmit hook.
+# The hook reads this list at runtime via `shardmind/runtime`; no hardcoded
+# signal table in code. Module-gated signals drop out when the module is
+# excluded. Full multilingual pattern definitions live in
+# `.claude/scripts/lib/signals.ts` (the schema carries just the contract).
+# ---------------------------------------------------------------------------
+
+signals:
+  - id: DECISION
+    description: "A choice was made with reasoning"
+    routes_to: "work/active/ or work/Index.md Decisions Log; brain/Key Decisions.md if significant"
+    core: true
+
+  - id: WIN
+    description: "Achievement, praise, milestone, or delivery"
+    routes_to: "perf/Brag Doc.md with a link to the evidence note"
+    module: perf
+
+  - id: ARCHITECTURE
+    description: "System design, technical structure, decision record"
+    routes_to: "reference/ or work/active/<project>/decisions/"
+    core: true
+
+  - id: PROJECT_UPDATE
+    description: "Status update, delivery, roadmap shift on active work"
+    routes_to: "work/active/<project>/ note or work/Index.md"
+    core: true
+
+  - id: INCIDENT
+    description: "Outage, pager, severity event, postmortem material"
+    routes_to: "work/incidents/ — consider /om-incident-capture"
+    module: incidents
+
+  - id: PERSON_CONTEXT
+    description: "Information about someone you work with"
+    routes_to: "org/people/<person>.md"
+    module: org
+
+  - id: ONE_ON_ONE
+    description: "1:1 meeting content — takeaways, feedback, action items"
+    routes_to: "work/1-1/<Person> YYYY-MM-DD.md and org/people/<person>.md"
+    module: 1on1s
+
+# ---------------------------------------------------------------------------
+# Frontmatter — per-note-type validation rules consumed by the PostToolUse
+# validate-write hook. Shorthand `key: [a, b]` expands to `key: { required: [...] }`.
+# `path_match` uses shell-glob (single-segment *, cross-segment **); omit to
+# infer note type from parent folder.
+# ---------------------------------------------------------------------------
+
+frontmatter:
+  global: [date, description, tags]
+
+  work-note:
+    required: [date, status, quarter]
+    path_match: "work/active/**.md"
+
+  incident:
+    required: [date, status, quarter, ticket, severity, role]
+    path_match: "work/incidents/**.md"
+
+  1-1:
+    required: [date, quarter]
+    path_match: "work/1-1/*.md"
+
+  person:
+    required: [date, title]
+    path_match: "org/people/*.md"
+
+  team:
+    required: [date]
+    path_match: "org/teams/*.md"
+
+  brain-note:
+    required: [date, description]
+    path_match: "brain/*.md"
+
+# ---------------------------------------------------------------------------
+# Migrations — value migrations between shard versions.
+# v6.0.0 is the first shardmind-native release; no prior shard-values.yaml
+# exists to migrate. Users on obsidian-mind v5.x or earlier run
+# `/om-vault-upgrade` inside an installed v6 vault to migrate their content.
+# ---------------------------------------------------------------------------
+
+migrations: []
