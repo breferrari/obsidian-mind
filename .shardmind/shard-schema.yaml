@@ -146,6 +146,7 @@ modules:
       - ".claude/commands/"
       - ".claude/memory-template.md"
       - ".claude/settings.json"
+      - ".claude/update-skills.ts"
       - ".claude-plugin/"
     agents: ["claude"]
     removable: true

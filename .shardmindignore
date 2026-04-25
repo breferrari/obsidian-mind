@@ -12,7 +12,9 @@
 CONTRIBUTING.md
 README.*.md
 
-# Marketing media — not vault content.
-*.gif
-*.png
+# Marketing media — not vault content. Patterns are explicit (not `*.png` /
+# `*.gif`) so a future `.png`/`.gif` attachment landing at vault root would
+# install correctly instead of being silently dropped. Update the list when
+# new marketing media ship.
 obsidian-mind-logo.*
+obsidian-mind-demo.*

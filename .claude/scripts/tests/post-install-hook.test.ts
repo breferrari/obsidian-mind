@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import {
+import postInstall, {
 	ensureGitRepo,
 	personalizeNorthStar,
 } from "../../../.shardmind/hooks/post-install.ts";
@@ -157,5 +157,77 @@ describe("ensureGitRepo", () => {
 			isENOENT,
 			"ensureGitRepo must not run `git init` when .git/ already exists",
 		);
+	});
+});
+
+describe("postInstall (default export) — Invariant 2 binding", () => {
+	// Drives the orchestration gate `if (!ctx.valuesAreDefaults)` in the
+	// default export, which the named-export tests can't reach. Pre-creates
+	// `.git/` to short-circuit `ensureGitRepo` (avoiding a real `git init`
+	// subprocess on each test) and pins `qmd_enabled: false` so
+	// `bootstrapQmd` is gated off — leaving the personalization branch as
+	// the only orchestration path the test exercises.
+	let vault: string;
+
+	beforeEach(async () => {
+		vault = await makeTempDir("post-install-hook");
+		await mkdir(join(vault, ".git"), { recursive: true });
+		await mkdir(join(vault, "brain"), { recursive: true });
+		await writeFile(join(vault, "brain", "North Star.md"), NORTH_STAR_BASE, "utf-8");
+	});
+
+	afterEach(async () => {
+		await rm(vault, { recursive: true, force: true });
+	});
+
+	function makeCtx(overrides: Partial<{
+		valuesAreDefaults: boolean;
+		userName: string;
+		qmdEnabled: boolean;
+	}>): {
+		vaultRoot: string;
+		values: Record<string, unknown>;
+		modules: Record<string, "included" | "excluded">;
+		shard: { name: string; version: string };
+		valuesAreDefaults: boolean;
+		newFiles: string[];
+		removedFiles: string[];
+	} {
+		return {
+			vaultRoot: vault,
+			values: {
+				user_name: overrides.userName ?? "",
+				org_name: "Independent",
+				vault_purpose: "engineering",
+				qmd_enabled: overrides.qmdEnabled ?? false,
+			},
+			modules: {},
+			shard: { name: "obsidian-mind", version: "6.0.0-beta.1" },
+			valuesAreDefaults: overrides.valuesAreDefaults ?? true,
+			newFiles: [],
+			removedFiles: [],
+		};
+	}
+
+	test("Invariant 2: leaves North Star byte-identical when valuesAreDefaults", async () => {
+		await postInstall(makeCtx({ valuesAreDefaults: true }));
+		const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
+		assert.equal(after, NORTH_STAR_BASE);
+	});
+
+	test("personalizes North Star when valuesAreDefaults is false and user_name is set", async () => {
+		await postInstall(makeCtx({ valuesAreDefaults: false, userName: "Jane Engineer" }));
+		const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
+		assert.match(after, /^# North Star — Jane Engineer$/m);
+	});
+
+	test("leaves North Star alone when valuesAreDefaults is false but user_name is empty", async () => {
+		// Empty user_name means the user took the wizard but didn't enter a
+		// name (some other value drove !valuesAreDefaults). Personalizing
+		// with the empty string would produce the eyesore `# North Star — `;
+		// the hook's secondary guard (userName.trim().length > 0) catches it.
+		await postInstall(makeCtx({ valuesAreDefaults: false, userName: "" }));
+		const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
+		assert.equal(after, NORTH_STAR_BASE);
 	});
 });

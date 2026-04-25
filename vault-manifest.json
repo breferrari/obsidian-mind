@@ -29,7 +29,9 @@
     "obsidian-mind-demo.gif",
     "brain/Skills.md",
     "perf/competencies/README.md",
-    "thinking/README.md"
+    "thinking/README.md",
+    ".shardmind/**",
+    ".shardmindignore"
   ],
   "scaffold": {
     "brain/North Star.md": "Personal goals — replace if source has real content",
