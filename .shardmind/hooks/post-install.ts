@@ -29,6 +29,10 @@ import { spawn } from 'node:child_process';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+// Vault-relative path to the QMD bootstrap script. Centralized so a future
+// rename (or relocation out of `.claude/scripts/`) is a one-line change.
+const QMD_BOOTSTRAP_RELATIVE = '.claude/scripts/qmd-bootstrap.ts';
+
 // Local mirror of ShardMind's HookContext shape. Inlined (rather than imported
 // from `shardmind/runtime`) so obsidian-mind has no shardmind dependency —
 // the engine's hook runner spawns this file via tsx and the types are erased
@@ -116,7 +120,7 @@ export async function personalizeNorthStar(vaultRoot: string, userName: string):
 }
 
 async function bootstrapQmd(vaultRoot: string): Promise<void> {
-  const bootstrap = join(vaultRoot, '.claude', 'scripts', 'qmd-bootstrap.ts');
+  const bootstrap = join(vaultRoot, QMD_BOOTSTRAP_RELATIVE);
   try {
     await access(bootstrap);
   } catch {
@@ -127,7 +131,7 @@ async function bootstrapQmd(vaultRoot: string): Promise<void> {
   const qmdAvailable = await which('qmd');
   if (!qmdAvailable) {
     console.log('qmd: `qmd` binary not found on PATH — skipping bootstrap.');
-    console.log('qmd: install with `npm install -g @tobilu/qmd`, then run `node --experimental-strip-types .claude/scripts/qmd-bootstrap.ts` from the vault root.');
+    console.log(`qmd: install with \`npm install -g @tobilu/qmd\`, then run \`node --experimental-strip-types ${QMD_BOOTSTRAP_RELATIVE}\` from the vault root.`);
     return;
   }
 
@@ -136,7 +140,7 @@ async function bootstrapQmd(vaultRoot: string): Promise<void> {
   if (ok) {
     console.log('qmd: index bootstrap complete.');
   } else {
-    console.error('qmd: bootstrap exited non-zero. The vault is installed; re-run manually with `node --experimental-strip-types .claude/scripts/qmd-bootstrap.ts`.');
+    console.error(`qmd: bootstrap exited non-zero. The vault is installed; re-run manually with \`node --experimental-strip-types ${QMD_BOOTSTRAP_RELATIVE}\`.`);
   }
 }
 

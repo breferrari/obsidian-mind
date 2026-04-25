@@ -11,9 +11,11 @@
  *
  * Each test gets its own `os.tmpdir() + crypto.randomUUID()` directory to
  * avoid the parallel-load flake pattern documented in the take-next skill.
+ * `beforeEach` / `afterEach` own the lifecycle so test bodies stay focused
+ * on assertions.
  */
 
-import { test, describe } from "node:test";
+import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -45,53 +47,50 @@ Body content that must survive personalization byte-for-byte.
 -
 `;
 
-async function makeVault(): Promise<string> {
-	const dir = await mkdtemp(join(tmpdir(), `post-install-hook-${randomUUID()}-`));
-	await mkdir(join(dir, "brain"), { recursive: true });
-	await writeFile(join(dir, "brain", "North Star.md"), NORTH_STAR_BASE, "utf-8");
-	return dir;
+async function makeTempDir(prefix: string): Promise<string> {
+	return mkdtemp(join(tmpdir(), `${prefix}-${randomUUID()}-`));
 }
 
+const isENOENT = (err: unknown): boolean =>
+	(err as NodeJS.ErrnoException).code === "ENOENT";
+
 describe("personalizeNorthStar", () => {
+	let vault: string;
+
+	beforeEach(async () => {
+		vault = await makeTempDir("post-install-hook");
+		await mkdir(join(vault, "brain"), { recursive: true });
+		await writeFile(join(vault, "brain", "North Star.md"), NORTH_STAR_BASE, "utf-8");
+	});
+
+	afterEach(async () => {
+		await rm(vault, { recursive: true, force: true });
+	});
+
 	test("personalizes the heading with the supplied name", async () => {
-		const vault = await makeVault();
-		try {
-			await personalizeNorthStar(vault, "Jane Engineer");
-			const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
-			assert.match(after, /^# North Star — Jane Engineer$/m);
-			assert.equal(after.includes("# North Star\n"), false, "verbatim heading must be replaced");
-		} finally {
-			await rm(vault, { recursive: true, force: true });
-		}
+		await personalizeNorthStar(vault, "Jane Engineer");
+		const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
+		assert.match(after, /^# North Star — Jane Engineer$/m);
+		assert.equal(after.includes("# North Star\n"), false, "verbatim heading must be replaced");
 	});
 
 	test("preserves the rest of the file byte-for-byte", async () => {
-		const vault = await makeVault();
-		try {
-			await personalizeNorthStar(vault, "Jane Engineer");
-			const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
-			// Replace the personalized line back to the verbatim form and the
-			// rest of the file must equal the input exactly. Pins that the hook
-			// doesn't drop frontmatter, body content, trailing newline, or
-			// otherwise reflow the file.
-			const restored = after.replace(/^# North Star — Jane Engineer$/m, "# North Star");
-			assert.equal(restored, NORTH_STAR_BASE);
-		} finally {
-			await rm(vault, { recursive: true, force: true });
-		}
+		await personalizeNorthStar(vault, "Jane Engineer");
+		const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
+		// Replace the personalized line back to the verbatim form and the
+		// rest of the file must equal the input exactly. Pins that the hook
+		// doesn't drop frontmatter, body content, trailing newline, or
+		// otherwise reflow the file.
+		const restored = after.replace(/^# North Star — Jane Engineer$/m, "# North Star");
+		assert.equal(restored, NORTH_STAR_BASE);
 	});
 
 	test("is idempotent — second run produces byte-identical content", async () => {
-		const vault = await makeVault();
-		try {
-			await personalizeNorthStar(vault, "Jane Engineer");
-			const afterFirst = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
-			await personalizeNorthStar(vault, "Jane Engineer");
-			const afterSecond = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
-			assert.equal(afterSecond, afterFirst);
-		} finally {
-			await rm(vault, { recursive: true, force: true });
-		}
+		await personalizeNorthStar(vault, "Jane Engineer");
+		const afterFirst = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
+		await personalizeNorthStar(vault, "Jane Engineer");
+		const afterSecond = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
+		assert.equal(afterSecond, afterFirst);
 	});
 
 	test("idempotent against a different name once personalized", async () => {
@@ -100,57 +99,63 @@ describe("personalizeNorthStar", () => {
 		// flow through `shardmind update`'s merge engine — the hook itself
 		// never re-personalizes a file that's already been personalized.
 		// Pins the anchor on `^# North Star$` (verbatim only).
-		const vault = await makeVault();
-		try {
-			await personalizeNorthStar(vault, "Jane Engineer");
-			const afterFirst = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
-			await personalizeNorthStar(vault, "Different Person");
-			const afterSecond = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
-			assert.equal(afterSecond, afterFirst);
-			assert.match(afterSecond, /^# North Star — Jane Engineer$/m);
-		} finally {
-			await rm(vault, { recursive: true, force: true });
-		}
+		await personalizeNorthStar(vault, "Jane Engineer");
+		const afterFirst = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
+		await personalizeNorthStar(vault, "Different Person");
+		const afterSecond = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
+		assert.equal(afterSecond, afterFirst);
+		assert.match(afterSecond, /^# North Star — Jane Engineer$/m);
+	});
+});
+
+describe("personalizeNorthStar — ENOENT tolerance", () => {
+	let vault: string;
+
+	beforeEach(async () => {
+		// brain/ exists but North Star.md doesn't — covers the case where
+		// `brain` deselection (impossible today since `removable: false`,
+		// but the guard costs nothing) or an upstream rename leaves the
+		// path absent.
+		vault = await makeTempDir("post-install-hook");
+		await mkdir(join(vault, "brain"), { recursive: true });
 	});
 
-	test("ENOENT-tolerant — missing North Star is a no-op", async () => {
-		const vault = await mkdtemp(join(tmpdir(), `post-install-hook-${randomUUID()}-`));
-		try {
-			// brain/ exists but North Star.md doesn't — covers the case where
-			// `brain` deselection (impossible today since `removable: false`,
-			// but the guard costs nothing) or an upstream rename leaves the
-			// path absent. The hook must not throw.
-			await mkdir(join(vault, "brain"), { recursive: true });
-			await personalizeNorthStar(vault, "Jane Engineer");
-			// Nothing to assert about file contents — the guarantee is that
-			// the call returned without throwing. We do verify the file
-			// wasn't created as a side-effect.
-			await assert.rejects(
-				readFile(join(vault, "brain", "North Star.md"), "utf-8"),
-				/ENOENT/,
-			);
-		} finally {
-			await rm(vault, { recursive: true, force: true });
-		}
+	afterEach(async () => {
+		await rm(vault, { recursive: true, force: true });
+	});
+
+	test("missing North Star is a no-op (no throw, no side-effect)", async () => {
+		await personalizeNorthStar(vault, "Jane Engineer");
+		// Match the typed errno code rather than the message string —
+		// message format varies by Node version and OS, code is stable.
+		await assert.rejects(
+			readFile(join(vault, "brain", "North Star.md"), "utf-8"),
+			isENOENT,
+		);
 	});
 });
 
 describe("ensureGitRepo", () => {
+	let vault: string;
+
+	beforeEach(async () => {
+		vault = await makeTempDir("post-install-hook");
+	});
+
+	afterEach(async () => {
+		await rm(vault, { recursive: true, force: true });
+	});
+
 	test("skips when .git/ already exists", async () => {
-		const vault = await mkdtemp(join(tmpdir(), `post-install-hook-${randomUUID()}-`));
-		try {
-			await mkdir(join(vault, ".git"), { recursive: true });
-			// HEAD is one of the few files git always writes during init; if
-			// the hook's skip-branch fires correctly, our pre-existing empty
-			// .git/ stays empty.
-			await ensureGitRepo(vault);
-			await assert.rejects(
-				readFile(join(vault, ".git", "HEAD"), "utf-8"),
-				/ENOENT/,
-				"ensureGitRepo must not run `git init` when .git/ already exists",
-			);
-		} finally {
-			await rm(vault, { recursive: true, force: true });
-		}
+		await mkdir(join(vault, ".git"), { recursive: true });
+		// HEAD is one of the few files git always writes during init; if
+		// the hook's skip-branch fires correctly, our pre-existing empty
+		// .git/ stays empty.
+		await ensureGitRepo(vault);
+		await assert.rejects(
+			readFile(join(vault, ".git", "HEAD"), "utf-8"),
+			isENOENT,
+			"ensureGitRepo must not run `git init` when .git/ already exists",
+		);
 	});
 });
