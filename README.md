@@ -102,6 +102,17 @@ You: "wrap up"
 5. Fill in **`brain/North Star.md`** with your goals — this grounds every session
 6. Start talking about work
 
+### 📦 Install via ShardMind (alternative to clone)
+
+[ShardMind](https://github.com/breferrari/shardmind) is a package manager for Obsidian vault templates. It produces the same vault as `git clone` plus a `.shardmind/` sidecar that unlocks wizard-driven personalization, optional modules (skip what you don't use), and three-way-merge upgrades:
+
+```bash
+npm install -g shardmind
+shardmind install breferrari/obsidian-mind
+```
+
+The wizard collects your name, organization, vault purpose, and whether to enable QMD; the post-install hook personalizes `brain/North Star.md` with your name. With every value at its default the install is byte-equivalent to `git clone` — clone-UX is preserved exactly. Delete `.shardmind/` and `shard-values.yaml` from the installed vault and it keeps working — ShardMind is additive, not load-bearing.
+
 ### 🔍 Recommended: QMD Semantic Search
 
 QMD is where most of the agent's retrieval intelligence comes from. Optional in the strict sense — the vault falls back to grep + the Obsidian CLI — but the experience is meaningfully better with it:

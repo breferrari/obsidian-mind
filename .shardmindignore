@@ -1,0 +1,18 @@
+# Files in this list are part of the GitHub repo, not the vault. ShardMind
+# excludes them from `shardmind install` so the installed vault carries
+# only what an Obsidian user needs. The repo still ships them so the GitHub
+# landing page, contribution flow, and translated READMEs work for visitors
+# who land on the repo directly.
+#
+# Glob semantics: gitignore-spec, minus negation (deferred to v0.2 per
+# breferrari/shardmind#87). See ShardMind docs/SHARD-LAYOUT.md
+# §File disposition for the three-tier model.
+
+# Repo-meta — meaningful on GitHub, noise in a vault.
+CONTRIBUTING.md
+README.*.md
+
+# Marketing media — not vault content.
+*.gif
+*.png
+obsidian-mind-logo.*
