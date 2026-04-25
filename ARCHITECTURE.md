@@ -360,3 +360,21 @@ The design is hostile to these changes (on purpose):
 Template versions are tracked in `vault-manifest.json` with fingerprints that let `/om-vault-upgrade` detect an older vault's version by presence or absence of specific files. The migrator uses the infrastructure/user-content split to decide what to overwrite versus preserve. `CHANGELOG.md` documents what changed in each version.
 
 The long-term stability guarantee is narrow: the manifest keys (`qmd_index`, `infrastructure`, `user_content_roots`, `frontmatter_required`), the hook script names under `.claude/scripts/`, and the folder layout for user content. Everything else — including command names, subagent internals, and classification logic — is allowed to evolve between versions.
+
+## Install Paths
+
+Two ways to bring obsidian-mind into a new directory:
+
+**`git clone` — the original.** Clone the repo, open the folder in Obsidian, talk to the agent. Zero machinery beyond git. Every file ships verbatim; no install-time substitution. The hook scripts under `.claude/scripts/` only run when the agent triggers them. This path is the long-standing default and the one new contributors use to read the codebase.
+
+**`shardmind install` — v6.** [ShardMind](https://github.com/breferrari/shardmind) is a package manager for Obsidian vault templates that produces the same vault as `git clone` plus a `.shardmind/` sidecar. A wizard collects four values (`user_name`, `org_name`, `vault_purpose`, `qmd_enabled`), gates eleven modules (4 always-on content, 4 removable content, 3 agent — `claude` / `codex` / `gemini`), and runs a post-install hook (`.shardmind/hooks/post-install.ts`) that initializes git, optionally bootstraps QMD when enabled, and personalizes `brain/North Star.md` with the user's name. The shard contract is locked by three invariants:
+
+1. **Invariant 1 — clone-equivalence under defaults.** `shardmind install --defaults` produces a vault byte-equivalent to `git clone` modulo Tier 1 exclusions (`.git`, `.github`, ephemeral `.obsidian/workspace*.json`), the engine metadata under `.shardmind/`, and a vault-root `shard-values.yaml`.
+2. **Invariant 2 — hooks no-op on defaults.** The post-install hook respects `ctx.valuesAreDefaults` — managed-file edits (e.g., the North Star personalization) are gated on a non-default user value. With every value at its default, the install must remain byte-equivalent to clone.
+3. **Invariant 3 — post-update is additive-only.** The post-update hook restricts managed-file writes to `ctx.newFiles` (paths added by the new version), preventing clobbers of the merge engine's three-way resolution of user edits.
+
+The contract surface lives at `.shardmind/shard.yaml` (manifest), `.shardmind/shard-schema.yaml` (values + module declarations), `.shardmind/hooks/{post-install,post-update}.ts` (lifecycle), and `.shardmindignore` at repo root (excludes `CONTRIBUTING.md`, README translations, marketing media from the install). Spec: [ShardMind `docs/SHARD-LAYOUT.md`](https://github.com/breferrari/shardmind/blob/main/docs/SHARD-LAYOUT.md).
+
+**Additive principle.** `shardmind install` produces a strictly larger vault than `git clone` — never smaller, never different on shared paths under defaults. Deleting `.shardmind/` and `shard-values.yaml` from an installed vault leaves a working clone-equivalent vault. The same is true on the source side: deleting `.shardmind/` from this repo would produce a v5.1-shape working vault. ShardMind extends the clone experience; it doesn't replace it.
+
+`shardmind update` (v6+) three-way-merges your edits with upstream changes — the moat that `git pull` doesn't provide for templates with installed-time personalization. `/om-vault-upgrade` remains the path for migrating a v5.x clone or arbitrary vault into v6 in place; once installed, `shardmind update` (or `shardmind adopt` for retroactive adoption) takes over.
