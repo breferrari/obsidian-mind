@@ -394,6 +394,40 @@ function updateManifest(version: string, prevTag: string | null): void {
 	);
 }
 
+/**
+ * Replace the top-level `version:` line in `.shardmind/shard.yaml` with the
+ * normalized release version. The shard manifest is what `shardmind install`
+ * shows in its wizard header — keeping it in lockstep with vault-manifest.json
+ * means a release commit bumps both, identical to how CHANGELOG.md gets a
+ * matching section. ENOENT-tolerant so non-shardmind clones (no .shardmind/)
+ * stay releasable.
+ */
+export function bumpShardYamlVersion(content: string, version: string): string {
+	const normalized = normalizeVersion(version);
+	const pattern = /^version:[ \t]*.*$/m;
+	if (!pattern.test(content)) {
+		throw new Error(
+			"shard.yaml is missing a top-level `version:` line — refusing to write.",
+		);
+	}
+	return content.replace(pattern, `version: ${normalized}`);
+}
+
+function updateShardYaml(version: string): void {
+	const path = ".shardmind/shard.yaml";
+	let content: string;
+	try {
+		content = readFileSync(path, { encoding: "utf-8" });
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+			process.stderr.write(`${path} not present — skipping shard version bump.\n`);
+			return;
+		}
+		throw err;
+	}
+	writeFileSync(path, bumpShardYamlVersion(content, version), { encoding: "utf-8" });
+}
+
 function main(): void {
 	const version = process.argv[2];
 	if (!version) {
@@ -422,6 +456,7 @@ function main(): void {
 
 	prependToChangelog(section, version);
 	updateManifest(version, prevTag);
+	updateShardYaml(version);
 
 	// Print section for GitHub Release body
 	process.stdout.write(section);

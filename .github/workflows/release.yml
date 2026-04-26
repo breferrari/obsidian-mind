@@ -96,7 +96,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md vault-manifest.json
+          git add CHANGELOG.md vault-manifest.json .shardmind/shard.yaml
           git commit -m "release: update CHANGELOG and manifest for $VERSION"
           git push origin main
 

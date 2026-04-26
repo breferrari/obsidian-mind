@@ -14,6 +14,7 @@ import {
 	toFingerprintKey,
 	pickMarkers,
 	findLatestOpenFingerprint,
+	bumpShardYamlVersion,
 } from "../../../.github/scripts/generate-changelog.ts";
 
 describe("classifyCommit", () => {
@@ -239,6 +240,63 @@ describe("pickMarkers", () => {
 			"mango.md",
 			"zebra.md",
 		]);
+	});
+});
+
+describe("bumpShardYamlVersion", () => {
+	const FIXTURE = [
+		"apiVersion: v1",
+		"name: obsidian-mind",
+		"namespace: breferrari",
+		"version: 6.0.0-beta.1",
+		'description: "AI-augmented Obsidian vault"',
+		"",
+	].join("\n");
+
+	test("rewrites the top-level version line", () => {
+		const out = bumpShardYamlVersion(FIXTURE, "v6.0");
+		assert.match(out, /^version: 6\.0\.0$/m);
+		assert.doesNotMatch(out, /6\.0\.0-beta\.1/);
+	});
+
+	test("normalizes the version (v6.1 → 6.1.0)", () => {
+		const out = bumpShardYamlVersion(FIXTURE, "v6.1");
+		assert.match(out, /^version: 6\.1\.0$/m);
+	});
+
+	test("preserves surrounding lines", () => {
+		const out = bumpShardYamlVersion(FIXTURE, "v6.0");
+		assert.match(out, /^apiVersion: v1$/m);
+		assert.match(out, /^name: obsidian-mind$/m);
+		assert.match(out, /^namespace: breferrari$/m);
+		assert.match(out, /^description: /m);
+	});
+
+	test("idempotent when run twice with the same version", () => {
+		const once = bumpShardYamlVersion(FIXTURE, "v6.0");
+		const twice = bumpShardYamlVersion(once, "v6.0");
+		assert.equal(once, twice);
+	});
+
+	test("throws when no version line is present", () => {
+		const broken = "apiVersion: v1\nname: thing\n";
+		assert.throws(() => bumpShardYamlVersion(broken, "v6.0"), /version:/);
+	});
+
+	test("only rewrites the top-level version, not nested ones", () => {
+		// `requires.node: ">=22.6.0"` is not a `version:` key, so it's safe by
+		// pattern. But a hypothetical nested `version:` (e.g. inside a list of
+		// migrations) must not be touched. Anchor on the leftmost-column form.
+		const withNested = [
+			"version: 6.0.0-beta.1",
+			"migrations:",
+			"  - from_version: 5.0.0",
+			"    to_version: 6.0.0",
+		].join("\n");
+		const out = bumpShardYamlVersion(withNested, "v6.0");
+		assert.match(out, /^version: 6\.0\.0$/m);
+		assert.match(out, /from_version: 5\.0\.0/);
+		assert.match(out, /to_version: 6\.0\.0/);
 	});
 });
 
