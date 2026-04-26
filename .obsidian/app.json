@@ -6,6 +6,11 @@
     "README.ko.md",
     "README.zh-CN.md",
     "CHANGELOG.md",
-    "CONTRIBUTING.md"
+    "CONTRIBUTING.md",
+    ".claude/",
+    ".claude-plugin/",
+    ".codex/",
+    ".gemini/",
+    ".shardmind/"
   ]
 }
