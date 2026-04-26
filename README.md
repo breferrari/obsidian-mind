@@ -38,6 +38,8 @@ Agent: "You're working on Project Alpha, blocked on the BE contract.
 
 Works with **Claude Code** (full support), **Codex CLI**, and **Gemini CLI** — same hooks, same commands, same vault.
 
+Install via `git clone` or `shardmind install` — same vault either way.
+
 ---
 
 ## ⚡ See It In Action
@@ -102,9 +104,9 @@ You: "wrap up"
 5. Fill in **`brain/North Star.md`** with your goals — this grounds every session
 6. Start talking about work
 
-### 📦 Install via ShardMind (alternative to clone)
+### 📦 Install via ShardMind
 
-[ShardMind](https://github.com/breferrari/shardmind) is a package manager for Obsidian vault templates. It produces the same vault as `git clone` plus a `.shardmind/` sidecar that unlocks wizard-driven personalization, optional modules (skip what you don't use), and three-way-merge upgrades:
+Same vault as `git clone`, plus a wizard for personalization, optional modules you can skip, and three-way-merge upgrades. [ShardMind](https://github.com/breferrari/shardmind) is a package manager for Obsidian vault templates; the install adds a `.shardmind/` sidecar that powers all three:
 
 ```bash
 npm install -g shardmind
