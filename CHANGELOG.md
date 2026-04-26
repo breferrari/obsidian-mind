@@ -4,6 +4,15 @@
 
 
 
+
+## v6.0 — 2026-04-26
+
+### Added
+- install via ShardMind — wizard setup, modules, safe upgrades
+
+### Changed
+- use github: prefix in shardmind install / adopt commands
+
 ## v5.1 — 2026-04-19
 
 ### Added
