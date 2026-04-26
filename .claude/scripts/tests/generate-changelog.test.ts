@@ -284,19 +284,21 @@ describe("bumpShardYamlVersion", () => {
 	});
 
 	test("only rewrites the top-level version, not nested ones", () => {
-		// `requires.node: ">=22.6.0"` is not a `version:` key, so it's safe by
-		// pattern. But a hypothetical nested `version:` (e.g. inside a list of
-		// migrations) must not be touched. Anchor on the leftmost-column form.
+		// The regex anchors to a leftmost-column `version:`, so an indented
+		// `version:` inside a list (e.g. shardmind migrations entries) must
+		// be left alone. Use an actually-indented `version:` here, not a
+		// look-alike key like `from_version:` — the latter wouldn't match
+		// the regex regardless and so wouldn't exercise the anchor.
 		const withNested = [
 			"version: 6.0.0-beta.1",
 			"migrations:",
-			"  - from_version: 5.0.0",
-			"    to_version: 6.0.0",
+			"  - version: 5.0.0",
+			"    note: keep this nested version untouched",
 		].join("\n");
 		const out = bumpShardYamlVersion(withNested, "v6.0");
 		assert.match(out, /^version: 6\.0\.0$/m);
-		assert.match(out, /from_version: 5\.0\.0/);
-		assert.match(out, /to_version: 6\.0\.0/);
+		assert.match(out, /^  - version: 5\.0\.0$/m);
+		assert.match(out, /note: keep this nested version untouched/);
 	});
 });
 
