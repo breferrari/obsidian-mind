@@ -39,6 +39,8 @@ Agent: "你正在做 Project Alpha，被后端契约阻塞了。
          1:1——Review 简报已经准备好了。"
 ```
 
+通过 `shardmind install` 或 `git clone` 安装 —— 两种方式得到相同的仓库。
+
 ---
 
 ## ⚡ 实际效果
@@ -96,12 +98,29 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ## 🚀 快速开始
 
-1. 克隆此仓库（或使用它作为 **GitHub 模板**）
-2. 将文件夹作为 **Obsidian 仓库** 打开
-3. 在 设置 → 通用 中启用 **Obsidian CLI**（需要 Obsidian 1.12+）
-4. 在仓库目录中运行你的 Agent：**`claude`**、**`codex`** 或 **`gemini`**
-5. 在 **`brain/North Star.md`** 中填写你的目标——这将为每次会话定下基调
-6. 开始谈论工作
+### 📦 通过 ShardMind 安装（推荐）
+
+```bash
+npm install -g shardmind
+shardmind install breferrari/obsidian-mind
+```
+
+向导会收集你的姓名、组织、仓库用途、要包含的 Agent，以及是否启用 QMD。post-install 钩子会根据你的答案个性化 `brain/North Star.md`。然后：
+
+1. 将已安装的文件夹作为 **Obsidian 仓库** 打开
+2. 在 设置 → 通用 中启用 **Obsidian CLI**（需要 Obsidian 1.12+）
+3. 在仓库目录中运行你的 Agent：**`claude`**、**`codex`** 或 **`gemini`**
+4. 开始谈论工作
+
+[ShardMind](https://github.com/breferrari/shardmind) 是 Obsidian 仓库模板的包管理器。安装时会添加 `.shardmind/` 旁挂目录，提供向导、可选模块（不需要的可以跳过）和三方合并升级。所有值采用默认值时，安装结果与 `git clone` 字节等价——克隆体验完全保留。从已安装的仓库中删除 `.shardmind/` 和 `shard-values.yaml`，仓库仍可正常工作：ShardMind 是附加功能，并非必需。
+
+### 或直接克隆
+
+```bash
+git clone https://github.com/breferrari/obsidian-mind.git
+```
+
+或将其作为 **GitHub 模板** 使用。跳过向导，获取裸模板。然后按上面的 4 个步骤操作，并在 **`brain/North Star.md`** 中填写你的目标（ShardMind 向导会自动完成此项）。
 
 ### 🔍 推荐：QMD 语义搜索
 
@@ -299,6 +318,7 @@ CLAUDE.md               操作手册——Agent 每次会话都会读取
 AGENTS.md               多 Agent 指南——Codex、Cursor、Windsurf 等
 GEMINI.md               多 Agent 指南——Gemini CLI
 vault-manifest.json     模板元数据——版本、结构、schema
+.shardmindignore        从 `shardmind install` 中排除的文件（CONTRIBUTING、翻译、营销素材）
 CHANGELOG.md            版本历史
 CONTRIBUTING.md         模板开发清单
 README.md               产品文档
@@ -343,7 +363,15 @@ templates/              带有 YAML frontmatter 的 Obsidian 模板
   scripts/              钩子脚本 + charcount.ts 工具
   skills/               Obsidian + QMD 技能
   settings.json         5 个钩子配置
+
+.shardmind/             ShardMind 旁挂目录——仅在通过 `shardmind install` 安装时使用
+  shard.yaml            清单文件（名称、版本、模块、钩子）
+  shard-schema.yaml     向导值 + 模块门控
+  hooks/                post-install（QMD 引导 + 个性化）、post-update
 ```
+
+> [!NOTE]
+> `.shardmind/` 是**附加功能，并非必需。** 克隆并打开的仓库从不读取它；只有 `shardmind` CLI 使用它。删除它，仓库仍可正常工作。v6 布局契约见 [shardmind/docs/SHARD-LAYOUT.md](https://github.com/breferrari/shardmind/blob/main/docs/SHARD-LAYOUT.md)。
 
 ---
 
@@ -431,9 +459,20 @@ git merge upstream/main
 
 解决你自定义过的文件的冲突（通常是 `CLAUDE.md`、`brain/` 笔记）。基础设施文件（`.claude/scripts/`、`.codex/`、`.gemini/`）应该可以干净合并。
 
-### 从旧仓库迁移
+### 将已有克隆收编到 ShardMind（v5.x → v6）
 
-已经在使用旧版本的 obsidian-mind（或其他 Obsidian 仓库）？`/om-vault-upgrade` 命令可以将你的内容迁移到最新模板：
+已经克隆了 obsidian-mind，又想要向导、可选模块和三方合并升级，且不希望丢失自定义内容？`shardmind adopt` 会将你已有的仓库整合为受管的 v6 安装——保留你的每一字节编辑，仅添加 `.shardmind/` 旁挂目录和 `shard-values.yaml`：
+
+```bash
+npm install -g shardmind
+shardmind adopt breferrari/obsidian-mind
+```
+
+2-way diff UI 会引导你查看本地变更，按文件确认要保留的内容，然后写入引擎元数据。结果：你已有的内容完好保留的 v6 受管仓库，从此可以使用 `shardmind update`。无需重新克隆。
+
+### 从旧仓库（或任何其他仓库）迁移
+
+使用 v5 之前的 obsidian-mind，或要从完全不同的 Obsidian 仓库迁移？`/om-vault-upgrade` 命令可以将你的内容迁移到最新模板：
 
 ```bash
 # 1. 克隆最新版 obsidian-mind
