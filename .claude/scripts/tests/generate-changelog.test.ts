@@ -14,6 +14,7 @@ import {
 	toFingerprintKey,
 	pickMarkers,
 	findLatestOpenFingerprint,
+	bumpShardYamlVersion,
 } from "../../../.github/scripts/generate-changelog.ts";
 
 describe("classifyCommit", () => {
@@ -239,6 +240,65 @@ describe("pickMarkers", () => {
 			"mango.md",
 			"zebra.md",
 		]);
+	});
+});
+
+describe("bumpShardYamlVersion", () => {
+	const FIXTURE = [
+		"apiVersion: v1",
+		"name: obsidian-mind",
+		"namespace: breferrari",
+		"version: 6.0.0-beta.1",
+		'description: "AI-augmented Obsidian vault"',
+		"",
+	].join("\n");
+
+	test("rewrites the top-level version line", () => {
+		const out = bumpShardYamlVersion(FIXTURE, "v6.0");
+		assert.match(out, /^version: 6\.0\.0$/m);
+		assert.doesNotMatch(out, /6\.0\.0-beta\.1/);
+	});
+
+	test("normalizes the version (v6.1 → 6.1.0)", () => {
+		const out = bumpShardYamlVersion(FIXTURE, "v6.1");
+		assert.match(out, /^version: 6\.1\.0$/m);
+	});
+
+	test("preserves surrounding lines", () => {
+		const out = bumpShardYamlVersion(FIXTURE, "v6.0");
+		assert.match(out, /^apiVersion: v1$/m);
+		assert.match(out, /^name: obsidian-mind$/m);
+		assert.match(out, /^namespace: breferrari$/m);
+		assert.match(out, /^description: /m);
+	});
+
+	test("idempotent when run twice with the same version", () => {
+		const once = bumpShardYamlVersion(FIXTURE, "v6.0");
+		const twice = bumpShardYamlVersion(once, "v6.0");
+		assert.equal(once, twice);
+	});
+
+	test("throws when no version line is present", () => {
+		const broken = "apiVersion: v1\nname: thing\n";
+		assert.throws(() => bumpShardYamlVersion(broken, "v6.0"), /version:/);
+	});
+
+	test("only rewrites the top-level version, not nested ones", () => {
+		// The regex anchors to a leftmost-column `version:`, so an indented
+		// `version:` inside a list (e.g. shardmind migrations entries) must
+		// be left alone. Use an actually-indented `version:` here, not a
+		// look-alike key like `from_version:` — the latter wouldn't match
+		// the regex regardless and so wouldn't exercise the anchor.
+		const withNested = [
+			"version: 6.0.0-beta.1",
+			"migrations:",
+			"  - version: 5.0.0",
+			"    note: keep this nested version untouched",
+		].join("\n");
+		const out = bumpShardYamlVersion(withNested, "v6.0");
+		assert.match(out, /^version: 6\.0\.0$/m);
+		assert.match(out, /^  - version: 5\.0\.0$/m);
+		assert.match(out, /note: keep this nested version untouched/);
 	});
 });
 

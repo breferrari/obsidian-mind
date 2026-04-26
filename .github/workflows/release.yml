@@ -92,12 +92,18 @@ jobs:
           sed -i 's/^          //' /tmp/release_body.md
           cat /tmp/changelog_section.md >> /tmp/release_body.md
 
-      - name: Commit changelog and manifest
+      - name: Commit changelog and manifests
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add CHANGELOG.md vault-manifest.json
-          git commit -m "release: update CHANGELOG and manifest for $VERSION"
+          # Match the script's ENOENT tolerance: forks without `.shardmind/`
+          # have nothing to stage, and `git add` on a missing path would
+          # fail the workflow.
+          if [ -f .shardmind/shard.yaml ]; then
+            git add .shardmind/shard.yaml
+          fi
+          git commit -m "release: update CHANGELOG and manifests for $VERSION"
           git push origin main
 
       - name: Build vault zip
