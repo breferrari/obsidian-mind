@@ -101,10 +101,11 @@ You: "wrap up"
 
 ```bash
 npm install -g shardmind
+mkdir my-vault && cd my-vault
 shardmind install github:breferrari/obsidian-mind
 ```
 
-The wizard collects your name, organization, vault purpose, agents to include, and whether to enable QMD; the post-install hook personalizes `brain/North Star.md` with your answers. Then:
+`shardmind install` writes into the current directory, so create and enter a fresh folder first. The wizard collects your name, organization, vault purpose, agents to include, and whether to enable QMD; the post-install hook personalizes `brain/North Star.md` with your answers. Then:
 
 1. Open the installed folder as an **Obsidian vault**
 2. Enable the **Obsidian CLI** in Settings → General (requires Obsidian 1.12+)

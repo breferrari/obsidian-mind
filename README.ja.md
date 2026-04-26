@@ -102,10 +102,11 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ```bash
 npm install -g shardmind
+mkdir my-vault && cd my-vault
 shardmind install github:breferrari/obsidian-mind
 ```
 
-ウィザードがあなたの名前、組織、ボールトの目的、含めるエージェント、QMDを有効化するかどうかを収集します。post-installフックがあなたの回答に基づいて`brain/North Star.md`をパーソナライズします。その後：
+`shardmind install` はカレントディレクトリに書き込むため、先に新しいフォルダを作成して移動してください。ウィザードがあなたの名前、組織、ボールトの目的、含めるエージェント、QMDを有効化するかどうかを収集します。post-installフックがあなたの回答に基づいて`brain/North Star.md`をパーソナライズします。その後：
 
 1. インストールされたフォルダを**Obsidianボールト**として開く
 2. 設定 → 一般で**Obsidian CLI**を有効化（Obsidian 1.12以上が必要）

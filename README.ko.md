@@ -102,10 +102,11 @@ You: "wrap up"
 
 ```bash
 npm install -g shardmind
+mkdir my-vault && cd my-vault
 shardmind install github:breferrari/obsidian-mind
 ```
 
-마법사가 이름, 조직, 볼트 목적, 포함할 에이전트, QMD 활성화 여부를 수집합니다. post-install 훅이 답변에 따라 `brain/North Star.md`를 개인화합니다. 그런 다음:
+`shardmind install`은 현재 디렉토리에 기록하므로, 먼저 새 폴더를 만들고 그 안으로 이동하세요. 마법사가 이름, 조직, 볼트 목적, 포함할 에이전트, QMD 활성화 여부를 수집합니다. post-install 훅이 답변에 따라 `brain/North Star.md`를 개인화합니다. 그런 다음:
 
 1. 설치된 폴더를 **Obsidian 볼트**로 엽니다
 2. 설정 → 일반에서 **Obsidian CLI**를 활성화합니다 (Obsidian 1.12+ 필요)
