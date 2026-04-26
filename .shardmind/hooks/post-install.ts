@@ -78,8 +78,18 @@ export async function ensureGitRepo(vaultRoot: string): Promise<void> {
     await access(join(vaultRoot, '.git'));
     console.log('git: repository already present — skipping git init');
     return;
-  } catch {
-    // fall through to init
+  } catch (err) {
+    // ENOENT — the expected case — falls through to `git init`. Any
+    // other code (EACCES on a permission-restricted .git/, EBUSY, …)
+    // means a `.git/` exists but we can't see it; running `git init`
+    // would either silently re-init an existing repo or fail with a
+    // less obvious follow-on error. Surface the original errno so the
+    // user knows why init didn't run.
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      console.error(`git: cannot inspect ${join(vaultRoot, '.git')} (${code}) — skipping git init. Run \`git init\` manually if needed.`);
+      return;
+    }
   }
 
   const ok = await run('git', ['init', '--quiet'], vaultRoot);
@@ -148,9 +158,15 @@ async function bootstrapQmd(vaultRoot: string): Promise<void> {
   }
 }
 
-function run(command: string, args: string[], cwd: string): Promise<boolean> {
+function run(command: string, args: string[], cwd: string, opts: { quiet?: boolean } = {}): Promise<boolean> {
+  // `quiet` discards stdout + stderr — used by `which()` so a successful
+  // tool-availability probe doesn't print the resolved path into the hook
+  // log alongside the prefixed `qmd:` / `git:` messages. The user-visible
+  // subprocess paths (`git init`, `node qmd-bootstrap.ts`) keep `inherit`
+  // so their progress streams through to the install summary.
+  const out: 'ignore' | 'inherit' = opts.quiet ? 'ignore' : 'inherit';
   return new Promise(resolve => {
-    const child = spawn(command, args, { cwd, stdio: ['ignore', 'inherit', 'inherit'], shell: false });
+    const child = spawn(command, args, { cwd, stdio: ['ignore', out, out], shell: false });
     child.on('error', () => resolve(false));
     child.on('exit', code => resolve(code === 0));
   });
@@ -158,5 +174,5 @@ function run(command: string, args: string[], cwd: string): Promise<boolean> {
 
 async function which(binary: string): Promise<boolean> {
   const cmd = process.platform === 'win32' ? 'where' : 'which';
-  return run(cmd, [binary], process.cwd());
+  return run(cmd, [binary], process.cwd(), { quiet: true });
 }

@@ -180,11 +180,20 @@ modules:
     removable: true
 
 # ---------------------------------------------------------------------------
-# Signals — classification patterns consumed by the UserPromptSubmit hook.
-# The hook reads this list at runtime via `shardmind/runtime`; no hardcoded
-# signal table in code. Module-gated signals drop out when the module is
-# excluded. Full multilingual pattern definitions live in
-# `.claude/scripts/lib/signals.ts` (the schema carries just the contract).
+# Signals — classification contract.
+#
+# This block is the spec / source-of-truth for which signals the vault
+# recognizes and where each one routes. Each signal lists a description
+# (what the hook is looking for) plus a `routes_to` field (where the
+# resulting capture should land). Module-gated signals are skipped when
+# their module is excluded.
+#
+# The runtime consumer is `.claude/scripts/classify-message.ts`. As of
+# obsidian-mind v5.1 the multilingual regex tables live in
+# `.claude/scripts/lib/signals.ts` and the classifier reads them
+# directly — not from this schema. Keep the two in sync when adding or
+# removing a signal: the schema entry (here) and the implementation
+# (`.claude/scripts/lib/signals.ts`) describe the same surface.
 # ---------------------------------------------------------------------------
 
 signals:
