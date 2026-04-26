@@ -11,6 +11,16 @@
 - install via ShardMind — wizard setup, modules, safe upgrades
 
 ### Changed
+- mkdir + cd before shardmind install
+- use github: prefix in shardmind install / adopt commands
+
+### Fixed
+- bump shard.yaml version on release
+
+### Added
+- install via ShardMind — wizard setup, modules, safe upgrades
+
+### Changed
 - use github: prefix in shardmind install / adopt commands
 
 ## v5.1 — 2026-04-19
