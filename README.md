@@ -38,7 +38,7 @@ Agent: "You're working on Project Alpha, blocked on the BE contract.
 
 Works with **Claude Code** (full support), **Codex CLI**, and **Gemini CLI** — same hooks, same commands, same vault.
 
-Install via `git clone` or `shardmind install` — same vault either way.
+Install via `shardmind install` or `git clone` — same vault either way.
 
 ---
 
@@ -97,23 +97,29 @@ You: "wrap up"
 
 ## 🚀 Quick Start
 
-1. Clone this repo (or use it as a **GitHub template**)
-2. Open the folder as an **Obsidian vault**
-3. Enable the **Obsidian CLI** in Settings → General (requires Obsidian 1.12+)
-4. Run your agent in the vault directory: **`claude`**, **`codex`**, or **`gemini`**
-5. Fill in **`brain/North Star.md`** with your goals — this grounds every session
-6. Start talking about work
-
-### 📦 Install via ShardMind
-
-Same vault as `git clone`, plus a wizard for personalization, optional modules you can skip, and three-way-merge upgrades. [ShardMind](https://github.com/breferrari/shardmind) is a package manager for Obsidian vault templates; the install adds a `.shardmind/` sidecar that powers all three:
+### 📦 Install via ShardMind (recommended)
 
 ```bash
 npm install -g shardmind
 shardmind install breferrari/obsidian-mind
 ```
 
-The wizard collects your name, organization, vault purpose, and whether to enable QMD; the post-install hook personalizes `brain/North Star.md` with your name. With every value at its default the install is byte-equivalent to `git clone` — clone-UX is preserved exactly. Delete `.shardmind/` and `shard-values.yaml` from the installed vault and it keeps working — ShardMind is additive, not load-bearing.
+The wizard collects your name, organization, vault purpose, agents to include, and whether to enable QMD; the post-install hook personalizes `brain/North Star.md` with your answers. Then:
+
+1. Open the installed folder as an **Obsidian vault**
+2. Enable the **Obsidian CLI** in Settings → General (requires Obsidian 1.12+)
+3. Run your agent in the vault directory: **`claude`**, **`codex`**, or **`gemini`**
+4. Start talking about work
+
+[ShardMind](https://github.com/breferrari/shardmind) is the package manager for Obsidian vault templates. The install adds a `.shardmind/` sidecar that powers the wizard, optional modules (skip what you don't use), and three-way-merge upgrades. With every value at its default the install is byte-equivalent to `git clone` — clone-UX is preserved exactly. Delete `.shardmind/` and `shard-values.yaml` from the installed vault and it keeps working: ShardMind is additive, not load-bearing.
+
+### Or clone directly
+
+```bash
+git clone https://github.com/breferrari/obsidian-mind.git
+```
+
+Or use it as a **GitHub template**. Skip the wizard, get the bare template. Then run through the same 4 steps above, plus fill in **`brain/North Star.md`** with your goals (the ShardMind wizard does this for you).
 
 ### 🔍 Recommended: QMD Semantic Search
 
