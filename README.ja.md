@@ -102,7 +102,7 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ```bash
 npm install -g shardmind
-shardmind install breferrari/obsidian-mind
+shardmind install github:breferrari/obsidian-mind
 ```
 
 ウィザードがあなたの名前、組織、ボールトの目的、含めるエージェント、QMDを有効化するかどうかを収集します。post-installフックがあなたの回答に基づいて`brain/North Star.md`をパーソナライズします。その後：
@@ -465,7 +465,7 @@ git merge upstream/main
 
 ```bash
 npm install -g shardmind
-shardmind adopt breferrari/obsidian-mind
+shardmind adopt github:breferrari/obsidian-mind
 ```
 
 2-way diffのUIがローカルの変更箇所を案内し、ファイルごとに何を残すか確認した上で、エンジンのメタデータを書き込みます。結果：既存のコンテンツが無傷のままのv6管理ボールトが手に入り、以降は`shardmind update`が使えます。再クローン不要。

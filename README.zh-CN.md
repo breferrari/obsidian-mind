@@ -102,7 +102,7 @@ Decision: defer Redis migration. Win: Sarah praised the auth architecture.
 
 ```bash
 npm install -g shardmind
-shardmind install breferrari/obsidian-mind
+shardmind install github:breferrari/obsidian-mind
 ```
 
 向导会收集你的姓名、组织、仓库用途、要包含的 Agent，以及是否启用 QMD。post-install 钩子会根据你的答案个性化 `brain/North Star.md`。然后：
@@ -465,7 +465,7 @@ git merge upstream/main
 
 ```bash
 npm install -g shardmind
-shardmind adopt breferrari/obsidian-mind
+shardmind adopt github:breferrari/obsidian-mind
 ```
 
 2-way diff UI 会引导你查看本地变更，按文件确认要保留的内容，然后写入引擎元数据。结果：你已有的内容完好保留的 v6 受管仓库，从此可以使用 `shardmind update`。无需重新克隆。

@@ -101,7 +101,7 @@ You: "wrap up"
 
 ```bash
 npm install -g shardmind
-shardmind install breferrari/obsidian-mind
+shardmind install github:breferrari/obsidian-mind
 ```
 
 The wizard collects your name, organization, vault purpose, agents to include, and whether to enable QMD; the post-install hook personalizes `brain/North Star.md` with your answers. Then:
@@ -472,7 +472,7 @@ Already cloned obsidian-mind and want the wizard, optional modules, and three-wa
 
 ```bash
 npm install -g shardmind
-shardmind adopt breferrari/obsidian-mind
+shardmind adopt github:breferrari/obsidian-mind
 ```
 
 The 2-way diff UI walks you through any local changes, asks per-file what to keep, then writes the engine metadata. Result: a v6-managed vault with your existing content intact, ready for `shardmind update` from there forward. No re-cloning.

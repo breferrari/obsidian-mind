@@ -102,7 +102,7 @@ You: "wrap up"
 
 ```bash
 npm install -g shardmind
-shardmind install breferrari/obsidian-mind
+shardmind install github:breferrari/obsidian-mind
 ```
 
 마법사가 이름, 조직, 볼트 목적, 포함할 에이전트, QMD 활성화 여부를 수집합니다. post-install 훅이 답변에 따라 `brain/North Star.md`를 개인화합니다. 그런 다음:
@@ -465,7 +465,7 @@ git merge upstream/main
 
 ```bash
 npm install -g shardmind
-shardmind adopt breferrari/obsidian-mind
+shardmind adopt github:breferrari/obsidian-mind
 ```
 
 2-way diff UI가 로컬 변경 사항을 안내하고, 파일별로 무엇을 유지할지 묻고, 엔진 메타데이터를 작성합니다. 결과: 기존 콘텐츠가 그대로 유지된 v6 관리 볼트, 이후로는 `shardmind update`를 사용할 수 있습니다. 다시 클론할 필요 없음.
