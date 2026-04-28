@@ -7,15 +7,27 @@ tags:
 
 # Memories
 
-Persistent context and knowledge retained across sessions. Each topic lives in its own note — follow the links.
+Persistent context and knowledge retained across sessions.
 
-- [[Key Decisions]] — architectural and workflow decisions worth recalling
-- [[Patterns]] — recurring patterns and conventions discovered across work
-- [[Gotchas]] — things that have bitten before and will bite again
-- [[People & Context]] — org structure, teams, review history, dynamics
-- [[North Star]] — living goals document, read at session start
-- [[Skills]] — custom slash commands and workflows
+- [[Key Decisions]] — all architectural and tooling decisions
+- [[Patterns]] — Convex/Clerk/Expo code patterns and AI workflow patterns
+- [[Gotchas]] — known traps (env vars, Windows App Control, Convex metadata overwrites)
+- [[North Star]] — Anis's goals, Viblink focus, tech stack summary
+- [[Skills]] — slash commands reference
 
-## Recent Context
+## Current State (2026-04-28)
 
--
+**Who**: Anis Rangrez, indie developer building Viblink social media app
+**Codebase**: `d:\Viblink` — Expo + Expo Router + Convex + Clerk + NativeWind
+**Memory vault**: `d:\Viblink\VibMind` (this vault, separate git repo)
+**Agent**: Antigravity (Gemini-based)
+
+**AI tooling fully set up:**
+- `code-review-graph` → auto-updates on git commit, run from `d:\Viblink`
+- `obsidian-mind` → this vault, manual updates when you tell the agent things
+- `Superpowers` → 14 skills at `d:\Viblink\.agents\skills\`
+- `Clerk skills` → 6 Expo-specific auth skills
+
+**To start a memory session**: `cd d:\Viblink\VibMind` → open Antigravity → session-start hook fires automatically
+
+**VibMind git is SEPARATE from Viblink git** — `VibMind/` is in Viblink's `.gitignore`
