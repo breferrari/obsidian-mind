@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/breferrari-obsidian-mind-badge.png)](https://mseep.ai/app/breferrari-obsidian-mind)
+
 🌐 **English** | [日本語](README.ja.md) | [中文](README.zh-CN.md) | [한국어](README.ko.md)
 
 <p align="center">
