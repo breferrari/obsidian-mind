@@ -97,7 +97,7 @@ obsidian orphans                                   # Unlinked notes
 
 ### Starting a Substantial Session
 
-The `SessionStart` hook automatically injects rich context: vault file listing, North Star goals, active work, recent git changes, open tasks, and triggers a QMD re-index. Most context is already loaded -- you don't need to manually read files.
+The `SessionStart` hook automatically injects rich context: vault file listing, North Star goals, active work, recent git changes, open tasks (aggregated from `work/active/` and the vault root, excluding infrastructure files), and triggers a QMD re-index. Most context is already loaded -- you don't need to manually read files.
 
 **Shortcut**: Run `/om-standup` for a structured morning kickoff that reads everything and presents a summary with suggested priorities.
 

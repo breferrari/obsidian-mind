@@ -199,6 +199,114 @@ export function qmdArgsWithIndex(
 }
 
 /**
+ * True if a directory-entry name has a `.md` extension. Compared case-
+ * insensitively so files saved as `.MD` or `.Md` (legal on case-insensitive
+ * filesystems like NTFS and APFS, and produced by editors that preserve
+ * pasted casing) are still recognized as markdown.
+ */
+export function isMarkdownFilename(name: string): boolean {
+	return name.toLowerCase().endsWith(".md");
+}
+
+/**
+ * Extract the root-level entries from `vault-manifest.json`'s `infrastructure`
+ * list — files like CLAUDE.md, README.*.md, Home.md that aren't user content
+ * and therefore shouldn't be scanned for open tasks. Glob patterns with `/`
+ * (e.g. `.claude/**`) are excluded because they target subdirectories.
+ *
+ * Returns the raw patterns; matching against filenames is the caller's job
+ * via {@link isInfraFilename}.
+ */
+export function parseInfraRootFilenames(
+	manifestJson: string | null,
+): readonly string[] {
+	if (manifestJson === null) return [];
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(manifestJson);
+	} catch {
+		return [];
+	}
+	if (parsed === null || typeof parsed !== "object") return [];
+	const infra = (parsed as Record<string, unknown>)["infrastructure"];
+	if (!Array.isArray(infra)) return [];
+	return infra.filter(
+		(e): e is string => typeof e === "string" && !e.includes("/"),
+	);
+}
+
+/**
+ * True if `filename` matches any of the given root-level infrastructure
+ * patterns. Patterns are literal filenames (`CLAUDE.md`) or globs with `*`
+ * wildcards (`README.*.md`). Other regex metacharacters are escaped so a
+ * pattern like `foo.md` matches `foo.md`, not `fooXmd`.
+ */
+export function isInfraFilename(
+	filename: string,
+	patterns: readonly string[],
+): boolean {
+	for (const p of patterns) {
+		if (!p.includes("*")) {
+			if (filename === p) return true;
+			continue;
+		}
+		const re = new RegExp(
+			"^" +
+				p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") +
+				"$",
+		);
+		if (re.test(filename)) return true;
+	}
+	return false;
+}
+
+/**
+ * Aggregate unchecked Markdown tasks (`- [ ] …`) across multiple files and
+ * format them as one string grouped by source. Tasks are taken in input
+ * order — the caller decides which sources matter most (e.g. work/active
+ * before vault root) and what counts as a "file". Returns "(no open tasks)"
+ * when nothing matches. Caps total tasks at `limit` so a single noisy file
+ * can't drown the section; non-positive `limit` returns "(no open tasks)".
+ *
+ * Source paths are sanitised before they become group headers — newlines
+ * and carriage returns in a filename (legal on POSIX, possible via shared
+ * drives) would otherwise corrupt the line-based output format and let
+ * downstream parsers mis-attribute tasks to the wrong source.
+ *
+ * Output shape:
+ *
+ *   work/active/project-x.md
+ *   - [ ] task one
+ *   - [ ] task two
+ *
+ *   2026-05-18.md
+ *   - [ ] daily task
+ */
+export function collectOpenTasks(
+	sources: readonly { readonly path: string; readonly content: string }[],
+	limit: number,
+): string {
+	const groups: string[] = [];
+	let collected = 0;
+	for (const { path, content } of sources) {
+		if (collected >= limit) break;
+		const lines = content
+			.split(/\r?\n/)
+			.filter((line) => /^\s*- \[ \]/.test(line));
+		if (lines.length === 0) continue;
+		const taken = lines.slice(0, limit - collected);
+		// Collapse any CR/LF run (POSIX-only filename oddity) to a literal
+		// `\n` escape — bare \r alone would otherwise slip past a /\r?\n/
+		// regex but still corrupt the line-based output on consumers that
+		// treat \r as a line separator (older macOS, some viewers).
+		const safePath = path.replace(/[\r\n]+/g, "\\n");
+		groups.push(`${safePath}\n${taken.join("\n")}`);
+		collected += taken.length;
+	}
+	return groups.length > 0 ? groups.join("\n\n") : "(no open tasks)";
+}
+
+/**
  * Format the "Brain Topics" section — one line per brain/ note with its
  * description from frontmatter, so Claude sees what topic notes exist
  * without loading their full content. Omits North Star (already loaded

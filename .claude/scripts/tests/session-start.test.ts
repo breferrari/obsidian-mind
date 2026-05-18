@@ -20,6 +20,10 @@ import {
 	parseQmdIndex,
 	qmdArgsWithIndex,
 	isValidQmdIndex,
+	parseInfraRootFilenames,
+	isInfraFilename,
+	isMarkdownFilename,
+	collectOpenTasks,
 } from "../lib/session-start.ts";
 
 describe("take", () => {
@@ -296,6 +300,235 @@ describe("qmdArgsWithIndex", () => {
 		const out = qmdArgsWithIndex(null, input);
 		assert.notEqual(out, input);
 		assert.deepEqual(out, input);
+	});
+});
+
+describe("isMarkdownFilename", () => {
+	test("accepts lowercase .md", () => {
+		assert.equal(isMarkdownFilename("note.md"), true);
+	});
+	test("accepts uppercase .MD (case-insensitive filesystem reality)", () => {
+		assert.equal(isMarkdownFilename("PROJECT.MD"), true);
+	});
+	test("accepts mixed-case .Md and .mD", () => {
+		assert.equal(isMarkdownFilename("Daily.Md"), true);
+		assert.equal(isMarkdownFilename("notes.mD"), true);
+	});
+	test("rejects non-markdown extensions", () => {
+		assert.equal(isMarkdownFilename("note.txt"), false);
+		assert.equal(isMarkdownFilename("note.markdown"), false);
+		assert.equal(isMarkdownFilename("note.mdx"), false);
+	});
+	test("rejects bare names without an extension", () => {
+		assert.equal(isMarkdownFilename(""), false);
+		assert.equal(isMarkdownFilename("md"), false);
+		assert.equal(isMarkdownFilename("note"), false);
+	});
+	test("rejects names where .md appears mid-string", () => {
+		assert.equal(isMarkdownFilename("note.md.bak"), false);
+		assert.equal(isMarkdownFilename(".mdrc"), false);
+	});
+});
+
+describe("parseInfraRootFilenames", () => {
+	test("returns empty when manifest is null", () => {
+		assert.deepEqual(parseInfraRootFilenames(null), []);
+	});
+	test("returns empty when JSON is malformed", () => {
+		assert.deepEqual(parseInfraRootFilenames("{ not json"), []);
+	});
+	test("returns empty when parsed value is not an object", () => {
+		assert.deepEqual(parseInfraRootFilenames('"a string"'), []);
+		assert.deepEqual(parseInfraRootFilenames("null"), []);
+	});
+	test("returns empty when infrastructure field is absent", () => {
+		assert.deepEqual(parseInfraRootFilenames(JSON.stringify({})), []);
+	});
+	test("returns empty when infrastructure field is not an array", () => {
+		assert.deepEqual(
+			parseInfraRootFilenames(JSON.stringify({ infrastructure: "CLAUDE.md" })),
+			[],
+		);
+	});
+	test("returns only the root-level entries (filters out anything containing '/')", () => {
+		const manifest = JSON.stringify({
+			infrastructure: [
+				"CLAUDE.md",
+				"README.*.md",
+				".claude/**",
+				"templates/**",
+				"Home.md",
+			],
+		});
+		assert.deepEqual(parseInfraRootFilenames(manifest), [
+			"CLAUDE.md",
+			"README.*.md",
+			"Home.md",
+		]);
+	});
+	test("filters out non-string entries silently", () => {
+		const manifest = JSON.stringify({
+			infrastructure: ["CLAUDE.md", 42, null, "Home.md"],
+		});
+		assert.deepEqual(parseInfraRootFilenames(manifest), [
+			"CLAUDE.md",
+			"Home.md",
+		]);
+	});
+});
+
+describe("isInfraFilename", () => {
+	// Mirrors the vault-manifest.json shape: literal entries for the canonical
+	// names plus a glob for localized README variants. Both forms must work.
+	const patterns = ["CLAUDE.md", "README.md", "README.*.md", "Home.md"];
+
+	test("matches literal filenames exactly", () => {
+		assert.equal(isInfraFilename("CLAUDE.md", patterns), true);
+		assert.equal(isInfraFilename("README.md", patterns), true);
+		assert.equal(isInfraFilename("Home.md", patterns), true);
+	});
+	test("rejects close-but-not-equal filenames", () => {
+		assert.equal(isInfraFilename("claude.md", patterns), false); // case-sensitive
+		assert.equal(isInfraFilename("CLAUDE.md.bak", patterns), false);
+		assert.equal(isInfraFilename("MY-CLAUDE.md", patterns), false);
+	});
+	test("glob patterns match the localized variants they target", () => {
+		assert.equal(isInfraFilename("README.ja.md", patterns), true);
+		assert.equal(isInfraFilename("README.zh-CN.md", patterns), true);
+	});
+	test("bare * pattern matches every filename — documented footgun", () => {
+		// If a user writes `"infrastructure": ["*"]` in vault-manifest.json,
+		// every root-level file is treated as infra and openTasks empties out.
+		// The behavior is "you asked, you get" — but locked here so a future
+		// stricter parser doesn't silently regress this corner.
+		assert.equal(isInfraFilename("anything.md", ["*"]), true);
+		assert.equal(isInfraFilename("", ["*"]), true);
+	});
+	test("multiple wildcards in one pattern", () => {
+		assert.equal(isInfraFilename("foo.bar.md", ["*.bar.*"]), true);
+		assert.equal(isInfraFilename("foo.qux.md", ["*.bar.*"]), false);
+	});
+	test("escapes regex metacharacters in literal segments of patterns", () => {
+		// `.` in `CLAUDE.md` must not match `CLAUDExmd`
+		assert.equal(isInfraFilename("CLAUDExmd", patterns), false);
+	});
+	test("returns false on empty pattern list", () => {
+		assert.equal(isInfraFilename("CLAUDE.md", []), false);
+	});
+	test("user content files are not infra", () => {
+		assert.equal(isInfraFilename("2026-05-18.md", patterns), false);
+		assert.equal(isInfraFilename("my-project.md", patterns), false);
+	});
+});
+
+describe("collectOpenTasks", () => {
+	test("aggregates tasks grouped by source, preserving input order", () => {
+		const sources = [
+			{ path: "work/active/a.md", content: "- [ ] task A1\n- [ ] task A2" },
+			{ path: "work/active/b.md", content: "- [ ] task B1" },
+		];
+		assert.equal(
+			collectOpenTasks(sources, 10),
+			"work/active/a.md\n- [ ] task A1\n- [ ] task A2\n\nwork/active/b.md\n- [ ] task B1",
+		);
+	});
+	test("skips sources with no unchecked tasks", () => {
+		const sources = [
+			{ path: "a.md", content: "# Heading\n\nprose only" },
+			{ path: "b.md", content: "- [ ] real task" },
+		];
+		assert.equal(collectOpenTasks(sources, 10), "b.md\n- [ ] real task");
+	});
+	test("ignores checked tasks (both [x] and [X])", () => {
+		const sources = [
+			{
+				path: "a.md",
+				content: "- [ ] open\n- [x] done\n- [X] also done\n- [ ] still open",
+			},
+		];
+		assert.equal(
+			collectOpenTasks(sources, 10),
+			"a.md\n- [ ] open\n- [ ] still open",
+		);
+	});
+	test("preserves leading indentation on nested tasks", () => {
+		const sources = [
+			{ path: "a.md", content: "    - [ ] nested\n- [ ] top-level" },
+		];
+		assert.equal(
+			collectOpenTasks(sources, 10),
+			"a.md\n    - [ ] nested\n- [ ] top-level",
+		);
+	});
+	test("handles CRLF line endings", () => {
+		const sources = [{ path: "a.md", content: "- [ ] one\r\n- [ ] two\r\n" }];
+		assert.equal(collectOpenTasks(sources, 10), "a.md\n- [ ] one\n- [ ] two");
+	});
+	test("respects the total limit across multiple sources", () => {
+		const sources = [
+			{ path: "a.md", content: "- [ ] a1\n- [ ] a2\n- [ ] a3" },
+			{ path: "b.md", content: "- [ ] b1\n- [ ] b2" },
+		];
+		// limit 4: a1, a2, a3 from a.md (3); then 1 task from b.md
+		assert.equal(
+			collectOpenTasks(sources, 4),
+			"a.md\n- [ ] a1\n- [ ] a2\n- [ ] a3\n\nb.md\n- [ ] b1",
+		);
+	});
+	test("stops emitting groups once limit is fully consumed", () => {
+		const sources = [
+			{ path: "a.md", content: "- [ ] a1\n- [ ] a2" },
+			{ path: "b.md", content: "- [ ] b1" },
+		];
+		assert.equal(collectOpenTasks(sources, 2), "a.md\n- [ ] a1\n- [ ] a2");
+	});
+	test("empty source list → '(no open tasks)'", () => {
+		assert.equal(collectOpenTasks([], 10), "(no open tasks)");
+	});
+	test("all sources empty of tasks → '(no open tasks)'", () => {
+		const sources = [
+			{ path: "a.md", content: "# Heading\n\nprose" },
+			{ path: "b.md", content: "- [x] done" },
+		];
+		assert.equal(collectOpenTasks(sources, 10), "(no open tasks)");
+	});
+	test("ignores non-task list items like bare bullets and starred lists", () => {
+		const sources = [
+			{
+				path: "a.md",
+				content: "- just a bullet\n- [ ] real task\n* [ ] not a dash",
+			},
+		];
+		assert.equal(collectOpenTasks(sources, 10), "a.md\n- [ ] real task");
+	});
+	test("limit of 0 yields '(no open tasks)' even when sources are non-empty", () => {
+		const sources = [{ path: "a.md", content: "- [ ] task one" }];
+		assert.equal(collectOpenTasks(sources, 0), "(no open tasks)");
+	});
+	test("negative limit is treated like zero (no group ever emits)", () => {
+		const sources = [{ path: "a.md", content: "- [ ] task one" }];
+		assert.equal(collectOpenTasks(sources, -5), "(no open tasks)");
+	});
+	test("newlines in source path are escaped so they cannot corrupt the line-based output", () => {
+		// readdirSync on POSIX can return filenames containing newlines; if such
+		// a name reached the output unescaped, downstream parsers would split
+		// the path across two lines and misattribute the following task.
+		const sources = [
+			{ path: "work/active/oops\nname.md", content: "- [ ] task one" },
+		];
+		assert.equal(
+			collectOpenTasks(sources, 10),
+			"work/active/oops\\nname.md\n- [ ] task one",
+		);
+	});
+	test("carriage-return in source path is also escaped (Windows network shares)", () => {
+		const sources = [
+			{ path: "work/active/odd\rname.md", content: "- [ ] task one" },
+		];
+		assert.equal(
+			collectOpenTasks(sources, 10),
+			"work/active/odd\\nname.md\n- [ ] task one",
+		);
 	});
 });
 
