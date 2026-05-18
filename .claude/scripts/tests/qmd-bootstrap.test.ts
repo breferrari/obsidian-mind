@@ -1,15 +1,9 @@
 /**
- * Unit tests for the qmd-bootstrap pure helpers.
- *
- * Locks the argv shape we send to `qmd collection add` so issue #85 can't
- * regress silently: the collection name MUST flow via `--name <name>` (not as
- * a positional, which qmd's parseArgs ignores under strict:false) and the
- * glob MUST flow via `--mask <glob>` (qmd does not recognize `--pattern`).
- *
- * Also locks the "already exists" benign-failure predicate so the bootstrap's
- * idempotent re-run path doesn't accidentally swallow the unrelated
- * "A collection already exists for this path and pattern" warning, which
- * signals a stale-name collision that needs user attention.
+ * Locks the argv shape for `qmd collection add` and the benign-failure
+ * matcher. qmd's CLI parses with `strict: false`, so a positional name or
+ * `--pattern` flag are silently dropped — these tests catch any drift back
+ * to that shape and any over-broad matcher that would swallow qmd's
+ * path-collision warning.
  */
 
 import { test, describe } from "node:test";
@@ -59,8 +53,8 @@ describe("buildCollectionAddArgs", () => {
 
 	test("`--mask` immediately precedes the glob value (NOT `--pattern`)", () => {
 		// qmd reads cli.values.mask only; --pattern is silently swallowed under
-		// parseArgs strict:false. Locking the flag name here prevents a
-		// well-meaning rename from re-introducing the issue #85 silent-noop.
+		// parseArgs strict:false. Locking the flag name here so a well-meaning
+		// rename can't re-introduce the silent-noop.
 		const args = buildCollectionAddArgs("idx", "name");
 		assert.equal(args.includes("--pattern"), false, "must not pass `--pattern`");
 		const maskIdx = args.indexOf("--mask");
@@ -104,6 +98,17 @@ describe("makeCollectionAddBenignMatcher", () => {
 		);
 	});
 
+	test("matches when the message appears on BOTH streams (split output)", () => {
+		const matches = makeCollectionAddBenignMatcher("obsidian-mind");
+		assert.equal(
+			matches({
+				stdout: "Collection 'obsidian-mind' already exists.",
+				stderr: "Collection 'obsidian-mind' already exists.",
+			}),
+			true,
+		);
+	});
+
 	test("matches double-quoted variant for output-format resilience", () => {
 		const matches = makeCollectionAddBenignMatcher("obsidian-mind");
 		assert.equal(
@@ -127,11 +132,9 @@ describe("makeCollectionAddBenignMatcher", () => {
 	});
 
 	test("does NOT swallow qmd's path-collision warning (stale-name upgrade case)", () => {
-		// Issue #85 upgraders: a pre-fix stock-Windows install registered a
-		// collection named like `C:\Users\foo\my-vault`. After upgrade, qmd
-		// emits this warning when our --name doesn't conflict by name but the
-		// path+pattern does. Treating it as benign would silently leave the
-		// stale collection in place and break `context add`.
+		// Real qmd output when a different-named collection points at the same
+		// path+glob. Swallowing it leaves the stale collection in place and
+		// `context add` then fails downstream.
 		const matches = makeCollectionAddBenignMatcher("obsidian-mind");
 		const stderr =
 			"A collection already exists for this path and pattern:\n" +

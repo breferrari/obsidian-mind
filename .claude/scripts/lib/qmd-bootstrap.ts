@@ -1,31 +1,18 @@
 /**
- * Pure helpers extracted from `scripts/qmd-bootstrap.ts` so they can be
- * exercised by unit tests without spawning qmd.
+ * Pure helpers for `scripts/qmd-bootstrap.ts`, factored out for unit-testing
+ * without spawning qmd.
  *
- * QMD's `collection add` reads the collection name only from `--name` and the
- * glob only from `--mask`. The CLI uses `util.parseArgs` with `strict: false`,
- * so a positional name and a `--pattern` flag are both silently dropped. We
- * also avoid QMD's path-based auto-derivation (split on '/' only), which
- * misbehaves on native Windows backslash paths — see issue #85.
+ * Two qmd-2.x quirks drive the shape here. Its CLI runs `util.parseArgs` with
+ * `strict: false`, so a positional name and a `--pattern` flag are both
+ * silently dropped — name comes from `--name`, glob from `--mask`. And when
+ * `--name` is absent, qmd auto-derives the name from `pwd.split('/').pop()`,
+ * which mis-fires on native Windows backslash paths.
  */
 
 import { escapeRegex } from "./regex.ts";
 
 const DEFAULT_GLOB = "**/*.md";
 
-/**
- * Build the argv passed to `qmd collection add` for an obsidian-mind vault.
- *
- * Shape: `--index <index> collection add . --name <name> --mask <glob>`.
- *
- *   - The positional `.` is read by QMD as the working directory (cli.args[1]).
- *     A value placed there cannot be repurposed as the collection name.
- *   - `--name <name>` is the only way to set the collection name without
- *     relying on QMD's auto-derivation, which splits the pwd on '/' only
- *     and falls back to `process.cwd()` on platforms where `$PWD` is unset
- *     (stock Windows PowerShell / CMD).
- *   - `--mask <glob>` is the real glob flag; QMD silently ignores `--pattern`.
- */
 export function buildCollectionAddArgs(
 	index: string,
 	collectionName: string,
@@ -45,15 +32,10 @@ export function buildCollectionAddArgs(
 }
 
 /**
- * Predicate for the bootstrap's `runIdempotent` helper. Returns true when
- * QMD's output reports that the collection we asked for already exists
- * **by name** — the benign case on a re-run of the bootstrap.
- *
- * Crucially this does NOT match QMD's other "A collection already exists for
- * this path and pattern:" warning, which signals a stale-name collision (an
- * upgrader who has an old wrongly-named collection pointing at the same vault
- * path after the issue #85 fix). That case must surface so the user follows
- * QMD's own `qmd collection remove ...` instruction, not be silently swallowed.
+ * Matches qmd's by-name "already exists" output (benign on bootstrap re-run).
+ * Does NOT match qmd's "A collection already exists for this path and pattern"
+ * warning — that signals a stale-name collision and must surface so the user
+ * runs the `qmd collection remove ...` qmd itself suggests.
  */
 export function makeCollectionAddBenignMatcher(
 	expectedName: string,

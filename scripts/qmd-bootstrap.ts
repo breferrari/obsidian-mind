@@ -186,13 +186,14 @@ function main(): void {
 
 	const collectionName = manifest.template ?? index;
 	// The collection name ends up as a YAML key, a `qmd://` URL segment, and a
-	// SQL identifier inside qmd's store. Apply the same restricted character
-	// set we already enforce on `qmd_index`, so a typo'd `template` field can't
-	// land an unparseable identifier in qmd's config.
+	// SQL identifier inside qmd's store. Same character class as `qmd_index`
+	// so a typo'd `template` field can't land an unparseable identifier.
+	// (`qmd_index` was validated above, so a failure here can only come from
+	// `template`.)
 	if (!isValidQmdIndex(collectionName)) {
 		process.stderr.write(
-			`vault-manifest.json collection name ${JSON.stringify(collectionName)} ` +
-				`(derived from \`template\` or \`qmd_index\`) is not a valid identifier.\n` +
+			`vault-manifest.json \`template\` field value ${JSON.stringify(collectionName)} ` +
+				"is not a valid qmd identifier.\n" +
 				"Allowed: alphanumerics, dot, dash, underscore; must start with an alphanumeric.\n",
 		);
 		process.exit(1);
@@ -204,17 +205,22 @@ function main(): void {
 
 	process.stdout.write(`→ Bootstrapping QMD index '${index}'\n`);
 
-	// `collection add` fails with a specific message when a collection by THIS
-	// name is already registered — that's the idempotent case we expect on a
-	// re-run. The benign-matcher binds to `collectionName` so qmd's other
-	// "A collection already exists for this path and pattern" warning (which
-	// signals a stale-name collision, e.g. an upgrader's pre-#85 collection)
-	// surfaces loudly instead of being swallowed.
+	// Re-runs are idempotent (matcher recognises the by-name "already exists"
+	// case); a path-collision warning is intentionally NOT swallowed.
 	runIdempotent(
 		entry,
 		buildCollectionAddArgs(index, collectionName),
 		`Registering collection '${collectionName}' (mask **/*.md)`,
 		makeCollectionAddBenignMatcher(collectionName),
+	);
+
+	// Round-trip the registration: if a future qmd CLI change silently breaks
+	// our argv shape, this is where we find out — `collection show` exits 1
+	// with "Collection not found: <name>" rather than running past the issue.
+	run(
+		entry,
+		["--index", index, "collection", "show", collectionName],
+		`Verifying collection '${collectionName}' is registered`,
 	);
 
 	// Re-attach the context string so edits to vault-manifest.json propagate.
