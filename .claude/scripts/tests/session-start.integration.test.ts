@@ -51,7 +51,19 @@ before(() => {
 });
 
 after(() => {
-	if (TMP_DIR) rmSync(TMP_DIR, { recursive: true, force: true });
+	// `maxRetries` + `retryDelay` is Node's documented Windows guard against
+	// transient `EBUSY` / `EPERM` on rmdir when child processes or the OS
+	// haven't fully released file handles yet. On Windows CI the test's tmp
+	// dir occasionally lingers a few seconds after the detached qmd worker
+	// finishes; retrying with linear backoff is the idiomatic fix.
+	if (TMP_DIR) {
+		rmSync(TMP_DIR, {
+			recursive: true,
+			force: true,
+			maxRetries: 10,
+			retryDelay: 200,
+		});
+	}
 });
 
 const runHook = () => spawnHook(SCRIPT, "", { CLAUDE_PROJECT_DIR: TMP_DIR });
