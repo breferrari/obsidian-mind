@@ -62,10 +62,13 @@ describe("shouldRefreshForPath — rejects non-markdown writes", () => {
 		assert.equal(shouldRefreshForPath(""), false);
 	});
 	test("rejects non-string (defensive)", () => {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		assert.equal(shouldRefreshForPath(undefined as any), false);
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		assert.equal(shouldRefreshForPath(null as any), false);
+		// Function takes `unknown` so the runtime narrowing is the type
+		// guard for downstream — no escape hatch needed in callers or tests.
+		assert.equal(shouldRefreshForPath(undefined), false);
+		assert.equal(shouldRefreshForPath(null), false);
+		assert.equal(shouldRefreshForPath(42), false);
+		assert.equal(shouldRefreshForPath({}), false);
+		assert.equal(shouldRefreshForPath([]), false);
 	});
 	test("rejects .txt, .json, .ts, .yaml", () => {
 		assert.equal(shouldRefreshForPath("work/note.txt"), false);
