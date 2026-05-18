@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/session-start.ts\"",
+            "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/session-start.ts\"",
             "timeout": 30000
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/classify-message.ts\"",
+            "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/classify-message.ts\"",
             "timeout": 15000
           }
         ]
@@ -29,12 +29,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/validate-write.ts\"",
+            "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/validate-write.ts\"",
             "timeout": 15000
           },
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/qmd-refresh.ts\"",
+            "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/qmd-refresh.ts\"",
             "timeout": 15000
           }
         ]
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/pre-compact.ts\"",
+            "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/pre-compact.ts\"",
             "timeout": 30000
           }
         ]
@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/stop-checklist.ts\"",
+            "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${GEMINI_PROJECT_DIR:-.}/.claude/scripts/stop-checklist.ts\"",
             "timeout": 5000
           }
         ]

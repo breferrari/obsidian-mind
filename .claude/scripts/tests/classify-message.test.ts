@@ -338,8 +338,13 @@ describe("classify-message (subprocess)", () => {
 	});
 
 	test("empty stdin", () => {
-		const { code } = runScript(null);
+		// Regression guard: empty stdin must short-circuit AND keep stderr
+		// clean. Without the `--disable-warning=ExperimentalWarning` flag
+		// in _helpers.ts, Node's type-stripping warning would leak here.
+		const { code, stdout, stderr } = runScript(null);
 		assert.equal(code, 0);
+		assert.equal(stdout.trim(), "");
+		assert.equal(stderr, "");
 	});
 
 	test("empty prompt string", () => {

@@ -42,11 +42,17 @@ const SKIP_SEGMENTS: readonly string[] = [
  * normalized so Windows paths (`C:\\vault\\note.md`) are handled the same
  * as Unix paths.
  *
+ * Parameter is typed `unknown` because the production caller pulls it
+ * from a hook JSON payload (`tool_input.file_path` is `unknown` at the
+ * type boundary), so the runtime narrowing here is the type guard for
+ * downstream code — tests pass `null` / `undefined` directly to lock the
+ * defensive path without needing an `as any` escape.
+ *
  * Over-triggering is harmless (qmd update is idempotent and silent on
  * no-op); under-triggering is the failure mode we optimize against, so
  * the filter is deliberately permissive beyond the three skip segments.
  */
-export function shouldRefreshForPath(filePath: string): boolean {
+export function shouldRefreshForPath(filePath: unknown): boolean {
 	if (typeof filePath !== "string" || filePath === "") return false;
 	if (!filePath.toLowerCase().endsWith(".md")) return false;
 	const normalized = "/" + filePath.replaceAll("\\", "/");
@@ -180,7 +186,11 @@ function touchSentinel(sentinelPath: string): void {
 function spawnDetachedWorker(workerPath: string, logPrefix: string): void {
 	const child = spawn(
 		process.execPath,
-		["--experimental-strip-types", workerPath],
+		[
+			"--disable-warning=ExperimentalWarning",
+			"--experimental-strip-types",
+			workerPath,
+		],
 		{
 			detached: true,
 			stdio: "ignore",

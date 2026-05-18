@@ -3,10 +3,10 @@
  *
  * Exercises the real stdin → decision → sentinel pipeline by spawning
  * the hook entry script exactly the way each agent's settings.json
- * would: `node --experimental-strip-types qmd-refresh.ts` with a JSON
- * payload on stdin. The sentinel file is the only observable the hook
- * produces (stdout must stay silent), so each test asserts on sentinel
- * presence / mtime + exit code.
+ * would: `node --disable-warning=ExperimentalWarning --experimental-strip-types
+ * qmd-refresh.ts` with a JSON payload on stdin. The sentinel file is the
+ * only observable the hook produces (stdout AND stderr must stay silent),
+ * so each test asserts on sentinel presence / mtime + exit code.
  *
  * Deliberately does NOT depend on qmd being installed. The hook's
  * short-circuit when `resolveQmdEntry()` returns null means the
@@ -103,77 +103,88 @@ describe("qmd-refresh — silent no-op on ineligible inputs", () => {
 	});
 
 	test("malformed JSON exits 0 silently", () => {
-		const { stdout, code } = runHook("not json {{{");
+		const { stdout, stderr, code } = runHook("not json {{{");
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		assert.equal(sentinelMtime(), null);
 	});
 
 	test("missing tool_input exits 0 silently", () => {
-		const { stdout, code } = runHook({});
+		const { stdout, stderr, code } = runHook({});
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		assert.equal(sentinelMtime(), null);
 	});
 
 	test("null tool_input exits 0 silently", () => {
-		const { stdout, code } = runHook({ tool_input: null });
+		const { stdout, stderr, code } = runHook({ tool_input: null });
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		assert.equal(sentinelMtime(), null);
 	});
 
 	test("non-string file_path exits 0 silently", () => {
-		const { stdout, code } = runHook({ tool_input: { file_path: 42 } });
+		const { stdout, stderr, code } = runHook({
+			tool_input: { file_path: 42 },
+		});
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		assert.equal(sentinelMtime(), null);
 	});
 
 	test("non-markdown path exits 0 silently", () => {
-		const { stdout, code } = runHook({
+		const { stdout, stderr, code } = runHook({
 			tool_input: { file_path: "/vault/work/active/note.txt" },
 		});
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		assert.equal(sentinelMtime(), null);
 	});
 
 	test(".git path exits 0 silently", () => {
-		const { stdout, code } = runHook({
+		const { stdout, stderr, code } = runHook({
 			tool_input: { file_path: "/vault/.git/HEAD.md" },
 		});
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		assert.equal(sentinelMtime(), null);
 	});
 
 	test(".obsidian path exits 0 silently", () => {
-		const { stdout, code } = runHook({
+		const { stdout, stderr, code } = runHook({
 			tool_input: { file_path: "/vault/.obsidian/workspace.md" },
 		});
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		assert.equal(sentinelMtime(), null);
 	});
 
 	test("node_modules path exits 0 silently", () => {
-		const { stdout, code } = runHook({
+		const { stdout, stderr, code } = runHook({
 			tool_input: {
 				file_path: "/vault/.claude/scripts/node_modules/foo/README.md",
 			},
 		});
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		assert.equal(sentinelMtime(), null);
 	});
 
 	test("Windows-form skip path exits 0 silently", () => {
-		const { stdout, code } = runHook({
+		const { stdout, stderr, code } = runHook({
 			tool_input: { file_path: "C:\\vault\\.git\\info\\note.md" },
 		});
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		assert.equal(sentinelMtime(), null);
 	});
 });
@@ -186,12 +197,13 @@ describe("qmd-refresh — debounce", () => {
 		const before = sentinelMtime();
 		assert.ok(before !== null, "sentinel should exist after writeFileSync");
 
-		const { stdout, code } = runHook({
+		const { stdout, stderr, code } = runHook({
 			tool_input: { file_path: join(VAULT_ROOT, "work/active/note.md") },
 		});
 
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
+		assert.equal(stderr, "");
 		// A debounced run must not bump the sentinel mtime; the whole
 		// point is that a burst of writes only spawns one worker per
 		// window.

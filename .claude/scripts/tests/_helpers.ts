@@ -2,9 +2,12 @@
  * Shared helpers for hook-entry integration tests.
  *
  * runScript spawns the hook entry point the same way settings.json does:
- * `node --experimental-strip-types <script>` with JSON on stdin. Used by
- * classify-message.test.ts and validate-write.test.ts to exercise the
- * full stdin → stdout pipeline under the real runtime.
+ * `node --disable-warning=ExperimentalWarning --experimental-strip-types
+ * <script>` with JSON on stdin. The disable-warning flag mirrors the
+ * production hook command exactly so stderr-cleanliness assertions don't
+ * trip on Node's type-stripping warning (which is unrelated to the hook
+ * under test). Used by classify-message.test.ts and validate-write.test.ts
+ * to exercise the full stdin → stdout pipeline under the real runtime.
  *
  * hostPath normalizes POSIX-style literal test paths (e.g. `"/Users/x/foo"`)
  * to the host platform via path.resolve. Needed on Windows, where the raw
@@ -38,7 +41,11 @@ export function runScript(
 				: JSON.stringify(stdin);
 	const proc = spawnSync(
 		process.execPath,
-		["--experimental-strip-types", scriptPath],
+		[
+			"--disable-warning=ExperimentalWarning",
+			"--experimental-strip-types",
+			scriptPath,
+		],
 		{
 			input,
 			encoding: "utf-8",
