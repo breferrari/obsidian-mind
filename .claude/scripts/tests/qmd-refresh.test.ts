@@ -248,19 +248,27 @@ describe("composeWorkerInvocations", () => {
 		}
 	});
 
-	test("falls back to bare `qmd` with shell: true when entry is null", () => {
+	test("falls back to single-string `qmd …` shell command when entry is null", () => {
+		// Args fold into cmd at build time so the spawn site uses shell:true
+		// WITHOUT args — Node 24's DEP0190 only fires on the deprecated
+		// args+shell concatenation pattern.
 		const invs = composeWorkerInvocations("v", null);
-		for (const inv of invs) {
-			assert.equal(inv.cmd, "qmd");
+		const subcommands = ["update", "embed", "update"];
+		invs.forEach((inv, i) => {
+			assert.equal(inv.cmd, `qmd --index v ${subcommands[i]}`);
+			assert.deepEqual(inv.args, []);
 			assert.equal(inv.shell, true);
-		}
+		});
 	});
 
 	test("fallback preserves --index threading across all steps", () => {
 		const invs = composeWorkerInvocations("vault-2", null);
-		assert.deepEqual(invs[0]?.args, ["--index", "vault-2", "update"]);
-		assert.deepEqual(invs[1]?.args, ["--index", "vault-2", "embed"]);
-		assert.deepEqual(invs[2]?.args, ["--index", "vault-2", "update"]);
+		assert.equal(invs[0]?.cmd, "qmd --index vault-2 update");
+		assert.equal(invs[1]?.cmd, "qmd --index vault-2 embed");
+		assert.equal(invs[2]?.cmd, "qmd --index vault-2 update");
+		for (const inv of invs) {
+			assert.deepEqual(inv.args, []);
+		}
 	});
 
 	test("embed gets a longer budget than update (model download slot)", () => {

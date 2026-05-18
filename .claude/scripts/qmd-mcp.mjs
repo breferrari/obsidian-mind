@@ -67,7 +67,12 @@ export function resolveQmdEntry() {
 	// Fallback for global npm installs that aren't on this package's resolution
 	// path — ask npm directly where global packages live. Bounded timeout so a
 	// hung npm process can't block MCP server startup indefinitely.
-	const npmRoot = spawnSync("npm", ["root", "-g"], {
+	//
+	// Single-string command with shell:true rather than args+shell so this
+	// stays clean on Node 24 (DEP0190 — args concatenated with shell:true is
+	// an injection risk in the general case; our command is a literal
+	// constant so the concatenated form is safe).
+	const npmRoot = spawnSync("npm root -g", {
 		shell: true,
 		encoding: "utf8",
 		timeout: 3000,
@@ -146,13 +151,17 @@ export function resolveIndexSqlitePath(indexName, env, home) {
  * When `qmdIndex` is a non-empty string, `--index <name>` is prepended to
  * the mcp subcommand; otherwise the invocation matches the pre-per-vault
  * shape for backward compatibility.
+ *
+ * The shell-fallback path folds args into a single command string so the
+ * spawn site uses shell:true WITHOUT args, dodging Node 24's DEP0190
+ * deprecation of the args+shell concatenation pattern.
  */
 export function buildLaunchCommand(entry, extraArgs = [], qmdIndex = null) {
 	const mcpArgs = qmdIndex ? ["--index", qmdIndex, "mcp"] : ["mcp"];
 	const qmdArgs = [...mcpArgs, ...extraArgs];
 	return entry
 		? { cmd: process.execPath, args: [entry, ...qmdArgs], shell: false }
-		: { cmd: "qmd", args: qmdArgs, shell: true };
+		: { cmd: ["qmd", ...qmdArgs].join(" "), args: [], shell: true };
 }
 
 function readManifestRaw() {

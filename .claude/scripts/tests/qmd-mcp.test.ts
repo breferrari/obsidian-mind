@@ -76,16 +76,21 @@ describe("buildLaunchCommand", () => {
 		]);
 	});
 
-	test("falls back to bare `qmd` with shell: true when resolution returns null", () => {
+	test("falls back to a single-string shell command when resolution returns null", () => {
+		// Single-string command with shell:true (not args+shell) so Node 24
+		// doesn't fire DEP0190. Args fold into the cmd string at build time
+		// so the spawn site can't accidentally reintroduce the deprecated
+		// args+shell pattern.
 		const { cmd, args, shell } = buildLaunchCommand(null, []);
-		assert.equal(cmd, "qmd");
-		assert.deepEqual(args, ["mcp"]);
+		assert.equal(cmd, "qmd mcp");
+		assert.deepEqual(args, []);
 		assert.equal(shell, true);
 	});
 
-	test("fallback path still forwards extra argv", () => {
-		const { args } = buildLaunchCommand(null, ["--debug"]);
-		assert.deepEqual(args, ["mcp", "--debug"]);
+	test("fallback path folds extra argv into the cmd string", () => {
+		const { cmd, args } = buildLaunchCommand(null, ["--debug"]);
+		assert.equal(cmd, "qmd mcp --debug");
+		assert.deepEqual(args, []);
 	});
 
 	test("prepends --index <name> when a qmdIndex is provided (resolved branch)", () => {
@@ -99,8 +104,9 @@ describe("buildLaunchCommand", () => {
 	});
 
 	test("prepends --index <name> when a qmdIndex is provided (fallback branch)", () => {
-		const { args } = buildLaunchCommand(null, [], "my-vault");
-		assert.deepEqual(args, ["--index", "my-vault", "mcp"]);
+		const { cmd, args } = buildLaunchCommand(null, [], "my-vault");
+		assert.equal(cmd, "qmd --index my-vault mcp");
+		assert.deepEqual(args, []);
 	});
 
 	test("qmdIndex + extra argv compose correctly", () => {

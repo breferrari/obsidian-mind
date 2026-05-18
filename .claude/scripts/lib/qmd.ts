@@ -41,7 +41,13 @@ export function resolveQmdEntry(): string | null {
 	// Fallback for global npm installs that aren't on this package's resolution
 	// path — ask npm directly where global packages live. Bounded timeout so a
 	// hung npm process can't block a fire-and-forget hook indefinitely.
-	const npmRoot = spawnSync("npm", ["root", "-g"], {
+	//
+	// Single-string command with `shell: true` rather than args+shell so this
+	// stays clean on Node 24, which emits DEP0190 when args are passed with
+	// shell:true (the args get concatenated into the shell command unescaped,
+	// a real injection risk in the general case). Our command is a literal
+	// constant — no user input — so the concatenated form is safe.
+	const npmRoot = spawnSync("npm root -g", {
 		shell: true,
 		encoding: "utf8",
 		timeout: 3000,
@@ -62,6 +68,14 @@ export function resolveQmdEntry(): string | null {
  * entrypoint resolves, `process.execPath` runs it directly with no shell
  * (identical on every platform). When it doesn't, fall back to `qmd` via
  * the platform shell — best-effort for non-npm installs.
+ *
+ * The shell-fallback path returns the whole invocation in `cmd` with an
+ * empty `args` so callers spawn it as a single shell command, not as
+ * `args` concatenated with `shell:true` — which Node 24 deprecates
+ * (DEP0190) because args+shell concatenation is an injection risk in
+ * the general case. Our subcommand args are typically literal constants,
+ * but we route through the safe form everywhere so a future caller can't
+ * accidentally introduce a shell-injection vector.
  */
 export function buildQmdCommand(
 	entry: string | null,
@@ -77,5 +91,9 @@ export function buildQmdCommand(
 				args: [entry, ...subcommandArgs],
 				shell: false,
 			}
-		: { cmd: "qmd", args: [...subcommandArgs], shell: true };
+		: {
+				cmd: ["qmd", ...subcommandArgs].join(" "),
+				args: [],
+				shell: true,
+			};
 }
