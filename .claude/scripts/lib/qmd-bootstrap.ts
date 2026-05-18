@@ -46,3 +46,22 @@ export function makeCollectionAddBenignMatcher(
 	);
 	return (o) => re.test(o.stderr) || re.test(o.stdout);
 }
+
+/**
+ * Matches qmd's "No context found for:" output — emitted on both the
+ * virtual-path (qmd.js:630) and filesystem-path (qmd.js:656) branches of
+ * `contextRemove` when the context row doesn't exist. Benign on first-run.
+ *
+ * Narrow on purpose: a plain `not found` substring would also match qmd's
+ * `Collection not found: <name>` (qmd.js:625), which signals our collection
+ * isn't registered at all — a real error that must surface.
+ */
+export function isContextRemoveBenign(o: {
+	readonly stdout: string;
+	readonly stderr: string;
+}): boolean {
+	return (
+		/no context found for/i.test(o.stderr) ||
+		/no context found for/i.test(o.stdout)
+	);
+}

@@ -35,6 +35,7 @@ import { warn } from "../.claude/scripts/lib/hook-io.ts";
 import { isMainModule } from "../.claude/scripts/lib/main-guard.ts";
 import {
 	buildCollectionAddArgs,
+	isContextRemoveBenign,
 	makeCollectionAddBenignMatcher,
 } from "../.claude/scripts/lib/qmd-bootstrap.ts";
 import { buildQmdCommand, resolveQmdEntry } from "../.claude/scripts/lib/qmd.ts";
@@ -225,16 +226,13 @@ function main(): void {
 
 	// Re-attach the context string so edits to vault-manifest.json propagate.
 	// On first run, `context rm` fails because the row doesn't exist — that's
-	// the expected benign case. Unexpected failures (auth, IO) get warned.
+	// the expected benign case. Any other failure (including a genuine
+	// "Collection not found") is intentionally NOT swallowed.
 	runIdempotent(
 		entry,
 		["--index", index, "context", "rm", contextPath],
 		"Clearing previous context (if any)",
-		(o) =>
-			/not found/i.test(o.stderr) ||
-			/not found/i.test(o.stdout) ||
-			/does not exist/i.test(o.stderr) ||
-			/does not exist/i.test(o.stdout),
+		isContextRemoveBenign,
 	);
 	run(
 		entry,

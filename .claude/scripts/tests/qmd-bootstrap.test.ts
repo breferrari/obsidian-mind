@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 
 import {
 	buildCollectionAddArgs,
+	isContextRemoveBenign,
 	makeCollectionAddBenignMatcher,
 } from "../lib/qmd-bootstrap.ts";
 
@@ -183,5 +184,94 @@ describe("makeCollectionAddBenignMatcher", () => {
 			}),
 			false,
 		);
+	});
+});
+
+describe("isContextRemoveBenign", () => {
+	test("matches qmd's virtual-path 'No context found for:' on stderr", () => {
+		assert.equal(
+			isContextRemoveBenign({
+				stdout: "",
+				stderr: "No context found for: qmd://obsidian-mind/",
+			}),
+			true,
+		);
+	});
+
+	test("matches the filesystem-path variant with a relative path", () => {
+		assert.equal(
+			isContextRemoveBenign({
+				stdout: "",
+				stderr: "No context found for: qmd://obsidian-mind/some/sub/path",
+			}),
+			true,
+		);
+	});
+
+	test("is case-insensitive", () => {
+		assert.equal(
+			isContextRemoveBenign({
+				stdout: "",
+				stderr: "no context found for: qmd://obsidian-mind/",
+			}),
+			true,
+		);
+	});
+
+	test("matches on stdout (qmd's stream choice could shift)", () => {
+		assert.equal(
+			isContextRemoveBenign({
+				stdout: "No context found for: qmd://obsidian-mind/",
+				stderr: "",
+			}),
+			true,
+		);
+	});
+
+	test("matches when the message appears on BOTH streams", () => {
+		assert.equal(
+			isContextRemoveBenign({
+				stdout: "No context found for: qmd://obsidian-mind/",
+				stderr: "No context found for: qmd://obsidian-mind/",
+			}),
+			true,
+		);
+	});
+
+	test("does NOT match `Collection not found` — a real error the old matcher silently swallowed", () => {
+		// The prior matcher used `/not found/i`, which incidentally matched this
+		// non-benign error. Locking the new matcher's narrower behaviour so a
+		// genuine "our collection isn't registered" failure surfaces.
+		assert.equal(
+			isContextRemoveBenign({
+				stdout: "",
+				stderr: "Collection not found: obsidian-mind",
+			}),
+			false,
+		);
+	});
+
+	test("does NOT match `Invalid virtual path` — malformed input error", () => {
+		assert.equal(
+			isContextRemoveBenign({
+				stdout: "",
+				stderr: "Invalid virtual path: qmd://obsidian-mind",
+			}),
+			false,
+		);
+	});
+
+	test("does NOT match `Path is not in any indexed collection` — wrong path error", () => {
+		assert.equal(
+			isContextRemoveBenign({
+				stdout: "",
+				stderr: "Path is not in any indexed collection: /tmp/somewhere",
+			}),
+			false,
+		);
+	});
+
+	test("does NOT match when output is empty", () => {
+		assert.equal(isContextRemoveBenign({ stdout: "", stderr: "" }), false);
 	});
 });
