@@ -70,6 +70,13 @@ describe("formatActiveWork", () => {
 	test("all-filtered-out → '(none)'", () => {
 		assert.equal(formatActiveWork(["not-markdown.txt"], 10), "(none)");
 	});
+	test("preserves `.MD` and `.Md` files (case-insensitive matching)", () => {
+		const out = formatActiveWork(
+			["Note.md", "Note.MD", "Note.Md", "notes.txt"],
+			10,
+		);
+		assert.equal(out, "Note\nNote\nNote");
+	});
 });
 
 describe("formatRecentChanges", () => {

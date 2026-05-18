@@ -31,8 +31,8 @@ export function formatActiveWork(
 	limit: number,
 ): string {
 	const names = filenames
-		.filter((f) => f.endsWith(".md"))
-		.map((f) => f.replace(/\.md$/, ""))
+		.filter((f) => isMarkdownFilename(f))
+		.map((f) => f.replace(/\.md$/i, ""))
 		.slice(0, limit);
 	return names.length > 0 ? names.join("\n") : "(none)";
 }

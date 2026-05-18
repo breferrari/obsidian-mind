@@ -205,11 +205,11 @@ function brainIndex(): string {
 		return "(none)";
 	}
 	const files = entries
-		.filter((e) => e.isFile() && e.name.endsWith(".md"))
+		.filter((e) => e.isFile() && isMarkdownFilename(e.name))
 		.map((e) => e.name)
 		.sort();
 	const parsed = files.map((f) => {
-		const name = f.replace(/\.md$/, "");
+		const name = f.replace(/\.md$/i, "");
 		let description: string | null = null;
 		let hasContent = false;
 		try {
@@ -255,7 +255,7 @@ function listMd(): string[] {
 			const full = dir === "." ? e.name : join(dir, e.name);
 			if (isSkippedPath(full, SKIP_PREFIXES)) continue;
 			if (e.isDirectory()) walk(full);
-			else if (e.isFile() && e.name.endsWith(".md")) results.push(`./${full}`);
+			else if (e.isFile() && isMarkdownFilename(e.name)) results.push(`./${full}`);
 		}
 	}
 	walk(".");
