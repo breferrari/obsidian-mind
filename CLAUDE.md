@@ -76,7 +76,7 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 
 ## Obsidian CLI
 
-When Obsidian is running, prefer CLI over raw filesystem. It provides vault-aware search, backlink discovery, and property management. Fall back to filesystem when Obsidian is not running.
+When Obsidian is running, prefer CLI over raw filesystem — it provides vault-aware search, backlink discovery, and property management. **On macOS, open Obsidian before invoking the CLI**: the first `obsidian` call launches the Electron app (visible window flash) if no instance is running; subsequent calls forward args silently. In non-interactive contexts where you can't guarantee Obsidian is open (background hooks, automation), prefer filesystem reads instead.
 
 ```bash
 obsidian read file="Note Name"                    # Read a note
@@ -349,7 +349,7 @@ Five lifecycle hooks in `.claude/settings.json`:
 - Preserve existing frontmatter when editing notes.
 - Git sync is handled by the user's preferred method (obsidian-git, manual commits, etc.) -- don't configure git hooks or auto-commit.
 - When asked to "remember" something, write to the relevant `brain/` topic note with a link to context. Never create memory files in `~/.claude/` -- they are not git-tracked.
-- Prefer Obsidian CLI over filesystem when Obsidian is running.
+- Prefer Obsidian CLI over filesystem when Obsidian is **already** running. On macOS, the first `obsidian` call launches the Electron app (visible window flash) if no instance is running — open Obsidian once at session start, then subsequent calls forward args silently. In non-interactive contexts where you can't guarantee Obsidian is open (background hooks, automation), prefer filesystem reads.
 - **Always invoke Obsidian skills via the Skill tool** before doing vault work. Load `obsidian-markdown` when creating/editing `.md` files. Load `obsidian-cli` when running vault commands. Load `obsidian-bases` or `json-canvas` when working with those file types.
 - Always check for and suggest connections between notes.
 - Every note must have a `description` field (~150 chars). Claude fills this automatically.

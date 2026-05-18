@@ -7,6 +7,9 @@ description: Interact with Obsidian vaults using the Obsidian CLI to read, creat
 
 Use the `obsidian` CLI to interact with a running Obsidian instance. Requires Obsidian to be open.
 
+> [!IMPORTANT]
+> **macOS — open Obsidian once before using the CLI.** On macOS the `obsidian` command launches the Electron app if no Obsidian instance is running, producing a visible window flash on the first call. Once Obsidian is open, subsequent CLI calls forward args to the running instance silently — no further flicker. For interactive workflows (slash commands), ensure Obsidian is open at the start of the session. For non-interactive contexts where you can't guarantee Obsidian is open (background hooks, automation, CI), prefer filesystem reads via `Read` / `Grep` / `Glob`.
+
 ## Command reference
 
 Run `obsidian help` to see all available commands. This is always up to date. Full docs: https://help.obsidian.md/cli
