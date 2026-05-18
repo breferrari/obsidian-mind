@@ -16,7 +16,8 @@ import {
 	readdirSync,
 	type Dirent,
 } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	take,
@@ -69,24 +70,36 @@ if (envFile) {
 const manifestJson = readManifestRaw();
 const infraRootFilenames = parseInfraRootFilenames(manifestJson);
 
-// Incremental QMD re-index. Fire-and-forget; ignore failures (qmd is optional).
-// Scope to this vault's named index when the manifest declares one, so vaults
-// sharing a machine don't blend results in QMD's default global index. Falls
-// back silently for forks that haven't adopted the `qmd_index` manifest field.
-//
-// Route through `buildQmdCommand` so the same shim-bypass logic that fixes
-// the MCP wrapper applies here too — `node qmd.js update` runs identically
-// on Windows, macOS, and Linux; no platform conditionals.
+// Incremental QMD re-index. Truly fire-and-forget: detached, unref'd,
+// ignore-all-streams. The hook's own work (file walks, git log, context
+// emission) is independent of this index update, so blocking on qmd's
+// startup (notably slow on Windows × Node 24 cold start, where it can
+// approach 10s before the actual update work begins) is wasted user
+// latency. Scope to this vault's named index when the manifest declares
+// one; fall back silently for forks that haven't adopted `qmd_index`.
+// Route through `buildQmdCommand` so the shim-bypass logic that fixes
+// the MCP wrapper applies here too.
 const qmdIndex = parseQmdIndex(manifestJson);
 const qmdUpdate = buildQmdCommand(
 	resolveQmdEntry(),
 	qmdArgsWithIndex(qmdIndex, ["update"]),
 );
-spawnSync(qmdUpdate.cmd, qmdUpdate.args as string[], {
+// `cwd: tmpdir()` keeps the detached child from holding the vault dir as
+// its working directory. `qmd update --index <name>` reads collection
+// paths from YAML, so cwd is irrelevant to the work; pinning it to the OS
+// tmpdir means `rm -rf` of the vault (or a test cleanup) never races a
+// stale qmd handle on Windows.
+const qmdChild = spawn(qmdUpdate.cmd, qmdUpdate.args as string[], {
 	stdio: "ignore",
-	timeout: 30_000,
 	shell: qmdUpdate.shell,
+	detached: true,
+	windowsHide: true,
+	cwd: tmpdir(),
 });
+// Silence the spawn-error event so a missing qmd doesn't crash the hook;
+// qmd is optional and the hook already degrades when it's not installed.
+qmdChild.on("error", () => undefined);
+qmdChild.unref();
 
 type CmdResult =
 	| { readonly kind: "ok"; readonly stdout: string }
