@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - '.claude/scripts/**'
+      - 'scripts/**'
       - '.github/workflows/test.yml'
   pull_request:
     paths:
       - '.claude/scripts/**'
+      - 'scripts/**'
       - '.github/workflows/test.yml'
 
 jobs:

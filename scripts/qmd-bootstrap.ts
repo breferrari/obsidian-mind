@@ -33,6 +33,10 @@ import { readFileSync } from "node:fs";
 
 import { warn } from "../.claude/scripts/lib/hook-io.ts";
 import { isMainModule } from "../.claude/scripts/lib/main-guard.ts";
+import {
+	buildCollectionAddArgs,
+	makeCollectionAddBenignMatcher,
+} from "../.claude/scripts/lib/qmd-bootstrap.ts";
 import { buildQmdCommand, resolveQmdEntry } from "../.claude/scripts/lib/qmd.ts";
 import {
 	qmdConfigPath,
@@ -181,6 +185,18 @@ function main(): void {
 	ensureQmd(entry);
 
 	const collectionName = manifest.template ?? index;
+	// The collection name ends up as a YAML key, a `qmd://` URL segment, and a
+	// SQL identifier inside qmd's store. Apply the same restricted character
+	// set we already enforce on `qmd_index`, so a typo'd `template` field can't
+	// land an unparseable identifier in qmd's config.
+	if (!isValidQmdIndex(collectionName)) {
+		process.stderr.write(
+			`vault-manifest.json collection name ${JSON.stringify(collectionName)} ` +
+				`(derived from \`template\` or \`qmd_index\`) is not a valid identifier.\n` +
+				"Allowed: alphanumerics, dot, dash, underscore; must start with an alphanumeric.\n",
+		);
+		process.exit(1);
+	}
 	const contextPath = `qmd://${collectionName}/`;
 	const contextText =
 		manifest.qmd_context ??
@@ -188,24 +204,17 @@ function main(): void {
 
 	process.stdout.write(`→ Bootstrapping QMD index '${index}'\n`);
 
-	// `collection add` fails with a specific message when the collection is
-	// already registered — that's the idempotent case we expect on re-run.
-	// Any other failure (invalid pattern, permissions, qmd install drift) is
-	// surfaced as a warning so it isn't silently masked.
+	// `collection add` fails with a specific message when a collection by THIS
+	// name is already registered — that's the idempotent case we expect on a
+	// re-run. The benign-matcher binds to `collectionName` so qmd's other
+	// "A collection already exists for this path and pattern" warning (which
+	// signals a stale-name collision, e.g. an upgrader's pre-#85 collection)
+	// surfaces loudly instead of being swallowed.
 	runIdempotent(
 		entry,
-		[
-			"--index",
-			index,
-			"collection",
-			"add",
-			".",
-			collectionName,
-			"--pattern",
-			"**/*.md",
-		],
-		`Registering collection '${collectionName}' (pattern **/*.md)`,
-		(o) => /already exists/i.test(o.stderr) || /already exists/i.test(o.stdout),
+		buildCollectionAddArgs(index, collectionName),
+		`Registering collection '${collectionName}' (mask **/*.md)`,
+		makeCollectionAddBenignMatcher(collectionName),
 	);
 
 	// Re-attach the context string so edits to vault-manifest.json propagate.
