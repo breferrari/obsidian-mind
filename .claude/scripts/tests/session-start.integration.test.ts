@@ -48,6 +48,17 @@ before(() => {
 		join(TMP_DIR, "brain", "North Star.md"),
 		"---\ndescription: test\n---\n\n# North Star\n\n- placeholder\n",
 	);
+	// Uppercase-extension fixture: locks the case-insensitive filter wiring
+	// of `brainIndex()` (lists the topic without extension) and `listMd()`
+	// (preserves the original `.MD` in the vault file listing). On
+	// case-sensitive filesystems this is a distinct file; on Windows/macOS
+	// case-insensitive filesystems it's the same dirent — either way the
+	// listMd path must accept it and the brainIndex strip must drop the
+	// extension regardless of case.
+	writeFileSync(
+		join(TMP_DIR, "brain", "Uppercase.MD"),
+		"---\ndescription: locks case-insensitive .md detection\n---\n",
+	);
 });
 
 after(() => {
@@ -109,6 +120,29 @@ describe("session-start — silence contract and structure", () => {
 		const open = stdout.split("### Open Tasks\n")[1]?.split("\n### ")[0];
 		assert.ok(open !== undefined, "Open Tasks section should be present");
 		assert.match(open ?? "", /\(no open tasks\)/);
+	});
+
+	test("`.MD` files (uppercase extension) appear in brain index and vault listing", () => {
+		// Locks the case-insensitive wiring of `brainIndex()` and `listMd()`
+		// at the hook level — the helper-level tests prove the predicate, this
+		// proves the predicate is what each call site actually uses.
+		const { stdout } = runHook();
+		const brain =
+			stdout.split("### Brain Topics (read on demand)\n")[1]?.split("\n### ")[0] ?? "";
+		const listing =
+			stdout.split("### Vault File Listing\n")[1] ?? "";
+		// Brain index strips the extension (case-insensitive) — bare topic name.
+		assert.match(
+			brain,
+			/Uppercase/,
+			"brainIndex must list `.MD` topics with the extension stripped",
+		);
+		// Vault file listing preserves the original casing including extension.
+		assert.match(
+			listing,
+			/Uppercase\.MD/,
+			"listMd must include `.MD` files in the vault file listing",
+		);
 	});
 });
 
