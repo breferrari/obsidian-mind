@@ -43,6 +43,46 @@ function gte(
 	return true; // equal
 }
 
+/**
+ * Return the indented sub-block beneath a `key:` line that opens a mapping —
+ * the run of lines more indented than the key itself, up to the next sibling
+ * key or a dedent. Lets a test scope its assertions to one mapping (e.g.
+ * `hooks.bootstrap`) instead of scanning the whole file, so a stray `script:`
+ * or `fingerprint:` elsewhere can't produce a false pass. Returns "" if the
+ * key isn't found as a block-opener.
+ */
+function blockUnder(yaml: string, key: string): string {
+	const lines = yaml.split(/\r?\n/);
+	const opener = new RegExp(`^(\\s*)${key}:\\s*$`);
+	let start = -1;
+	let indent = 0;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		if (line === undefined) continue;
+		const m = opener.exec(line);
+		if (m) {
+			start = i;
+			indent = (m[1] ?? "").length;
+			break;
+		}
+	}
+	if (start === -1) return "";
+
+	const out: string[] = [];
+	for (let i = start + 1; i < lines.length; i++) {
+		const line = lines[i];
+		if (line === undefined) break;
+		if (line.trim() === "") {
+			out.push(line); // blank lines stay inside the block
+			continue;
+		}
+		const lineIndent = (line.match(/^\s*/)?.[0] ?? "").length;
+		if (lineIndent <= indent) break; // sibling key or dedent → block ended
+		out.push(line);
+	}
+	return out.join("\n");
+}
+
 describe("shard.yaml — hook lifecycle contract (#75)", () => {
 	test("declares the three native lifecycle slots", () => {
 		assert.match(shardYaml, /^hooks:/m, "missing hooks block");
@@ -52,13 +92,17 @@ describe("shard.yaml — hook lifecycle contract (#75)", () => {
 	});
 
 	test("bootstrap declares a script and a fingerprint", () => {
+		// Scope to the hooks.bootstrap block so the assertions can't be
+		// satisfied by a `script:`/`fingerprint:` key elsewhere in the file.
+		const bootstrap = blockUnder(shardYaml, "bootstrap");
+		assert.ok(bootstrap, "missing hooks.bootstrap block");
 		assert.match(
-			shardYaml,
+			bootstrap,
 			/^\s+script:\s*\.shardmind\/hooks\/bootstrap\.ts\s*$/m,
 			"bootstrap.script must point at .shardmind/hooks/bootstrap.ts",
 		);
 		assert.match(
-			shardYaml,
+			bootstrap,
 			/^\s+fingerprint:\s*"[^"]+"\s*$/m,
 			"bootstrap.fingerprint must be set (re-bootstrap-on-update marker)",
 		);
