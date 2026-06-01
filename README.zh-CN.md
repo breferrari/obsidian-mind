@@ -106,7 +106,7 @@ mkdir my-vault && cd my-vault
 shardmind install github:breferrari/obsidian-mind
 ```
 
-`shardmind install` 会写入当前目录，因此请先创建并进入一个新文件夹。向导会收集你的姓名、组织、仓库用途、要包含的 Agent，以及是否启用 QMD。post-install 钩子会根据你的答案个性化 `brain/North Star.md`。然后：
+`shardmind install` 会写入当前目录，因此请先创建并进入一个新文件夹。向导会收集你的姓名、组织、仓库用途、要包含的 Agent，以及是否启用 QMD。随后 ShardMind 会初始化 git、按需引导 QMD，并根据你的答案个性化 `brain/North Star.md`。然后：
 
 1. 将已安装的文件夹作为 **Obsidian 仓库** 打开
 2. 在 设置 → 通用 中启用 **Obsidian CLI**（需要 Obsidian 1.12+）
@@ -368,7 +368,7 @@ templates/              带有 YAML frontmatter 的 Obsidian 模板
 .shardmind/             ShardMind 旁挂目录——仅在通过 `shardmind install` 安装时使用
   shard.yaml            清单文件（名称、版本、模块、钩子）
   shard-schema.yaml     向导值 + 模块门控
-  hooks/                post-install（QMD 引导 + 个性化）、post-update
+  hooks/                bootstrap（git 初始化 + QMD）、personalize（North Star）、post-update
 ```
 
 > [!NOTE]

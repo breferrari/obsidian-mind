@@ -7,7 +7,7 @@
  * For v6, update-time side effects are minimal:
  *
  *   * Vault structure stays stable across patch / minor bumps. No managed
- *     file needs personalization on update — the post-install hook handled
+ *     file needs personalization on update — the personalize hook handled
  *     that once at install time, and the user's edits since then are owned
  *     by the user (and protected by the merge engine).
  *   * QMD's index is kept fresh by the PostToolUse `qmd-refresh.ts` hook
@@ -21,24 +21,31 @@
  * migration ships a new managed file that the hook needs to seed, the
  * write must be guarded on `ctx.newFiles.includes(path)`.
  *
- * If a future migration requires a re-bootstrap, branch on
- * `ctx.previousVersion` here.
+ * If a future migration requires a re-bootstrap (e.g. a QMD index schema
+ * change), prefer bumping `hooks.bootstrap.fingerprint` in shard.yaml over
+ * branching on `ctx.previousVersion` here — the engine re-runs `bootstrap`
+ * on update whenever the fingerprint changes, keeping the re-bootstrap logic
+ * in one place. See ShardMind docs/AUTHORING.md §Bootstrap fingerprint.
  */
 
-// Local mirror of ShardMind's HookContext shape. See post-install.ts for the
-// rationale (no shardmind dep; types erased at runtime).
-interface HookCtx {
+// Local mirror of ShardMind's PostUpdateContext shape. See bootstrap.ts /
+// personalize.ts for the rationale (no shardmind dep; types erased at runtime).
+// Kept in sync with `source/runtime/types.ts::PostUpdateContext` in the
+// shardmind repo. post-update receives `newFiles`/`removedFiles` (the merge
+// delta) but no `valuesAreDefaults` — that flag is install-time only. See
+// ShardMind docs/AUTHORING.md §Per-slot context shapes.
+interface PostUpdateContext {
+  slot: 'post-update';
   vaultRoot: string;
   values: Record<string, unknown>;
   modules: Record<string, 'included' | 'excluded'>;
   shard: { name: string; version: string };
   previousVersion?: string;
-  valuesAreDefaults: boolean;
   newFiles: string[];
   removedFiles: string[];
 }
 
-export default async function postUpdate(ctx: HookCtx): Promise<void> {
+export default async function postUpdate(ctx: PostUpdateContext): Promise<void> {
   const prev = ctx.previousVersion ?? 'unknown';
   console.log(`obsidian-mind: updated from ${prev} to ${ctx.shard.version}.`);
 

@@ -1,18 +1,23 @@
 /**
- * Unit tests for the v6 post-install hook (.shardmind/hooks/post-install.ts).
+ * Unit tests for the v6 personalize hook (.shardmind/hooks/personalize.ts).
  *
- * Drives the named exports against synthetic vaults under a per-test temp
- * directory. Covers Invariant 2's binding contract: with values at defaults
- * the hook must leave `brain/North Star.md` byte-identical; with a non-empty
- * `user_name` the hook personalizes the heading once and is idempotent on
- * subsequent runs. The default-export path (which spawns `git`/`node`) isn't
- * exercised here — those subprocesses get integration coverage through
- * ShardMind's contract suite when it runs against this shard.
+ * Personalize owns the managed-file responsibility — the North Star heading —
+ * split out of the legacy post-install hook. Drives the exported
+ * `personalizeNorthStar` and the default-export against synthetic vaults under
+ * a per-test temp directory.
+ *
+ * NOTE on Invariant 2: the legacy post-install suite asserted that the hook
+ * left North Star byte-identical when `valuesAreDefaults === true`. That
+ * contract no longer lives here — the engine refuses to call `personalize` at
+ * all on an all-defaults install (Invariant 2 is engine-enforced), and
+ * `PersonalizeContext` carries no `valuesAreDefaults` flag for the hook to
+ * check. The "engine skips personalize on defaults" assertion now belongs to
+ * ShardMind's engine test suite. What remains testable here: given the hook
+ * IS called, an empty `user_name` is still a no-op (the hook's secondary
+ * guard), and a non-empty name personalizes once and is idempotent.
  *
  * Each test gets its own `os.tmpdir() + crypto.randomUUID()` directory to
  * avoid the parallel-load flake pattern documented in the take-next skill.
- * `beforeEach` / `afterEach` own the lifecycle so test bodies stay focused
- * on assertions.
  */
 
 import { test, describe, beforeEach, afterEach } from "node:test";
@@ -22,10 +27,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import postInstall, {
-	ensureGitRepo,
+import personalize, {
 	personalizeNorthStar,
-} from "../../../.shardmind/hooks/post-install.ts";
+} from "../../../.shardmind/hooks/personalize.ts";
 
 const NORTH_STAR_BASE = `---
 date:
@@ -58,7 +62,7 @@ describe("personalizeNorthStar", () => {
 	let vault: string;
 
 	beforeEach(async () => {
-		vault = await makeTempDir("post-install-hook");
+		vault = await makeTempDir("personalize-hook");
 		await mkdir(join(vault, "brain"), { recursive: true });
 		await writeFile(join(vault, "brain", "North Star.md"), NORTH_STAR_BASE, "utf-8");
 	});
@@ -116,7 +120,7 @@ describe("personalizeNorthStar — ENOENT tolerance", () => {
 		// `brain` deselection (impossible today since `removable: false`,
 		// but the guard costs nothing) or an upstream rename leaves the
 		// path absent.
-		vault = await makeTempDir("post-install-hook");
+		vault = await makeTempDir("personalize-hook");
 		await mkdir(join(vault, "brain"), { recursive: true });
 	});
 
@@ -135,43 +139,15 @@ describe("personalizeNorthStar — ENOENT tolerance", () => {
 	});
 });
 
-describe("ensureGitRepo", () => {
+describe("personalize (default export) — empty-name guard", () => {
+	// The engine only reaches this hook when values are non-default, so there
+	// is no `valuesAreDefaults` branch to drive. The remaining hook-side gate
+	// is the empty-`user_name` guard: a non-default install with a blank name
+	// must leave North Star untouched rather than write `# North Star — `.
 	let vault: string;
 
 	beforeEach(async () => {
-		vault = await makeTempDir("post-install-hook");
-	});
-
-	afterEach(async () => {
-		await rm(vault, { recursive: true, force: true });
-	});
-
-	test("skips when .git/ already exists", async () => {
-		await mkdir(join(vault, ".git"), { recursive: true });
-		// HEAD is one of the few files git always writes during init; if
-		// the hook's skip-branch fires correctly, our pre-existing empty
-		// .git/ stays empty.
-		await ensureGitRepo(vault);
-		await assert.rejects(
-			readFile(join(vault, ".git", "HEAD"), "utf-8"),
-			isENOENT,
-			"ensureGitRepo must not run `git init` when .git/ already exists",
-		);
-	});
-});
-
-describe("postInstall (default export) — Invariant 2 binding", () => {
-	// Drives the orchestration gate `if (!ctx.valuesAreDefaults)` in the
-	// default export, which the named-export tests can't reach. Pre-creates
-	// `.git/` to short-circuit `ensureGitRepo` (avoiding a real `git init`
-	// subprocess on each test) and pins `qmd_enabled: false` so
-	// `bootstrapQmd` is gated off — leaving the personalization branch as
-	// the only orchestration path the test exercises.
-	let vault: string;
-
-	beforeEach(async () => {
-		vault = await makeTempDir("post-install-hook");
-		await mkdir(join(vault, ".git"), { recursive: true });
+		vault = await makeTempDir("personalize-hook");
 		await mkdir(join(vault, "brain"), { recursive: true });
 		await writeFile(join(vault, "brain", "North Star.md"), NORTH_STAR_BASE, "utf-8");
 	});
@@ -180,53 +156,39 @@ describe("postInstall (default export) — Invariant 2 binding", () => {
 		await rm(vault, { recursive: true, force: true });
 	});
 
-	function makeCtx(overrides: Partial<{
-		valuesAreDefaults: boolean;
-		userName: string;
-		qmdEnabled: boolean;
-	}>): {
+	function makeCtx(overrides: Partial<{ userName: string }>): {
+		slot: "personalize";
 		vaultRoot: string;
 		values: Record<string, unknown>;
 		modules: Record<string, "included" | "excluded">;
 		shard: { name: string; version: string };
-		valuesAreDefaults: boolean;
-		newFiles: string[];
-		removedFiles: string[];
 	} {
 		return {
+			slot: "personalize",
 			vaultRoot: vault,
 			values: {
 				user_name: overrides.userName ?? "",
 				org_name: "Independent",
 				vault_purpose: "engineering",
-				qmd_enabled: overrides.qmdEnabled ?? false,
+				qmd_enabled: false,
 			},
 			modules: {},
-			shard: { name: "obsidian-mind", version: "6.0.0-beta.1" },
-			valuesAreDefaults: overrides.valuesAreDefaults ?? true,
-			newFiles: [],
-			removedFiles: [],
+			shard: { name: "obsidian-mind", version: "6.2.0" },
 		};
 	}
 
-	test("Invariant 2: leaves North Star byte-identical when valuesAreDefaults", async () => {
-		await postInstall(makeCtx({ valuesAreDefaults: true }));
-		const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
-		assert.equal(after, NORTH_STAR_BASE);
-	});
-
-	test("personalizes North Star when valuesAreDefaults is false and user_name is set", async () => {
-		await postInstall(makeCtx({ valuesAreDefaults: false, userName: "Jane Engineer" }));
+	test("personalizes North Star when user_name is set", async () => {
+		await personalize(makeCtx({ userName: "Jane Engineer" }));
 		const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
 		assert.match(after, /^# North Star — Jane Engineer$/m);
 	});
 
-	test("leaves North Star alone when valuesAreDefaults is false but user_name is empty", async () => {
+	test("leaves North Star alone when user_name is empty", async () => {
 		// Empty user_name means the user took the wizard but didn't enter a
-		// name (some other value drove !valuesAreDefaults). Personalizing
+		// name (some other value drove the non-default install). Personalizing
 		// with the empty string would produce the eyesore `# North Star — `;
 		// the hook's secondary guard (userName.trim().length > 0) catches it.
-		await postInstall(makeCtx({ valuesAreDefaults: false, userName: "" }));
+		await personalize(makeCtx({ userName: "" }));
 		const after = await readFile(join(vault, "brain", "North Star.md"), "utf-8");
 		assert.equal(after, NORTH_STAR_BASE);
 	});

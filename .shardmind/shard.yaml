@@ -14,9 +14,20 @@ requires:
   # `--experimental-strip-types` + ESM; required by `.claude/scripts/*.ts`
   # which are executed natively by Node without a build step.
   node: ">=22.6.0"
+  # Split hook lifecycle (bootstrap/personalize/post-update slots) + the
+  # `requires.shardmind` check itself land in shardmind 0.1.3. Older engines
+  # don't understand these slots; this floor makes them refuse with
+  # SHARDMIND_VERSION_MISMATCH (on engines that enforce it) rather than
+  # silently skipping the hooks.
+  shardmind: ">=0.1.3"
 
 hooks:
-  post-install: .shardmind/hooks/post-install.ts
+  bootstrap:
+    script: .shardmind/hooks/bootstrap.ts
+    # Bump when the QMD index schema changes — the engine re-runs bootstrap on
+    # update whenever this fingerprint differs from the recorded one.
+    fingerprint: "qmd-v1"
+  personalize: .shardmind/hooks/personalize.ts
   post-update: .shardmind/hooks/post-update.ts
   # 60 s to accommodate first-run qmd bootstrap (index creation + initial embed pass).
   timeout_ms: 60000

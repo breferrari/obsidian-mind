@@ -6,11 +6,13 @@ on:
     paths:
       - '.claude/scripts/**'
       - 'scripts/**'
+      - '.shardmind/**'
       - '.github/workflows/test.yml'
   pull_request:
     paths:
       - '.claude/scripts/**'
       - 'scripts/**'
+      - '.shardmind/**'
       - '.github/workflows/test.yml'
 
 jobs:

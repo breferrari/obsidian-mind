@@ -8,9 +8,11 @@ schema_version: 1
 #
 # Every value declares a `default` (Invariant 1: defaults must produce a
 # vault byte-equivalent to `git clone`). `required: true` here pairs with
-# an empty default — the post-install hook personalizes North Star only
-# when ctx.valuesAreDefaults === false (Invariant 2), so an unset name
-# leaves managed files untouched.
+# an empty default — the engine only runs the `personalize` hook when values
+# are non-default (Invariant 2, engine-enforced), so an all-defaults install
+# never touches North Star. The personalize hook keeps a secondary guard for
+# an empty `user_name` (non-default via some other value), so an unset name
+# still leaves managed files untouched.
 # ---------------------------------------------------------------------------
 
 values:

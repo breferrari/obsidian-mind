@@ -105,7 +105,7 @@ mkdir my-vault && cd my-vault
 shardmind install github:breferrari/obsidian-mind
 ```
 
-`shardmind install` writes into the current directory, so create and enter a fresh folder first. The wizard collects your name, organization, vault purpose, agents to include, and whether to enable QMD; the post-install hook personalizes `brain/North Star.md` with your answers. Then:
+`shardmind install` writes into the current directory, so create and enter a fresh folder first. The wizard collects your name, organization, vault purpose, agents to include, and whether to enable QMD; ShardMind then initializes git, optionally bootstraps QMD, and personalizes `brain/North Star.md` with your answers. Then:
 
 1. Open the installed folder as an **Obsidian vault**
 2. Enable the **Obsidian CLI** in Settings → General (requires Obsidian 1.12+)
@@ -375,7 +375,7 @@ templates/              Obsidian templates with YAML frontmatter
 .shardmind/             ShardMind sidecar — only used if installed via `shardmind install`
   shard.yaml            Manifest (name, version, modules, hooks)
   shard-schema.yaml     Wizard values + module gating
-  hooks/                post-install (QMD bootstrap + personalization), post-update
+  hooks/                bootstrap (git init + QMD), personalize (North Star), post-update
 ```
 
 > [!NOTE]
