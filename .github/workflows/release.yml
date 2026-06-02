@@ -33,19 +33,25 @@ jobs:
         run: |
           if [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
-            if [[ ! "$VERSION" =~ ^v ]]; then
-              VERSION="v$VERSION"
-            fi
-            # Normalize bare major (v4 → v4.0) or major.minor (v4.0 stays v4.0)
-            if [[ "$VERSION" =~ ^v[0-9]+$ ]]; then
-              VERSION="${VERSION}.0"
-            fi
           else
             VERSION="${GITHUB_REF#refs/tags/}"
+            # Remember the exact tag that triggered us so we can retire it if
+            # normalization renames it (e.g. a pushed v6.2 → released v6.2.0),
+            # rather than leaving a stale 2-component duplicate behind.
+            echo "TRIGGER_TAG=$VERSION" >> "$GITHUB_ENV"
+          fi
+          [[ "$VERSION" =~ ^v ]] || VERSION="v$VERSION"
+
+          # Normalize to 3-component semver so the tag matches the manifest
+          # version ShardMind resolves: v6 → v6.0.0, v6.2 → v6.2.0, v6.2.1 stays.
+          if [[ "$VERSION" =~ ^v[0-9]+$ ]]; then
+            VERSION="${VERSION}.0.0"
+          elif [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+$ ]]; then
+            VERSION="${VERSION}.0"
           fi
 
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-            echo "::error::Invalid version format: $VERSION (expected v*.* or v*.*.*)"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format: $VERSION (expected vX.Y or vX.Y.Z)"
             exit 1
           fi
 
@@ -121,6 +127,12 @@ jobs:
           # via GITHUB_TOKEN don't re-trigger this workflow.)
           git tag -f "$VERSION"
           git push origin "refs/tags/$VERSION" --force
+          # If a 2-component tag triggered this run (push:tags of v6.2), retire
+          # it now that the canonical 3-component tag (v6.2.0) points at the
+          # bump commit — otherwise the old name lingers on the pre-bump commit.
+          if [ -n "${TRIGGER_TAG:-}" ] && [ "$TRIGGER_TAG" != "$VERSION" ]; then
+            git push origin ":refs/tags/$TRIGGER_TAG" || true
+          fi
 
       - name: Verify tagged tree version matches the tag
         run: |
