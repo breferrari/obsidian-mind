@@ -51,15 +51,18 @@ jobs:
 
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Create tag (manual trigger only)
+      - name: Pre-flight — tag must not already exist (manual trigger only)
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
+          # Guard only — the tag is created LATER, after the version bump is
+          # committed, so the tagged tree carries its own version. Creating it
+          # here (the old flow) tagged main HEAD before generate-changelog
+          # bumped shard.yaml / vault-manifest.json, so every tagged tree
+          # lagged one version behind its tag.
           if git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
             echo "::error::Tag $VERSION already exists"
             exit 1
           fi
-          git tag "$VERSION"
-          git push origin "$VERSION"
 
       - name: Run tests
         run: node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts
@@ -105,6 +108,36 @@ jobs:
           fi
           git commit -m "release: update CHANGELOG and manifests for $VERSION"
           git push origin main
+
+      - name: Tag the release commit
+        run: |
+          # Point the tag at the version-bump commit so the tagged tree carries
+          # its own version (shard.yaml + vault-manifest.json). ShardMind reads
+          # the manifest `version:` as the shard's identity and `shardmind
+          # update` keys off it, so a tag whose tree lags its name mislabels
+          # installs and can misdetect updates. -f / --force handles the
+          # push:tags trigger, where a human-pushed tag already points at the
+          # pre-bump commit; we move it forward to the bump commit. (Tag pushes
+          # via GITHUB_TOKEN don't re-trigger this workflow.)
+          git tag -f "$VERSION"
+          git push origin "refs/tags/$VERSION" --force
+
+      - name: Verify tagged tree version matches the tag
+        run: |
+          # Fail the release if the tagged tree's manifest version doesn't match
+          # the tag — the regression guard for the skew this reordering fixes.
+          want="${VERSION#v}"
+          case "$want" in
+            *.*.*) ;;            # already 3-component
+            *.*)   want="${want}.0" ;;  # normalize 2-component tag (6.2 -> 6.2.0)
+          esac
+          shard=$(git show "$VERSION:.shardmind/shard.yaml" | sed -n 's/^version:[[:space:]]*//p' | head -1)
+          manifest=$(git show "$VERSION:vault-manifest.json" | sed -n 's/.*"version":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+          echo "tag=$VERSION expected=$want shard.yaml=$shard vault-manifest=$manifest"
+          if [ "$shard" != "$want" ] || [ "$manifest" != "$want" ]; then
+            echo "::error::Tagged tree version skew (shard.yaml=$shard manifest=$manifest, expected $want)"
+            exit 1
+          fi
 
       - name: Build vault zip
         run: |
