@@ -51,24 +51,28 @@ jobs:
           fi
 
           if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Invalid version format: $VERSION (expected vX.Y or vX.Y.Z)"
+            echo "::error::Invalid version: $VERSION (accepted inputs: vX, vX.Y, or vX.Y.Z, with or without the leading v)"
             exit 1
           fi
 
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Pre-flight — tag must not already exist (manual trigger only)
+      - name: Stage release tag locally (manual trigger only)
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
-          # Guard only — the tag is created LATER, after the version bump is
-          # committed, so the tagged tree carries its own version. Creating it
-          # here (the old flow) tagged main HEAD before generate-changelog
-          # bumped shard.yaml / vault-manifest.json, so every tagged tree
-          # lagged one version behind its tag.
+          # Guard against clobbering an existing release.
           if git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
             echo "::error::Tag $VERSION already exists"
             exit 1
           fi
+          # Create the tag LOCALLY (not pushed) before generate-changelog runs.
+          # The script derives the previous release as the second-newest tag,
+          # which assumes the current release tag exists; without it prevTag
+          # would be off by one (wrong changelog range + fingerprint diff). The
+          # "Tag the release commit" step later moves this onto the bump commit
+          # and force-pushes it. The push:tags trigger already has its tag
+          # locally from checkout, so only the dispatch path needs this.
+          git tag "$VERSION"
 
       - name: Run tests
         run: node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts
@@ -136,19 +140,30 @@ jobs:
 
       - name: Verify tagged tree version matches the tag
         run: |
-          # Fail the release if the tagged tree's manifest version doesn't match
-          # the tag — the regression guard for the skew this reordering fixes.
+          # Regression guard for the skew this reordering fixes: the tagged tree
+          # must carry its own version. VERSION is 3-component already; the case
+          # is belt-and-suspenders.
           want="${VERSION#v}"
-          case "$want" in
-            *.*.*) ;;            # already 3-component
-            *.*)   want="${want}.0" ;;  # normalize 2-component tag (6.2 -> 6.2.0)
-          esac
-          shard=$(git show "$VERSION:.shardmind/shard.yaml" | sed -n 's/^version:[[:space:]]*//p' | head -1)
+          case "$want" in *.*.*) ;; *.*) want="${want}.0" ;; esac
+
+          # vault-manifest.json exists in every vault — always verify it.
           manifest=$(git show "$VERSION:vault-manifest.json" | sed -n 's/.*"version":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-          echo "tag=$VERSION expected=$want shard.yaml=$shard vault-manifest=$manifest"
-          if [ "$shard" != "$want" ] || [ "$manifest" != "$want" ]; then
-            echo "::error::Tagged tree version skew (shard.yaml=$shard manifest=$manifest, expected $want)"
+          echo "tag=$VERSION expected=$want vault-manifest=$manifest"
+          if [ "$manifest" != "$want" ]; then
+            echo "::error::Tagged vault-manifest version=$manifest, expected $want"
             exit 1
+          fi
+
+          # shard.yaml is optional — forks without ShardMind omit it, and the
+          # commit step / generate-changelog.ts are ENOENT-tolerant. Verify it
+          # only when present so this step stays consistent with that invariant.
+          if git cat-file -e "$VERSION:.shardmind/shard.yaml" 2>/dev/null; then
+            shard=$(git show "$VERSION:.shardmind/shard.yaml" | sed -n 's/^version:[[:space:]]*//p' | head -1)
+            echo "shard.yaml=$shard"
+            if [ "$shard" != "$want" ]; then
+              echo "::error::Tagged shard.yaml version=$shard, expected $want"
+              exit 1
+            fi
           fi
 
       - name: Build vault zip
