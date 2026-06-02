@@ -33,33 +33,46 @@ jobs:
         run: |
           if [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
-            if [[ ! "$VERSION" =~ ^v ]]; then
-              VERSION="v$VERSION"
-            fi
-            # Normalize bare major (v4 → v4.0) or major.minor (v4.0 stays v4.0)
-            if [[ "$VERSION" =~ ^v[0-9]+$ ]]; then
-              VERSION="${VERSION}.0"
-            fi
           else
             VERSION="${GITHUB_REF#refs/tags/}"
+            # Remember the exact tag that triggered us so we can retire it if
+            # normalization renames it (e.g. a pushed v6.2 → released v6.2.0),
+            # rather than leaving a stale 2-component duplicate behind.
+            echo "TRIGGER_TAG=$VERSION" >> "$GITHUB_ENV"
+          fi
+          [[ "$VERSION" =~ ^v ]] || VERSION="v$VERSION"
+
+          # Normalize to 3-component semver so the tag matches the manifest
+          # version ShardMind resolves: v6 → v6.0.0, v6.2 → v6.2.0, v6.2.1 stays.
+          if [[ "$VERSION" =~ ^v[0-9]+$ ]]; then
+            VERSION="${VERSION}.0.0"
+          elif [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+$ ]]; then
+            VERSION="${VERSION}.0"
           fi
 
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-            echo "::error::Invalid version format: $VERSION (expected v*.* or v*.*.*)"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version: $VERSION (accepted inputs: vX, vX.Y, or vX.Y.Z, with or without the leading v)"
             exit 1
           fi
 
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Create tag (manual trigger only)
+      - name: Stage release tag locally (manual trigger only)
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
+          # Guard against clobbering an existing release.
           if git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
             echo "::error::Tag $VERSION already exists"
             exit 1
           fi
+          # Create the tag LOCALLY (not pushed) before generate-changelog runs.
+          # The script derives the previous release as the second-newest tag,
+          # which assumes the current release tag exists; without it prevTag
+          # would be off by one (wrong changelog range + fingerprint diff). The
+          # "Tag the release commit" step later moves this onto the bump commit
+          # and force-pushes it. The push:tags trigger already has its tag
+          # locally from checkout, so only the dispatch path needs this.
           git tag "$VERSION"
-          git push origin "$VERSION"
 
       - name: Run tests
         run: node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts
@@ -105,6 +118,53 @@ jobs:
           fi
           git commit -m "release: update CHANGELOG and manifests for $VERSION"
           git push origin main
+
+      - name: Tag the release commit
+        run: |
+          # Point the tag at the version-bump commit so the tagged tree carries
+          # its own version (shard.yaml + vault-manifest.json). ShardMind reads
+          # the manifest `version:` as the shard's identity and `shardmind
+          # update` keys off it, so a tag whose tree lags its name mislabels
+          # installs and can misdetect updates. -f / --force handles the
+          # push:tags trigger, where a human-pushed tag already points at the
+          # pre-bump commit; we move it forward to the bump commit. (Tag pushes
+          # via GITHUB_TOKEN don't re-trigger this workflow.)
+          git tag -f "$VERSION"
+          git push origin "refs/tags/$VERSION" --force
+          # If a 2-component tag triggered this run (push:tags of v6.2), retire
+          # it now that the canonical 3-component tag (v6.2.0) points at the
+          # bump commit — otherwise the old name lingers on the pre-bump commit.
+          if [ -n "${TRIGGER_TAG:-}" ] && [ "$TRIGGER_TAG" != "$VERSION" ]; then
+            git push origin ":refs/tags/$TRIGGER_TAG" || true
+          fi
+
+      - name: Verify tagged tree version matches the tag
+        run: |
+          # Regression guard for the skew this reordering fixes: the tagged tree
+          # must carry its own version. VERSION is 3-component already; the case
+          # is belt-and-suspenders.
+          want="${VERSION#v}"
+          case "$want" in *.*.*) ;; *.*) want="${want}.0" ;; esac
+
+          # vault-manifest.json exists in every vault — always verify it.
+          manifest=$(git show "$VERSION:vault-manifest.json" | sed -n 's/.*"version":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+          echo "tag=$VERSION expected=$want vault-manifest=$manifest"
+          if [ "$manifest" != "$want" ]; then
+            echo "::error::Tagged vault-manifest version=$manifest, expected $want"
+            exit 1
+          fi
+
+          # shard.yaml is optional — forks without ShardMind omit it, and the
+          # commit step / generate-changelog.ts are ENOENT-tolerant. Verify it
+          # only when present so this step stays consistent with that invariant.
+          if git cat-file -e "$VERSION:.shardmind/shard.yaml" 2>/dev/null; then
+            shard=$(git show "$VERSION:.shardmind/shard.yaml" | sed -n 's/^version:[[:space:]]*//p' | head -1)
+            echo "shard.yaml=$shard"
+            if [ "$shard" != "$want" ]; then
+              echo "::error::Tagged shard.yaml version=$shard, expected $want"
+              exit 1
+            fi
+          fi
 
       - name: Build vault zip
         run: |
