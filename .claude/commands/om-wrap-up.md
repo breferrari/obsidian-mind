@@ -38,6 +38,7 @@ For each note created or modified this session:
 
 - `work/Index.md` — are new notes linked? Are completed projects in the right section?
 - `brain/Memories.md` — does Recent Context reflect what happened this session?
+- Auto-memory index — if brain/ notes were added or their descriptions changed, REGENERATE the index instead of hand-editing it: `node --experimental-strip-types .claude/scripts/generate-memory-index.ts > <your ~/.claude/projects/<slug>/memory/MEMORY.md path>`. MEMORY.md is a derived view (pointers only); hand edits get overwritten by design.
 - `org/People & Context.md` — any new people or relationship changes to capture?
 - `perf/Brag Doc.md` — any wins or achievements from this session?
 - `Home.md` — are embedded Bases still valid?
