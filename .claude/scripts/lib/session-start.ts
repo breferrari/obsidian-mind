@@ -4,6 +4,8 @@
  * system, or invoking the Obsidian CLI.
  */
 
+import { join } from "node:path";
+
 import { escapeRegex } from "./regex.ts";
 
 export function take(stdout: string, n: number): string {
@@ -209,6 +211,69 @@ export function qmdArgsWithIndex(
 }
 
 /**
+ * True when a captured stderr blob is @tobilu/qmd's native `better-sqlite3`
+ * binding failing to load because it was compiled against a different Node
+ * ABI than the one currently running (`ERR_DLOPEN_FAILED` / a
+ * `NODE_MODULE_VERSION` mismatch message). This is a DISTINCT failure mode
+ * from "store missing/empty" (see `qmdStoreLooksEmpty` in the hook script):
+ * the sqlite file can be tens of MB and perfectly healthy, but every qmd
+ * invocation still crashes before it ever opens it, because the native
+ * addon itself won't load under the current Node binary — typically after
+ * a Node upgrade on the host machine. Query results and the whole MCP
+ * server go silently dark in this state (the fire-and-forget re-index spawn
+ * swallows the crash), so this check exists to catch it instead of letting
+ * a session quietly fall back to Grep/Read for the rest of its life.
+ */
+export function isQmdNativeAbiMismatch(stderr: string): boolean {
+	return (
+		stderr.includes("NODE_MODULE_VERSION") ||
+		stderr.includes("ERR_DLOPEN_FAILED")
+	);
+}
+
+/**
+ * Derive the @tobilu/qmd package root (the directory containing its
+ * package.json) from `resolveQmdEntry()`'s resolved entry path
+ * (`.../@tobilu/qmd/dist/cli/qmd.js`), so a native-module rebuild can run
+ * `npm rebuild` with that directory as its cwd — portable across a global
+ * npm install, a local one, Homebrew's node_modules layout, or Windows,
+ * without hardcoding any machine-specific prefix path. Returns null when
+ * the entry itself is null (no resolvable install to rebuild) or doesn't
+ * match the expected `dist/cli/qmd.js` shape.
+ */
+export function qmdPackageRootFromEntry(entry: string | null): string | null {
+	if (entry === null) return null;
+	const marker = join("dist", "cli", "qmd.js");
+	if (!entry.endsWith(marker)) return null;
+	const prefixLen = entry.length - marker.length - 1; // -1 drops the separator before "dist"
+	return prefixLen > 0 ? entry.slice(0, prefixLen) : null;
+}
+
+/**
+ * Extract the `qmd_min_version` string from a `vault-manifest.json` source.
+ * Returns null when the manifest is absent, malformed, or the field is not
+ * a string — the min-version check simply doesn't run then (the field is
+ * opt-in, and qmd itself is optional).
+ */
+export function parseQmdMinVersion(manifestJson: string | null): string | null {
+	if (manifestJson === null) return null;
+	try {
+		const parsed = JSON.parse(manifestJson) as unknown;
+		if (
+			parsed !== null &&
+			typeof parsed === "object" &&
+			"qmd_min_version" in parsed
+		) {
+			const value = (parsed as Record<string, unknown>)["qmd_min_version"];
+			if (typeof value === "string" && value.length > 0) return value;
+		}
+	} catch {
+		/* malformed manifest → treat as missing */
+	}
+	return null;
+}
+
+/**
  * True if a directory-entry name has a `.md` extension. Compared case-
  * insensitively so files saved as `.MD` or `.Md` (legal on case-insensitive
  * filesystems like NTFS and APFS, and produced by editors that preserve
@@ -339,4 +404,20 @@ export function formatBrainIndex(
 			return `- [[${e.name}]] — ${desc}${suffix}`;
 		});
 	return lines.length > 0 ? lines.join("\n") : "(none)";
+}
+
+/**
+ * Resolve the machine-local sqlite store path for a named qmd index,
+ * honoring XDG_CACHE_HOME exactly like @tobilu/qmd's own store.js (and the
+ * MCP wrapper's resolveIndexSqlitePath in qmd-mcp.mjs — kept in sync by
+ * behavior-locking tests on both, since .mjs exports can't be imported into
+ * .ts under strip-types). Pure: env and home are injected for testability.
+ */
+export function resolveIndexStorePath(
+	indexName: string,
+	env: Record<string, string | undefined>,
+	home: string,
+): string {
+	const base = env["XDG_CACHE_HOME"] ?? join(home, ".cache");
+	return join(base, "qmd", `${indexName}.sqlite`);
 }

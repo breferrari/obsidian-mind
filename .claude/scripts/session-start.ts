@@ -14,10 +14,11 @@ import {
 	readFileSync,
 	appendFileSync,
 	readdirSync,
+	statSync,
 	type Dirent,
 } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	take,
@@ -31,13 +32,21 @@ import {
 	stripFrontmatter,
 	hasBrainContent,
 	parseQmdIndex,
+	parseQmdMinVersion,
 	qmdArgsWithIndex,
+	isQmdNativeAbiMismatch,
+	qmdPackageRootFromEntry,
+	resolveIndexStorePath,
 	parseInfraRootFilenames,
 	isInfraFilename,
 	isMarkdownFilename,
 	collectOpenTasks,
 } from "./lib/session-start.ts";
-import { buildQmdCommand, resolveQmdEntry } from "./lib/qmd.ts";
+import {
+	buildQmdCommand,
+	qmdVersionAtLeast,
+	resolveQmdEntry,
+} from "./lib/qmd.ts";
 
 function readManifestRaw(): string | null {
 	try {
@@ -81,21 +90,111 @@ const infraRootFilenames = parseInfraRootFilenames(manifestJson);
 // Route through `buildQmdCommand` so the shim-bypass logic that fixes
 // the MCP wrapper applies here too.
 const qmdIndex = parseQmdIndex(manifestJson);
-const qmdUpdate = buildQmdCommand(
-	resolveQmdEntry(),
-	qmdArgsWithIndex(qmdIndex, ["update"]),
-);
-// `cwd: tmpdir()` keeps the detached child from holding the vault dir as
-// its working directory. `qmd update --index <name>` reads collection
-// paths from YAML, so cwd is irrelevant to the work; pinning it to the OS
-// tmpdir means `rm -rf` of the vault (or a test cleanup) never races a
-// stale qmd handle on Windows.
+const qmdEntry = resolveQmdEntry();
+
+// qmd is OPTIONAL in this template: every self-heal path below is gated on
+// a resolvable install (`qmdEntry !== null`). A machine without qmd gets no
+// probes, no bootstrap spawn, no notes — the silent degradation it has today.
+
+// Self-heal a BROKEN qmd install, distinct from a missing one: if a Node
+// upgrade leaves @tobilu/qmd's native `better-sqlite3` binding compiled
+// against the wrong ABI, every invocation crashes before it opens the store
+// — the sqlite file can be tens of MB and perfectly healthy, and the
+// fire-and-forget re-index spawn swallows the crash, so semantic search
+// goes silently dark. Bounded to a status call (cheap, touches the store)
+// + a rebuild (the actual fix) — both timeboxed so a hung native build
+// can't blow the hook's timeout.
+let qmdSelfHealNote: string | null = null;
+if (qmdIndex !== null && qmdEntry !== null) {
+	const preflightCmd = buildQmdCommand(qmdEntry, [
+		"--index",
+		qmdIndex,
+		"status",
+	]);
+	const preflight = spawnSync(preflightCmd.cmd, preflightCmd.args as string[], {
+		encoding: "utf-8",
+		timeout: 5_000,
+		shell: preflightCmd.shell,
+	});
+	if (isQmdNativeAbiMismatch(preflight.stderr ?? "")) {
+		const pkgRoot = qmdPackageRootFromEntry(qmdEntry);
+		if (pkgRoot !== null) {
+			const rebuild = spawnSync("npm rebuild better-sqlite3", {
+				cwd: pkgRoot,
+				encoding: "utf-8",
+				timeout: 20_000,
+				shell: true,
+			});
+			qmdSelfHealNote =
+				rebuild.status === 0
+					? "⚠️ QMD's native module (better-sqlite3) was ABI-mismatched against this machine's Node version — auto-rebuilt this session. Semantic search may need one more `qmd update` to fully catch up; if the qmd MCP tools are still absent, a session restart picks them up."
+					: "⚠️ QMD's native module (better-sqlite3) is ABI-mismatched against this machine's Node version, and the automatic `npm rebuild better-sqlite3` did not complete cleanly — semantic search is likely dead. Manual fix: `npm rebuild better-sqlite3` inside the @tobilu/qmd package directory, then `qmd update`.";
+		}
+	}
+}
+
+// Min-version check (#100): warn-only here — a session must never be broken
+// by an old qmd, but a silently-old install shouldn't stay silent either.
+// Runs only when the manifest opts in via `qmd_min_version` AND qmd is
+// installed. The bootstrap enforces the same floor loudly.
+let qmdVersionNote: string | null = null;
+const qmdMinVersion = parseQmdMinVersion(manifestJson);
+if (qmdMinVersion !== null && qmdEntry !== null) {
+	const versionCmd = buildQmdCommand(qmdEntry, ["--version"]);
+	const v = spawnSync(versionCmd.cmd, versionCmd.args as string[], {
+		encoding: "utf-8",
+		timeout: 5_000,
+		shell: versionCmd.shell,
+	});
+	if (v.status === 0 && !qmdVersionAtLeast(v.stdout ?? "", qmdMinVersion)) {
+		qmdVersionNote = `⚠️ Installed qmd (${(v.stdout ?? "").trim()}) is below this vault's declared minimum (${qmdMinVersion}) — semantic search may misbehave. Update: \`npm i -g @tobilu/qmd\`, then re-run the bootstrap.`;
+	}
+}
+
+// Self-heal a machine that hasn't bootstrapped QMD yet: the store is
+// machine-local derived data (~/.cache/qmd/<index>.sqlite, never committed),
+// so a clean clone has no registered collection — and `qmd update` silently
+// no-ops forever in that state, leaving semantic search dead with no error
+// (an empty shell store can still exist at ~100KB; a populated one is tens
+// of MB). If the store is missing or implausibly small, run the idempotent
+// bootstrap (registers collection + context + index + embed) instead of
+// `update`. Threshold errs toward bootstrapping: it's safe to re-run by
+// design. Gated on an installed qmd — never bootstraps onto a machine that
+// hasn't opted into qmd at all.
+function qmdStoreLooksEmpty(index: string | null): boolean {
+	if (!index) return false; // no named index → keep legacy update behavior
+	try {
+		// XDG-aware, matching qmd's own store path — a hardcoded ~/.cache
+		// would force a full bootstrap every session for XDG_CACHE_HOME users.
+		const store = resolveIndexStorePath(index, process.env, homedir());
+		return statSync(store).size < 500_000;
+	} catch {
+		return true; // store missing / path differs → bootstrap (idempotent)
+	}
+}
+
+const bootstrapNeeded = qmdEntry !== null && qmdStoreLooksEmpty(qmdIndex);
+const qmdUpdate = bootstrapNeeded
+	? {
+			cmd: process.execPath,
+			args: ["--experimental-strip-types", "scripts/qmd-bootstrap.ts"],
+			shell: false,
+		}
+	: buildQmdCommand(qmdEntry, qmdArgsWithIndex(qmdIndex, ["update"]));
+// Bootstrap resolves the script + vault-manifest.json relative to the vault
+// cwd; the update path pins cwd to tmpdir. `cwd: tmpdir()` keeps the
+// detached child from holding the vault dir as its working directory —
+// `qmd update --index <name>` reads collection paths from YAML, so cwd is
+// irrelevant to the work, and pinning it to the OS tmpdir means `rm -rf`
+// of the vault (or a test cleanup) never races a stale qmd handle on
+// Windows.
+const qmdCwd = bootstrapNeeded ? cwd : tmpdir();
 const qmdChild = spawn(qmdUpdate.cmd, qmdUpdate.args as string[], {
 	stdio: "ignore",
 	shell: qmdUpdate.shell,
 	detached: true,
 	windowsHide: true,
-	cwd: tmpdir(),
+	cwd: qmdCwd,
 });
 // Silence the spawn-error event so a missing qmd doesn't crash the hook;
 // qmd is optional and the hook already degrades when it's not installed.
@@ -287,6 +386,13 @@ const sections = [
 	"### Vault File Listing",
 	listMd().join("\n"),
 ];
+
+if (qmdSelfHealNote !== null) {
+	sections.push("", "### QMD Self-Heal", qmdSelfHealNote);
+}
+if (qmdVersionNote !== null) {
+	sections.push("", "### QMD Version", qmdVersionNote);
+}
 
 const body = sections.join("\n") + "\n";
 process.stdout.write(
