@@ -142,7 +142,9 @@ function fixCompletedInActive(
 		const clusterRel = `${ACTIVE_REL}/${topic}`;
 		if (handledClusters.has(clusterRel)) continue;
 		handledClusters.add(clusterRel);
-		const members = walkMarkdown(vaultRoot, clusterRel);
+		// Sorted: walkMarkdown returns filesystem order, which differs across
+		// machines — output must be deterministic.
+		const members = walkMarkdown(vaultRoot, clusterRel).sort();
 		const allDone = members.every((m) => completedSet.has(m));
 		if (!allDone) {
 			report.refused.push(
@@ -150,7 +152,16 @@ function fixCompletedInActive(
 			);
 			continue;
 		}
-		const year = archiveYear(vaultRoot, members[0] ?? rel);
+		// The archive year is deterministic only when every member agrees;
+		// a cluster spanning years has no correct single bucket — judgment.
+		const years = new Set(members.map((m) => archiveYear(vaultRoot, m)));
+		if (years.size > 1) {
+			report.refused.push(
+				`${clusterRel}/ — completed notes span years (${[...years].sort().join(", ")}); the archive-year choice is judgment`,
+			);
+			continue;
+		}
+		const year = [...years][0] as string;
 		const dest = `work/archive/${year}/${topic}`;
 		report.fixed.push(`${clusterRel}/ → ${dest}/ (whole cluster)`);
 		if (apply) moveTracked(vaultRoot, clusterRel, dest, report.notes);
@@ -195,6 +206,7 @@ function fixMisplacedMemory(
 		);
 		if (!apply) continue;
 		const content = readFileSync(join(memDir, stray), "utf-8");
+		mkdirSync(join(vaultRoot, "brain"), { recursive: true });
 		writeFileSync(target, content);
 		const copied = readFileSync(target, "utf-8");
 		if (copied !== content) {
@@ -208,19 +220,40 @@ function fixMisplacedMemory(
 	if (apply && migrated > 0) {
 		// Regenerate the index from brain/ (now including the migrated notes),
 		// THEN remove the verified strays — hegu-1's sequence from #81.
-		const notes = collectBrainNotes(vaultRoot);
-		if (notes !== null) {
-			writeFileSync(join(memDir, "MEMORY.md"), generateMemoryIndex(notes));
-			report.notes.push("  MEMORY.md regenerated");
+		// Removal is GATED on successful regeneration: if the index step
+		// fails, the strays stay (copies remain in brain/ for inspection).
+		let indexOk = false;
+		try {
+			const notes = collectBrainNotes(vaultRoot);
+			if (notes !== null) {
+				writeFileSync(join(memDir, "MEMORY.md"), generateMemoryIndex(notes));
+				report.notes.push("  MEMORY.md regenerated");
+				indexOk = true;
+			} else {
+				report.notes.push(
+					"  index NOT regenerated (brain/ unreadable) — strays left in place",
+				);
+			}
+		} catch {
+			report.notes.push(
+				"  index regeneration failed — strays left in place",
+			);
 		}
+		if (!indexOk) return;
 		for (const stray of entries) {
 			const target = join(vaultRoot, "brain", stray);
 			if (!existsSync(target)) continue; // refused or verify-failed
-			if (
-				readFileSync(target, "utf-8") ===
-				readFileSync(join(memDir, stray), "utf-8")
-			) {
-				rmSync(join(memDir, stray));
+			try {
+				if (
+					readFileSync(target, "utf-8") ===
+					readFileSync(join(memDir, stray), "utf-8")
+				) {
+					rmSync(join(memDir, stray));
+				}
+			} catch {
+				report.notes.push(
+					`  could not remove memory/${stray} — copy in brain/ is verified; remove by hand`,
+				);
 			}
 		}
 	}

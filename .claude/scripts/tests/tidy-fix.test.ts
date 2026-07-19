@@ -63,6 +63,8 @@ before(() => {
 	note("work/active/Mixed Topic/Live.md", "active", "2026-01-01");
 	note("work/active/Full Topic/A.md", "completed", "2024-03-01");
 	note("work/active/Full Topic/B.md", "completed", "2024-04-01");
+	note("work/active/Split Years/A.md", "completed", "2023-11-01");
+	note("work/active/Split Years/B.md", "completed", "2024-02-01");
 	mkdirSync(join(ROOT, "brain"), { recursive: true });
 	writeFileSync(
 		join(ROOT, "brain/Patterns.md"),
@@ -88,6 +90,7 @@ describe("tidy-fix", () => {
 		assert.match(stdout, /Done Solo\.md → work\/archive\/2025\/Done Solo\.md/);
 		assert.match(stdout, /Full Topic\/ → work\/archive\/2024\/Full Topic\/ \(whole cluster\)/);
 		assert.match(stdout, /Mixed Topic\/ — mixed cluster/);
+		assert.match(stdout, /Split Years\/ — completed notes span years \(2023, 2024\)/);
 		assert.match(stdout, /stray-note\.md → brain\/stray-note\.md/);
 		assert.match(stdout, /memory\/Collide\.md — brain\/Collide\.md already exists/);
 		// Nothing moved.
@@ -106,6 +109,8 @@ describe("tidy-fix", () => {
 		// Fully-completed cluster moves whole.
 		assert.ok(existsSync(join(ROOT, "work/archive/2024/Full Topic/A.md")));
 		assert.ok(!existsSync(join(ROOT, "work/active/Full Topic")));
+		// Multi-year cluster refused — untouched.
+		assert.ok(existsSync(join(ROOT, "work/active/Split Years/A.md")));
 		// Mixed cluster refused — untouched.
 		assert.ok(existsSync(join(ROOT, "work/active/Mixed Topic/Done.md")));
 		assert.ok(existsSync(join(ROOT, "work/active/Mixed Topic/Live.md")));
