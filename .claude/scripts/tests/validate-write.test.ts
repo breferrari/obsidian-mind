@@ -17,26 +17,20 @@ const SCRIPT = resolve(
 );
 
 let TMP_DIR = "";
-let prevProjectDir: string | undefined;
 
 before(() => {
 	TMP_DIR = mkdtempSync(join(tmpdir(), "validate-write-test-"));
-	// The hook skips files outside the vault root; fixtures live in the OS
-	// tmpdir, so route the subprocess's vault root there (inherited env).
-	prevProjectDir = process.env["CLAUDE_PROJECT_DIR"];
-	process.env["CLAUDE_PROJECT_DIR"] = TMP_DIR;
 });
 
 after(() => {
 	if (TMP_DIR) rmSync(TMP_DIR, { recursive: true, force: true });
-	if (prevProjectDir === undefined) {
-		delete process.env["CLAUDE_PROJECT_DIR"];
-	} else {
-		process.env["CLAUDE_PROJECT_DIR"] = prevProjectDir;
-	}
 });
 
-const runScript = (stdin: string | object | null) => spawnHook(SCRIPT, stdin);
+// The hook skips files outside the vault root; fixtures live in the OS
+// tmpdir, so route the subprocess's vault root there — scoped to the spawn
+// via envOverrides rather than mutating this process's env.
+const runScript = (stdin: string | object | null) =>
+	spawnHook(SCRIPT, stdin, { CLAUDE_PROJECT_DIR: TMP_DIR });
 
 function makeMd(content: string, name = "test.md"): string {
 	const path = join(TMP_DIR, name);

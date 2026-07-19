@@ -168,6 +168,16 @@ describe("isBlockedMemoryPath", () => {
 			false,
 		);
 	});
+	test("collapses backslash-spelled dot-dot segments on any host", () => {
+		// Separator unification must precede normalization, or this Windows
+		// spelling would false-positive on POSIX hosts.
+		assert.equal(
+			isBlockedMemoryPath(
+				"C:\\u\\.claude\\projects\\-p\\memory\\..\\transcripts\\x.md",
+			),
+			false,
+		);
+	});
 });
 
 describe("validateContent — ticket-ID phantom edges", () => {

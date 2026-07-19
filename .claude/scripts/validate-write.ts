@@ -91,10 +91,13 @@ if (isBlockedMemoryPath(filePath) || isBlockedMemoryPath(resolvedPath)) {
 
 // Vault-root skip AFTER the memory guard (which must inspect outside-vault
 // paths): files outside the vault are not vault notes — no validation.
-const vaultRoot = process.env["CLAUDE_PROJECT_DIR"] ?? process.cwd();
-if (
-	!filePath.replaceAll("\\", "/").startsWith(vaultRoot.replaceAll("\\", "/"))
-) {
+// Boundary-safe: "/vault" must not match "/vaulting/…", and an empty env
+// value falls back to cwd (|| not ??).
+const vaultRoot = (process.env["CLAUDE_PROJECT_DIR"] || process.cwd())
+	.replaceAll("\\", "/")
+	.replace(/\/+$/, "");
+const filePathFwd = filePath.replaceAll("\\", "/");
+if (filePathFwd !== vaultRoot && !filePathFwd.startsWith(vaultRoot + "/")) {
 	debug(`validate: skipped (outside vault root) ${filePath}`);
 	process.exit(0);
 }

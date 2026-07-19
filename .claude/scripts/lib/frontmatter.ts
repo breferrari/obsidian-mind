@@ -3,7 +3,7 @@
  * frontmatter fields, and wikilink presence on non-trivial notes.
  */
 
-import { basename, normalize } from "node:path";
+import { basename, posix } from "node:path";
 import { readFileSync } from "node:fs";
 
 const ROOT_FILES: ReadonlySet<string> = new Set([
@@ -43,7 +43,10 @@ const SKIP_PATH_SEGMENTS: readonly string[] = [
  * other `.claude/projects/<x>/` subdirs (transcripts, hook output).
  */
 export function isBlockedMemoryPath(filePath: string): boolean {
-	const normalized = normalize(filePath).replaceAll("\\", "/");
+	// Separators unified FIRST, then posix-normalize: normalize() on a POSIX
+	// host doesn't treat "\" as a separator, so backslash-spelled ".."
+	// segments would otherwise survive uncollapsed.
+	const normalized = posix.normalize(filePath.replaceAll("\\", "/"));
 	if (!normalized.includes("/memory/")) return false;
 	if (!normalized.includes("/.claude/")) return false;
 	const base = basename(normalized);
