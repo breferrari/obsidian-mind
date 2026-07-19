@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import {
 	take,
 	formatDateHeader,
+	formatInjectionSize,
 	formatActiveWork,
 	formatRecentChanges,
 	isSkippedPath,
@@ -580,4 +581,21 @@ describe("formatBrainIndex", () => {
 		]);
 		assert.equal(out, "(none)");
 	});
+});
+
+describe("formatInjectionSize", () => {
+	const cases: ReadonlyArray<readonly [number, string]> = [
+		[0, "_context injected: 0.0kB_"],
+		[999, "_context injected: 1.0kB_"], // toFixed rounds
+		[300, "_context injected: 0.3kB_"],
+		[58_400, "_context injected: 58.4kB_"],
+		[1_048_576, "_context injected: 1048.6kB_"],
+		[-5, "_context injected: 0.0kB_"],
+		[Number.NaN, "_context injected: 0.0kB_"],
+	];
+	for (const [bytes, expected] of cases) {
+		test(`${bytes} → ${expected}`, () => {
+			assert.equal(formatInjectionSize(bytes), expected);
+		});
+	}
 });
