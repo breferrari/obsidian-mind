@@ -39,7 +39,11 @@ import {
 	legacyCollectionCandidate,
 	makeCollectionAddBenignMatcher,
 } from "../.claude/scripts/lib/qmd-bootstrap.ts";
-import { buildQmdCommand, resolveQmdEntry } from "../.claude/scripts/lib/qmd.ts";
+import {
+	buildQmdCommand,
+	qmdVersionAtLeast,
+	resolveQmdEntry,
+} from "../.claude/scripts/lib/qmd.ts";
 import {
 	qmdConfigPath,
 	readObsidianIgnore,
@@ -51,6 +55,7 @@ import { isValidQmdIndex } from "../.claude/scripts/lib/session-start.ts";
 type ManifestSubset = {
 	readonly qmd_index?: string;
 	readonly qmd_context?: string;
+	readonly qmd_min_version?: string;
 	readonly template?: string;
 };
 
@@ -98,7 +103,9 @@ function echo(outcome: SpawnOutcome): void {
 	if (outcome.stderr) process.stderr.write(outcome.stderr);
 }
 
-function ensureQmd(entry: string | null): void {
+/** Verify qmd is installed; returns the raw `--version` output for the
+ *  min-version gate in main(). */
+function ensureQmd(entry: string | null): string {
 	const probe = spawnQmd(entry, ["--version"]);
 	if (probe.status !== 0) {
 		process.stderr.write(
@@ -106,6 +113,7 @@ function ensureQmd(entry: string | null): void {
 		);
 		process.exit(1);
 	}
+	return probe.stdout;
 }
 
 /**
@@ -198,7 +206,24 @@ function main(): void {
 	// Resolve once up front so every downstream spawn reuses the same entry.
 	const entry = resolveQmdEntry();
 
-	ensureQmd(entry);
+	const versionOut = ensureQmd(entry);
+
+	// Min-version gate (#100): a silently-old qmd is the failure the version
+	// declaration exists to catch — fail loud here, where the user is already
+	// taking explicit setup action. Fails OPEN on unparseable versions (an
+	// unknown version must never brick the bootstrap); vaults without the
+	// manifest field skip the gate entirely.
+	const minVersion = manifest.qmd_min_version;
+	if (
+		typeof minVersion === "string" &&
+		!qmdVersionAtLeast(versionOut, minVersion)
+	) {
+		process.stderr.write(
+			`Installed qmd (${versionOut.trim()}) is below this vault's declared minimum (${minVersion}).\n` +
+				"Update it: npm i -g @tobilu/qmd\n",
+		);
+		process.exit(1);
+	}
 
 	// Collection name = qmd_index, the per-vault identity (#105). `template`
 	// is the shared package identity — the same string for every install —

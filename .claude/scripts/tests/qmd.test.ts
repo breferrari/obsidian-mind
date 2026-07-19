@@ -12,7 +12,12 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
-import { buildQmdCommand, resolveQmdEntry } from "../lib/qmd.ts";
+import {
+	buildQmdCommand,
+	parseVersionTriple,
+	qmdVersionAtLeast,
+	resolveQmdEntry,
+} from "../lib/qmd.ts";
 
 describe("lib/qmd.resolveQmdEntry", () => {
 	test("returns an absolute path to an existing qmd entrypoint when qmd is installed", () => {
@@ -96,5 +101,36 @@ describe("lib/qmd.buildQmdCommand", () => {
 		assert.deepEqual(out.args, []);
 		// And the returned args is its own array, not aliased to the input.
 		assert.notEqual(out.args, input);
+	});
+});
+
+describe("parseVersionTriple", () => {
+	test("parses bare x.y.z", () => {
+		assert.deepEqual(parseVersionTriple("2.5.3"), [2, 5, 3]);
+	});
+	test("parses the qmd --version output shape", () => {
+		assert.deepEqual(parseVersionTriple("qmd 2.5.3 (655769712a)"), [2, 5, 3]);
+	});
+	test("null when no triple present", () => {
+		assert.equal(parseVersionTriple("qmd dev-build"), null);
+		assert.equal(parseVersionTriple(""), null);
+		assert.equal(parseVersionTriple("2.5"), null);
+	});
+});
+
+describe("qmdVersionAtLeast", () => {
+	test("true when equal or above", () => {
+		assert.equal(qmdVersionAtLeast("qmd 2.5.3 (abc)", "2.5.3"), true);
+		assert.equal(qmdVersionAtLeast("qmd 2.5.3 (abc)", "2.0.0"), true);
+		assert.equal(qmdVersionAtLeast("3.0.0", "2.9.9"), true);
+	});
+	test("false when below on any component", () => {
+		assert.equal(qmdVersionAtLeast("qmd 1.9.9 (abc)", "2.0.0"), false);
+		assert.equal(qmdVersionAtLeast("2.4.9", "2.5.0"), false);
+		assert.equal(qmdVersionAtLeast("2.5.2", "2.5.3"), false);
+	});
+	test("fails open on unparseable input, either side", () => {
+		assert.equal(qmdVersionAtLeast("qmd dev-build", "2.0.0"), true);
+		assert.equal(qmdVersionAtLeast("2.5.3", "latest"), true);
 	});
 });
