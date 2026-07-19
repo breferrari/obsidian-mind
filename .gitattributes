@@ -1,0 +1,3 @@
+# Normalize line endings: Obsidian-on-Windows rewrites LF to CRLF on edit,
+# producing phantom whole-file diffs on every cross-platform sync.
+* text=auto eol=lf
