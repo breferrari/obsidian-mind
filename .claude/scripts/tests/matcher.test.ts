@@ -75,7 +75,8 @@ describe("sub-hints (#111)", () => {
 	});
 	test("sub-hint patterns alone (no parent match) emit nothing", () => {
 		const out = classify("the migration superseded the old pipeline");
-		assert.ok(!out.some((m) => m.includes("REVERSAL")) || out.some((m) => m.includes("DECISION detected")));
+		assert.ok(!out.some((m) => m.includes("DECISION detected")));
+		assert.ok(!out.some((m) => m.includes("REVERSAL")));
 	});
 	test("parent without sub-hint patterns emits only the parent", () => {
 		const out = classify("we decided to ship the feature");
