@@ -8,6 +8,35 @@
 
 
 
+
+## v7.0.0 — 2026-07-19
+
+### Added
+- tidy-fix — deterministic --fix consumer for detector findings
+- phantom-edge findings ride the policyResults contract
+- MEMORY.md as a rebuildable index (generator + regen tests)
+- Write-Correctness Laws, agent-docs sync guard, index-first wrap-up, failing manifest-check
+- classifier sub-hints — secondary discriminator on routing signals
+- Recently Touched base + Stale Actives dashboard view
+- eager-layer token efficiency — source-aware injection, spawn merge, hint dedupe, listing collapse
+- wikilink parser lib + vault-wide broken-link ratchet gate
+- om-tidy + hygiene-aware commands and agents (the acting half)
+- vault hygiene — drift scan, write-time flags, config-driven open-loops
+- memory-location guard, machine-readable policy results, phantom-edge warning
+- QMD self-heal at SessionStart (empty store, ABI mismatch, version warn)
+- injection-size meter for the SessionStart eager layer
+- mermaid-visualizer and excalidraw-diagram skills
+
+### Changed
+- dynamic command catalog, split doctrine, feature refresh across READMEs
+- refresh vendored kepano/obsidian-skills to upstream a1dc48e
+
+### Fixed
+- bump shardmind bootstrap fingerprint to qmd-v2 for the v7 migration
+- derive qmd collection name from qmd_index (with legacy-name migration)
+- skill review fixes — invalid mermaid fences, frontmatter wording, spacing
+- normalize line endings and guard .gitignore against silent exclusions
+
 ## v6.2.1 — 2026-06-02
 
 ### Fixed

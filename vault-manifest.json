@@ -1,11 +1,18 @@
 {
   "template": "obsidian-mind",
-  "version": "6.2.1",
-  "released": "2026-06-02",
+  "version": "7.0.0",
+  "released": "2026-07-19",
   "qmd_index": "obsidian-mind",
   "qmd_min_version": "2.0.0",
-  "open_loop_dirs": ["work/1-1", "work/meetings", "work/incidents"],
-  "open_loop_sections": ["action items", "what to watch"],
+  "open_loop_dirs": [
+    "work/1-1",
+    "work/meetings",
+    "work/incidents"
+  ],
+  "open_loop_sections": [
+    "action items",
+    "what to watch"
+  ],
   "qmd_context": "Engineer's work vault built on obsidian-mind. Active projects and archive, 1:1 notes, incidents, brag log with quarterly evidence, competency map, people and teams, decisions and patterns in brain/, reference docs and runbooks. Multi-agent (Claude Code, Codex, Gemini) with lifecycle hooks and QMD semantic search. Ground for 'what did I ship?' reviews, project status, and personal knowledge management.",
   "infrastructure": [
     "CLAUDE.md",
@@ -175,6 +182,16 @@
     "v6.2": {
       "exists": [
         ".shardmind/hooks/personalize.ts"
+      ],
+      "missing": [
+        "bases/Recently Touched.base"
+      ]
+    },
+    "v7.0": {
+      "exists": [
+        "bases/Recently Touched.base",
+        ".claude/commands/om-tidy.md",
+        ".claude/scripts/generate-memory-index.ts"
       ]
     }
   },
