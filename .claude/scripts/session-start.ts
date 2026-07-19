@@ -47,6 +47,11 @@ import {
 	qmdVersionAtLeast,
 	resolveQmdEntry,
 } from "./lib/qmd.ts";
+import {
+	formatActiveHygiene,
+	parseOpenLoopConfig,
+	scanActiveHygiene,
+} from "./lib/active-hygiene.ts";
 
 function readManifestRaw(): string | null {
 	try {
@@ -392,6 +397,20 @@ if (qmdSelfHealNote !== null) {
 }
 if (qmdVersionNote !== null) {
 	sections.push("", "### QMD Version", qmdVersionNote);
+}
+
+// Hygiene drift flags (#98/#103/#106): silent when the vault is clean, so
+// the section only spends tokens when it has something to say.
+const hygieneLines = formatActiveHygiene(
+	scanActiveHygiene(
+		cwd,
+		Date.now(),
+		parseOpenLoopConfig(manifestJson),
+		infraRootFilenames,
+	),
+);
+if (hygieneLines.length > 0) {
+	sections.push("", "### Vault Hygiene (drift detected)", hygieneLines.join("\n"));
 }
 
 const body = sections.join("\n") + "\n";

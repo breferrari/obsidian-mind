@@ -12,10 +12,17 @@
  * shape, zero drift between the two paths.
  */
 
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readStdinJson } from "./lib/hook-io.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
+import {
+	formatActiveHygiene,
+	parseOpenLoopConfig,
+	scanActiveHygiene,
+} from "./lib/active-hygiene.ts";
+import { parseInfraRootFilenames } from "./lib/session-start.ts";
 
 const DEBOUNCE_MS = 30_000;
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -41,7 +48,34 @@ const checklist = [
 	"- Run /om-vault-audit if many notes were created/modified",
 ].join("\n");
 
-process.stdout.write(checklist + "\n");
+// Concrete drift findings beat a generic checklist (#98/#103/#106): the
+// same scan SessionStart runs, so the session closes against the same
+// facts it opened with. Silent when clean.
+const vaultRoot = process.env["CLAUDE_PROJECT_DIR"] || process.cwd();
+let manifestJson: string | null = null;
+try {
+	manifestJson = readFileSync(join(vaultRoot, "vault-manifest.json"), {
+		encoding: "utf-8",
+	});
+} catch {
+	/* missing manifest → default open-loop config */
+}
+const hygieneLines = formatActiveHygiene(
+	scanActiveHygiene(
+		vaultRoot,
+		Date.now(),
+		parseOpenLoopConfig(manifestJson),
+		parseInfraRootFilenames(manifestJson),
+	),
+);
+
+process.stdout.write(
+	checklist +
+		(hygieneLines.length > 0
+			? "\n\nVault Hygiene (drift detected):\n" + hygieneLines.join("\n")
+			: "") +
+		"\n",
+);
 
 triggerDebouncedRefresh({
 	sentinelPath: SENTINEL_PATH,

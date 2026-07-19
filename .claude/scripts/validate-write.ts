@@ -9,13 +9,25 @@
  */
 
 import { basename } from "node:path";
-import { realpathSync } from "node:fs";
-import { debug, readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
+import { realpathSync, statSync } from "node:fs";
+import {
+	debug,
+	readStdinJson,
+	writeHookOutput,
+	type PolicyResult,
+} from "./lib/hook-io.ts";
 import {
 	isBlockedMemoryPath,
 	shouldSkipFile,
 	validateFile,
 } from "./lib/frontmatter.ts";
+import {
+	MONOLITH_BYTES,
+	formatClusterHint,
+	formatMonolithHint,
+	isMonolithExempt,
+	newNoteClusterCandidate,
+} from "./lib/active-hygiene.ts";
 
 type HookInput = {
 	readonly tool_input?: unknown;
@@ -114,17 +126,64 @@ if (warnings === null) {
 }
 debug(`validate: ${filePath} — ${warnings.length} warning(s)`);
 
+const blocks: string[] = [];
+const policyResults: PolicyResult[] = [];
+
 if (warnings.length > 0) {
 	const hintList = warnings.map((w) => `  - ${w}`).join("\n");
 	const base = basename(filePath.replaceAll("\\", "/"));
-	const additionalContext = `Vault hygiene warnings for \`${base}\`:\n${hintList}\nFix these before moving on.`;
+	blocks.push(
+		`Vault hygiene warnings for \`${base}\`:\n${hintList}\nFix these before moving on.`,
+	);
+}
 
+// Write-time organization flags (#103): the same detectors the scan hooks
+// run, moved to the moment of growth — the session that just made a note
+// oversized (or added the note that completes a cluster) has the context
+// to organize it NOW. Each detector is isolated so a future unguarded
+// edit inside one can't kill the sibling checks in the same write.
+const relPath = filePathFwd.startsWith(vaultRoot + "/")
+	? filePathFwd.slice(vaultRoot.length + 1)
+	: filePathFwd;
+try {
+	const size = statSync(filePath).size;
+	if (
+		size >= MONOLITH_BYTES &&
+		!isMonolithExempt(basename(filePathFwd))
+	) {
+		blocks.push(formatMonolithHint(relPath, size));
+		policyResults.push({
+			policy_id: "organization-threshold",
+			path: relPath,
+			classification: "oversized-note",
+			action: "flag",
+		});
+	}
+} catch {
+	debug("validate: monolith check failed — skipped");
+}
+try {
+	const cluster = newNoteClusterCandidate(filePath, vaultRoot);
+	if (cluster !== null) {
+		blocks.push(formatClusterHint(cluster));
+		policyResults.push({
+			policy_id: "topic-cluster",
+			path: relPath,
+			classification: "ungrouped-cluster",
+			suggested_target: "work/active/<Topic>/",
+			action: "flag",
+		});
+	}
+} catch {
+	debug("validate: cluster check failed — skipped");
+}
+
+if (blocks.length > 0) {
 	const eventName =
 		typeof input.hook_event_name === "string"
 			? input.hook_event_name
 			: "PostToolUse";
-
-	writeHookOutput(eventName, additionalContext);
+	writeHookOutput(eventName, blocks.join("\n\n"), policyResults);
 }
 
 process.exit(0);
