@@ -21,7 +21,7 @@ import {
 	countTicketIdWikilinks,
 	isBlockedMemoryPath,
 	shouldSkipFile,
-	validateFile,
+	validateContent,
 } from "./lib/frontmatter.ts";
 import {
 	MONOLITH_BYTES,
@@ -144,11 +144,16 @@ if (shouldSkipFile(filePath)) {
 	process.exit(0);
 }
 
-const warnings = validateFile(filePath);
-if (warnings === null) {
+// Single read: prose warnings AND policy results derive from the same
+// content snapshot — no second read, no TOCTOU window between them.
+let content: string;
+try {
+	content = readFileSync(filePath, { encoding: "utf-8" });
+} catch {
 	debug(`validate: could not read ${filePath}`);
 	process.exit(0);
 }
+const warnings = validateContent(content);
 debug(`validate: ${filePath} — ${warnings.length} warning(s)`);
 
 const blocks: string[] = [];
@@ -164,19 +169,14 @@ if (warnings.length > 0) {
 		`Vault hygiene warnings for \`${base}\`:\n${hintList}\nFix these before moving on.`,
 	);
 	// Phantom-edge findings ride the #117 contract like every other
-	// detector — same decision validateContent's prose came from.
-	try {
-		const content = readFileSync(filePath, "utf-8");
-		if (countTicketIdWikilinks(content) > 0) {
-			policyResults.push({
-				policy_id: "phantom-edge",
-				path: relPath,
-				classification: "ticket-id-wikilink",
-				action: "warn",
-			});
-		}
-	} catch {
-		debug("validate: phantom-edge policy check failed — skipped");
+	// detector — counted from the SAME content snapshot the prose came from.
+	if (countTicketIdWikilinks(content) > 0) {
+		policyResults.push({
+			policy_id: "phantom-edge",
+			path: relPath,
+			classification: "ticket-id-wikilink",
+			action: "warn",
+		});
 	}
 }
 
