@@ -5,7 +5,11 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { shouldSkipFile, validateContent } from "../lib/frontmatter.ts";
+import {
+	isBlockedMemoryPath,
+	shouldSkipFile,
+	validateContent,
+} from "../lib/frontmatter.ts";
 
 describe("shouldSkipFile — skip rules", () => {
 	test("skips non-markdown", () => {
@@ -129,5 +133,56 @@ describe("validateContent — frontmatter + wikilinks", () => {
 			"x".repeat(300);
 		// All three field checks should accept the alternate spacing.
 		assert.deepEqual(validateContent(c), []);
+	});
+});
+
+describe("isBlockedMemoryPath", () => {
+	test("blocks non-MEMORY.md files in the auto-memory dir", () => {
+		assert.equal(
+			isBlockedMemoryPath("/u/x/.claude/projects/-p/memory/notes.md"),
+			true,
+		);
+		assert.equal(
+			isBlockedMemoryPath("C:\\u\\x\\.claude\\projects\\-p\\memory\\n.md"),
+			true,
+		);
+	});
+	test("allows MEMORY.md itself", () => {
+		assert.equal(
+			isBlockedMemoryPath("/u/x/.claude/projects/-p/memory/MEMORY.md"),
+			false,
+		);
+	});
+	test("requires both .claude and memory segments", () => {
+		assert.equal(isBlockedMemoryPath("/vault/brain/Memories.md"), false);
+		assert.equal(isBlockedMemoryPath("/u/x/.claude/projects/-p/transcripts/t.md"), false);
+		assert.equal(isBlockedMemoryPath("/u/memory/notes.md"), false);
+	});
+	test("normalizes dot-dot segments before matching, both directions", () => {
+		assert.equal(
+			isBlockedMemoryPath("/u/.claude/projects/-p/transcripts/../memory/x.md"),
+			true,
+		);
+		assert.equal(
+			isBlockedMemoryPath("/u/.claude/projects/-p/memory/../transcripts/x.md"),
+			false,
+		);
+	});
+});
+
+describe("validateContent — ticket-ID phantom edges", () => {
+	const BASE = "---\ntags: [x]\ndescription: \"d\"\ndate: 2026-01-01\n---\n[[Real Note]]\n";
+	test("warns on bare and aliased ticket-ID wikilinks", () => {
+		const warnings = validateContent(
+			BASE + "See [[PROJ-1234]] and [[ABC-77|the ticket]].\n",
+		);
+		assert.equal(warnings.filter((w) => w.includes("ticket-ID")).length, 1);
+		assert.match(warnings.find((w) => w.includes("ticket-ID")) ?? "", /2 ticket-ID/);
+	});
+	test("silent on normal wikilinks and plain-text ticket IDs", () => {
+		const warnings = validateContent(
+			BASE + "See PROJ-1234 (plain) and [[Architecture Notes]].\n",
+		);
+		assert.equal(warnings.filter((w) => w.includes("ticket-ID")).length, 0);
 	});
 });

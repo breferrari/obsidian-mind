@@ -40,13 +40,33 @@ export async function readStdinJson<T = unknown>(): Promise<T | null> {
 	}
 }
 
+/**
+ * Machine-readable finding riding hookSpecificOutput next to the prose
+ * (#117). Prose stays the primary surface (the model acts on it); this
+ * block is additive so deterministic tooling — a future `--fix`, a
+ * headless tidy — can consume the same decision without parsing text.
+ * `policy_id` is the stable per-detector identifier and versions the
+ * contract.
+ */
+export type PolicyResult = {
+	readonly policy_id: string;
+	readonly path: string;
+	readonly classification: string;
+	readonly suggested_target?: string;
+	readonly action: "warn" | "flag" | "none";
+};
+
 export function writeHookOutput(
 	hookEventName: string,
 	additionalContext: string,
+	policyResults?: readonly PolicyResult[],
 ): void {
 	process.stdout.write(
 		JSON.stringify({
-			hookSpecificOutput: { hookEventName, additionalContext },
+			hookSpecificOutput:
+				policyResults && policyResults.length > 0
+					? { hookEventName, additionalContext, policyResults }
+					: { hookEventName, additionalContext },
 		}),
 	);
 }
