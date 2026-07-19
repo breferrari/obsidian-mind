@@ -23,7 +23,7 @@ This reference provides comprehensive syntax rules and error prevention strategi
 
 **Solutions:**
 
-```mermaid
+```text
 ❌ [1. Perception]
 ❌ [2. Planning]
 ❌ [3. Reasoning]
@@ -45,7 +45,7 @@ This reference provides comprehensive syntax rules and error prevention strategi
 
 **Rule:** Subgraphs with spaces must use ID + display name format.
 
-```mermaid
+```text
 ❌ subgraph Core Process
      A --> B
    end
@@ -60,7 +60,7 @@ This reference provides comprehensive syntax rules and error prevention strategi
 ```
 
 **Referencing subgraphs:**
-```mermaid
+```text
 ❌ Title --> Core Process      # Cannot reference display name
 ✅ Title --> core              # Must reference ID
 ```
@@ -69,7 +69,7 @@ This reference provides comprehensive syntax rules and error prevention strategi
 
 **Rule:** Always reference nodes by ID, never by display text.
 
-```mermaid
+```text
 # Define nodes
 A[Display Text A]
 B["Display Text B"]

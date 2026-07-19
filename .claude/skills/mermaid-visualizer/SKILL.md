@@ -122,8 +122,8 @@ When creating a Mermaid diagram:
 ### Rule 4: Special Characters in Node Text
 ```
 ✅ Use quotes for text with spaces: ["Text with spaces"]
-✅ Escape or avoid: quotation marks → use 『』instead
-✅ Escape or avoid: parentheses → use 「」instead
+✅ Escape or avoid: quotation marks → use 『』 instead
+✅ Escape or avoid: parentheses → use 「」 instead
 ✅ Line breaks in circle nodes only: ((Text<br/>Break))
 ```
 
