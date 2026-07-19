@@ -88,6 +88,16 @@ jobs:
 
           **Requirements:** [Obsidian](https://obsidian.md), [Node 22+ LTS](https://nodejs.org), and one of: [Claude Code](https://claude.ai/code) · [Codex CLI](https://github.com/openai/codex) · [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 
+          **Install via [ShardMind](https://github.com/breferrari/shardmind) (recommended — wizard, optional modules, managed upgrades):**
+
+          ```bash
+          npm install -g shardmind
+          mkdir my-vault && cd my-vault
+          shardmind install github:breferrari/obsidian-mind
+          ```
+
+          **Or clone directly:**
+
           ```bash
           git clone https://github.com/breferrari/obsidian-mind.git
           cd obsidian-mind
