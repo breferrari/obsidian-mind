@@ -53,6 +53,21 @@ export default async function postUpdate(ctx: PostUpdateContext): Promise<void> 
     console.log('qmd: index stays fresh via the PostToolUse refresh hook during sessions — no action needed here.');
   }
 
+  // One-time v7 migration note. MEMORY.md lives OUTSIDE the vault tree
+  // (~/.claude/projects/<slug>/memory/), so the merge engine can neither
+  // migrate it nor surface a conflict — this console note in the update
+  // summary is the only surface that reaches the user at upgrade time.
+  // previousVersion is optional; when unknown, print anyway (harmless).
+  const prevMajor = Number.parseInt(ctx.previousVersion ?? '', 10);
+  const nowMajor = Number.parseInt(ctx.shard.version, 10);
+  if (nowMajor >= 7 && !(prevMajor >= 7)) {
+    console.log(
+      'v7 note: the auto-memory MEMORY.md (~/.claude/projects/<slug>/memory/) is now a DERIVED index — ' +
+        'regenerated from brain/ frontmatter, and regeneration overwrites hand edits. ' +
+        'If yours accumulated hand-written content, migrate it into brain/ topic notes before the next wrap-up regenerates the index.',
+    );
+  }
+
   // Invariant 3: no managed-file writes from this hook today. If you add
   // one, gate it on `ctx.newFiles.includes(<path>)` so the engine's
   // additive-only contract is preserved. `ctx.removedFiles` is available
