@@ -302,7 +302,6 @@ function main(): void {
 			["--index", index, "context", "rm", `qmd://${legacyName}/`],
 			"Clearing legacy context (if any)",
 			isContextRemoveBenign,
-	isUnknownSubcommandFailure,
 		);
 	}
 
@@ -333,7 +332,6 @@ function main(): void {
 		["--index", index, "context", "rm", contextPath],
 		"Clearing previous context (if any)",
 		isContextRemoveBenign,
-	isUnknownSubcommandFailure,
 	);
 	run(
 		entry,
