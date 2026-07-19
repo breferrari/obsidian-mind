@@ -24,9 +24,14 @@ requires:
 hooks:
   bootstrap:
     script: .shardmind/hooks/bootstrap.ts
-    # Bump when the QMD index schema changes — the engine re-runs bootstrap on
-    # update whenever this fingerprint differs from the recorded one.
-    fingerprint: "qmd-v1"
+    # Bump whenever an update must RE-RUN bootstrap on existing installs —
+    # index schema changes, one-time store migrations, new setup-time gates.
+    # The engine re-runs bootstrap on update whenever this fingerprint
+    # differs from the recorded one.
+    # v2 (v7.0.0): collection name derives from qmd_index with an in-place
+    # legacy-name migration, plus the qmd_min_version gate — upgrading
+    # installs must re-run bootstrap for the migration to execute.
+    fingerprint: "qmd-v2"
   personalize: .shardmind/hooks/personalize.ts
   post-update: .shardmind/hooks/post-update.ts
   # 60 s to accommodate first-run qmd bootstrap (index creation + initial embed pass).
