@@ -79,6 +79,19 @@ describe("parseOpenLoopConfig", () => {
 		assert.equal(cfg.sectionRe.test("## Next Steps"), true);
 		assert.equal(cfg.sectionRe.test("## Action Items"), false);
 	});
+	test("rejects traversal-shaped dirs: absolute, dot-dot, backslash, drive-letter", () => {
+		const cfg = parseOpenLoopConfig(
+			JSON.stringify({
+				open_loop_dirs: ["../outside", "/etc", "C:evil", "ok/dir", "a\\b", "x/../y"],
+			}),
+		);
+		assert.deepEqual(cfg.dirs, ["ok/dir"]);
+		const allBad = parseOpenLoopConfig(
+			JSON.stringify({ open_loop_dirs: ["../a", "/b"] }),
+		);
+		assert.deepEqual(allBad.dirs, ["work/1-1", "work/meetings", "work/incidents"]);
+	});
+
 	test("malformed values fall back to defaults (incl. regex metachars escaped)", () => {
 		const cfg = parseOpenLoopConfig(
 			JSON.stringify({ open_loop_dirs: [], open_loop_sections: [42] }),
@@ -185,6 +198,17 @@ describe("scanActiveHygiene — detectors", () => {
 		// Oldest first.
 		const ages = report.openLoops.map((l) => l.ageDays);
 		assert.deepEqual(ages, [...ages].sort((a, b) => b - a));
+	});
+
+	test("overlapping configured dirs do not double-count a file", () => {
+		const cfg = parseOpenLoopConfig(
+			JSON.stringify({ open_loop_dirs: ["work", "work/incidents"] }),
+		);
+		const report = scanActiveHygiene(ROOT, NOW, cfg);
+		const hits = report.openLoops.filter(
+			(l) => l.path === "work/incidents/Payment Outage.md",
+		);
+		assert.equal(hits.length, 1);
 	});
 
 	test("meetings-inbox pressure counts week-old raw exports", () => {

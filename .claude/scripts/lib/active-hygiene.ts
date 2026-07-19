@@ -140,12 +140,21 @@ export function parseOpenLoopConfig(manifestJson: string | null): OpenLoopConfig
 		try {
 			const parsed = JSON.parse(manifestJson) as Record<string, unknown>;
 			const d = parsed["open_loop_dirs"];
-			if (
-				Array.isArray(d) &&
-				d.length > 0 &&
-				d.every((x) => typeof x === "string" && x.length > 0)
-			) {
-				dirs = d as string[];
+			if (Array.isArray(d)) {
+				// Vault-relative plain paths only: no absolute paths, no
+				// dot-dot segments, no backslashes — a misconfigured entry
+				// must not walk the scan outside the vault root.
+				const valid = d.filter(
+					(x): x is string =>
+						typeof x === "string" &&
+						x.length > 0 &&
+						!x.startsWith("/") &&
+						!/^[A-Za-z]:/.test(x) &&
+						!x.includes("\\") &&
+						!x.split("/").includes("..") &&
+						!x.split("/").includes("."),
+				);
+				if (valid.length > 0) dirs = valid;
 			}
 			const s = parsed["open_loop_sections"];
 			if (
@@ -225,7 +234,9 @@ function findOpenLoops(
 	}
 
 	const out: OpenLoop[] = [];
-	for (const rel of candidates) {
+	// Overlapping configured dirs (e.g. "work" + "work/meetings") must not
+	// scan a file twice — duplicates would crowd the cap.
+	for (const rel of [...new Set(candidates)]) {
 		// Archive notes hold historical bulk by convention — a "waiting on"
 		// line in an archive is a record, not a live loop.
 		if ((rel.split("/").pop() ?? "").includes("Archive")) continue;
@@ -322,9 +333,12 @@ function findUngroupedClusters(root: string): TopicCluster[] {
 	} catch {
 		return [];
 	}
+	// Sorted so token→file maps (and the signature dedup that keeps the
+	// first token per file-set) are deterministic across filesystems.
 	const rootFiles = entries
 		.filter((e) => e.isFile() && isMarkdownFilename(e.name))
-		.map((e) => e.name);
+		.map((e) => e.name)
+		.sort();
 
 	// Don't nag about grouping when the root is already small — folders are
 	// for taming size, not for ceremony.
