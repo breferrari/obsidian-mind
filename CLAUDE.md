@@ -16,7 +16,7 @@ This vault has [obsidian-skills](https://github.com/kepano/obsidian-skills) inst
   2. **`qmd --index <name> query|search|vsearch|get|multi-get`** — CLI fallback for one-off shell checks or when the MCP server is unavailable. Always pass `--index <name>` where `<name>` is the `qmd_index` field from `vault-manifest.json` so the SQLite store stays isolated from other vaults on the machine.
   3. **Grep / Glob / Read** — last resort, only when QMD is not installed at all.
 
-  The MCP server (`.mcp.json` → `.claude/scripts/qmd-mcp.mjs`), the CLI, and the SessionStart hook all read the same manifest field, so every surface scopes to the same store. On a fresh clone, run `node --experimental-strip-types scripts/qmd-bootstrap.ts` once to build the index.
+  The MCP server (`.mcp.json` → `.claude/scripts/qmd-mcp.mjs`), the CLI, and the SessionStart hook all read the same manifest field, so every surface scopes to the same store. On a fresh clone, run `node --experimental-strip-types scripts/qmd-bootstrap.ts` once to build the index. Note: the MCP connect-time banner can read "0 documents" when the server registers before the SessionStart reindex finishes — a stale snapshot, not the dead-search state the self-heal guards; don't diagnose it.
 
 ### Custom Slash Commands
 
@@ -342,6 +342,17 @@ Five lifecycle hooks in `.claude/settings.json`:
 | PostToolUse | After writing `.md` | Validates frontmatter + wikilinks, blocks misplaced memory files, flags notes crossing the 25KB organization threshold (split, don't trim) and write-time topic clusters |
 | PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
 | Stop | End of every session | Lightweight checklist reminder + concrete vault-hygiene drift findings (same scan as SessionStart). For thorough review, use `/om-wrap-up` instead. |
+
+## Write-Correctness Laws
+
+Each law exists because its absence caused real correction work in vaults running this template. Violating them re-creates documented failures.
+
+1. **Single-source status.** A project's volatile status (version, counts, released/blocked, dates) lives in exactly ONE place — its note's frontmatter + top status line. Every other note **links** to it and never restates it. *Why: one wrong status statement hardened into ~8 notes downstream and had to be swept out.*
+2. **Correction-sweep protocol.** When a fact is corrected, grep the vault for every restatement and fix them all in the same pass. A correction callout on top of a note whose body still says the wrong thing is NOT a correction — future sessions re-absorb the stain from the body.
+3. **Mark inference.** Anything not verified against source (code, repo, primary doc, the person) carries an explicit `(TBC)` / `(unverified)` / `(inferred)` marker. Never state inference bare.
+4. **Date-stamp volatile facts.** Counts, versions, org structure, tool maturity: write "as of YYYY-MM-DD" so staleness is self-evident instead of silent.
+5. **Attribution vs. creation dates may differ** (a `quarter:` field vs. the `date:` field's quarter) — that's legitimate, not a bug to "fix".
+6. **No counts in instruction files.** Hardcoded counts ("11 slash commands") in CLAUDE.md/README rot silently — describe, don't count.
 
 ## Rules
 
