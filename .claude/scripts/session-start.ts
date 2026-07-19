@@ -22,6 +22,7 @@ import { join } from "node:path";
 import {
 	take,
 	formatDateHeader,
+	formatInjectionSize,
 	formatActiveWork,
 	formatRecentChanges,
 	isSkippedPath,
@@ -287,4 +288,7 @@ const sections = [
 	listMd().join("\n"),
 ];
 
-process.stdout.write(sections.join("\n") + "\n");
+const body = sections.join("\n") + "\n";
+process.stdout.write(
+	body + "\n" + formatInjectionSize(Buffer.byteLength(body, "utf-8")) + "\n",
+);

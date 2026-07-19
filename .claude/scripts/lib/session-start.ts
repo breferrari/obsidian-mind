@@ -11,6 +11,16 @@ export function take(stdout: string, n: number): string {
 }
 
 /**
+ * Injection-size meter line: eager-layer bloat becomes visible the day it
+ * starts. kB = 1000 bytes, one decimal. Negative/NaN guard to 0.0kB — the
+ * meter must never be the thing that breaks the hook.
+ */
+export function formatInjectionSize(bytes: number): string {
+	const safe = Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
+	return `_context injected: ${(safe / 1000).toFixed(1)}kB_`;
+}
+
+/**
  * Local-time date header matching `date +%Y-%m-%d` followed by the weekday
  * name. Separate from `new Date()` so tests can pass a fixed date.
  */
