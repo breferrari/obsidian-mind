@@ -97,7 +97,7 @@ obsidian orphans                                   # Unlinked notes
 
 ### Starting a Substantial Session
 
-The `SessionStart` hook automatically injects rich context: vault file listing, North Star goals, active work, recent git changes, open tasks (aggregated from `work/active/` and the vault root, excluding infrastructure files), and triggers a QMD re-index. Most context is already loaded -- you don't need to manually read files.
+The `SessionStart` hook automatically injects rich context: vault file listing, North Star goals, active work, recent git changes, open tasks (aggregated from `work/active/` and the vault root, excluding infrastructure files), vault-hygiene drift flags (act on them or run `/om-tidy`), and triggers a QMD re-index. Most context is already loaded -- you don't need to manually read files.
 
 **Shortcut**: Run `/om-standup` for a structured morning kickoff that reads everything and presents a summary with suggested priorities.
 
@@ -337,11 +337,11 @@ Five lifecycle hooks in `.claude/settings.json`:
 
 | Hook | When | What |
 |------|------|------|
-| SessionStart | On startup/resume | QMD re-index, inject North Star, active work, recent changes, tasks, file listing |
+| SessionStart | On startup/resume | QMD re-index + self-heal, inject North Star, active work, recent changes, tasks, file listing, vault-hygiene drift flags (completed-not-archived, ungrouped clusters, 25KB oversize, stale open loops, meetings-inbox pressure); ends with an injection-size meter line |
 | UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints |
-| PostToolUse | After writing `.md` | Validates frontmatter, checks for wikilinks |
+| PostToolUse | After writing `.md` | Validates frontmatter + wikilinks, blocks misplaced memory files, flags notes crossing the 25KB organization threshold (split, don't trim) and write-time topic clusters |
 | PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
-| Stop | End of every session | Lightweight checklist reminder: archive, update indexes, check orphans. For thorough review, use `/om-wrap-up` instead. |
+| Stop | End of every session | Lightweight checklist reminder + concrete vault-hygiene drift findings (same scan as SessionStart). For thorough review, use `/om-wrap-up` instead. |
 
 ## Rules
 

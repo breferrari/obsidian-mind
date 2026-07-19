@@ -55,14 +55,18 @@ For each competency in `perf/competencies/`:
 
 Present as a compact table: competency name, exercised (yes/no), linked (yes/no).
 
-### 6. Forward Look
+### 6. Hygiene Sweep
+
+Act on the current vault-hygiene flags (the SessionStart/Stop scan): archive completed-not-archived notes, group genuine clusters, split oversized notes, and list stale open loops for the user to chase or park. This is `/om-tidy`'s mechanical tier on a schedule — invoke `/om-tidy` directly for the full pass with its report.
+
+### 7. Forward Look
 
 - Blocked items or upcoming deadlines from active work notes
 - North Star goals that need attention next week
 - Scheduled 1:1s or meetings worth preparing for
 - Suggested priority ordering for next week based on goals + momentum + gaps
 
-### 7. Present Synthesis
+### 8. Present Synthesis
 
 Structure the output as:
 
