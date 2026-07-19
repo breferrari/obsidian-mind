@@ -6,6 +6,7 @@ filters:
 formulas:
   quarter: if(date, "Q" + ((date(date).month - 1) / 3 + 1).floor().toString() + " " + date(date).year.toString(), "")
   age_days: if(date, (today() - date(date)).days, "")
+  stale_days: (now() - file.mtime).days.round(0)
 properties:
   file.name:
     displayName: Note
@@ -15,6 +16,8 @@ properties:
     displayName: Project
   formula.quarter:
     displayName: Quarter
+  formula.stale_days:
+    displayName: Days Untouched
   date:
     displayName: Date
   description:
@@ -53,6 +56,7 @@ views:
         - file.mtime < now() - "14 days"
     order:
       - file.name
+      - formula.stale_days
       - date
       - project
       - description
