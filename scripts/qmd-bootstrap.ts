@@ -36,9 +36,15 @@ import { isMainModule } from "../.claude/scripts/lib/main-guard.ts";
 import {
 	buildCollectionAddArgs,
 	isContextRemoveBenign,
+	isUnknownSubcommandFailure,
+	legacyCollectionCandidate,
 	makeCollectionAddBenignMatcher,
 } from "../.claude/scripts/lib/qmd-bootstrap.ts";
-import { buildQmdCommand, resolveQmdEntry } from "../.claude/scripts/lib/qmd.ts";
+import {
+	buildQmdCommand,
+	qmdVersionAtLeast,
+	resolveQmdEntry,
+} from "../.claude/scripts/lib/qmd.ts";
 import {
 	qmdConfigPath,
 	readObsidianIgnore,
@@ -50,6 +56,7 @@ import { isValidQmdIndex } from "../.claude/scripts/lib/session-start.ts";
 type ManifestSubset = {
 	readonly qmd_index?: string;
 	readonly qmd_context?: string;
+	readonly qmd_min_version?: string;
 	readonly template?: string;
 };
 
@@ -97,7 +104,9 @@ function echo(outcome: SpawnOutcome): void {
 	if (outcome.stderr) process.stderr.write(outcome.stderr);
 }
 
-function ensureQmd(entry: string | null): void {
+/** Verify qmd is installed; returns the raw `--version` output for the
+ *  min-version gate in main(). */
+function ensureQmd(entry: string | null): string {
 	const probe = spawnQmd(entry, ["--version"]);
 	if (probe.status !== 0) {
 		process.stderr.write(
@@ -105,6 +114,21 @@ function ensureQmd(entry: string | null): void {
 		);
 		process.exit(1);
 	}
+	return probe.stdout;
+}
+
+/**
+ * Quiet existence probe — no echo, because "not found" here is an expected
+ * state during migration checks, not a diagnostic the user needs to see.
+ */
+function collectionExists(
+	entry: string | null,
+	index: string,
+	name: string,
+): boolean {
+	return (
+		spawnQmd(entry, ["--index", index, "collection", "show", name]).status === 0
+	);
 }
 
 /**
@@ -183,28 +207,103 @@ function main(): void {
 	// Resolve once up front so every downstream spawn reuses the same entry.
 	const entry = resolveQmdEntry();
 
-	ensureQmd(entry);
+	const versionOut = ensureQmd(entry);
 
-	const collectionName = manifest.template ?? index;
-	// The collection name ends up as a YAML key, a `qmd://` URL segment, and a
-	// SQL identifier inside qmd's store. Same character class as `qmd_index`
-	// so a typo'd `template` field can't land an unparseable identifier.
-	// (`qmd_index` was validated above, so a failure here can only come from
-	// `template`.)
-	if (!isValidQmdIndex(collectionName)) {
+	// Min-version gate (#100): a silently-old qmd is the failure the version
+	// declaration exists to catch — fail loud here, where the user is already
+	// taking explicit setup action. Fails OPEN on unparseable versions (an
+	// unknown version must never brick the bootstrap); vaults without the
+	// manifest field skip the gate entirely.
+	const minVersion = manifest.qmd_min_version;
+	if (
+		typeof minVersion === "string" &&
+		!qmdVersionAtLeast(versionOut, minVersion)
+	) {
 		process.stderr.write(
-			`vault-manifest.json \`template\` field value ${JSON.stringify(collectionName)} ` +
-				"is not a valid qmd identifier.\n" +
-				"Allowed: alphanumerics, dot, dash, underscore; must start with an alphanumeric.\n",
+			`Installed qmd (${versionOut.trim()}) is below this vault's declared minimum (${minVersion}).\n` +
+				"Update it: npm i -g @tobilu/qmd\n",
 		);
 		process.exit(1);
 	}
+
+	// Collection name = qmd_index, the per-vault identity (#105). `template`
+	// is the shared package identity — the same string for every install —
+	// so deriving the collection name from it breaks idempotency on any
+	// vault where the two differ (and mismatches the on-disk collection,
+	// which qmd creates under the vault's own name). qmd_index was validated
+	// above, so no second validation branch is needed.
+	const collectionName = index;
 	const contextPath = `qmd://${collectionName}/`;
 	const contextText =
 		manifest.qmd_context ??
 		"Obsidian vault template with persistent AI agent memory.";
 
 	process.stdout.write(`→ Bootstrapping QMD index '${index}'\n`);
+
+	// Migration (#105): bootstraps before the fix registered the collection
+	// under the shared `template` name. Field states to handle:
+	//   1. No legacy collection (fresh install, or the old bootstrap failed
+	//      before registering) → nothing to do.
+	//   2. Legacy exists, correctly-named one doesn't → RENAME in place.
+	//      Rename keeps the indexed data, so migrated users pay no re-index.
+	//   3. Both exist (user already re-registered by hand) → REMOVE the
+	//      legacy one; two collections over the same corpus double every
+	//      search result.
+	// `collection rename` may not exist on older qmd installs — fall back to
+	// remove, and the `collection add` below registers the correct name fresh.
+	const legacyName = legacyCollectionCandidate(manifest.template, index);
+	if (legacyName !== null && collectionExists(entry, index, legacyName)) {
+		if (collectionExists(entry, index, collectionName)) {
+			run(
+				entry,
+				["--index", index, "collection", "remove", legacyName],
+				`Removing legacy collection '${legacyName}' (superseded by '${collectionName}')`,
+			);
+		} else {
+			process.stdout.write(
+				`→ Renaming legacy collection '${legacyName}' → '${collectionName}' (#105 migration)\n`,
+			);
+			const renamed = spawnQmd(entry, [
+				"--index",
+				index,
+				"collection",
+				"rename",
+				legacyName,
+				collectionName,
+			]);
+			echo(renamed);
+			// qmd exits 0 even for unknown subcommands, so rename success is
+			// verified by probing the target collection — never by exit status.
+			if (!collectionExists(entry, index, collectionName)) {
+				if (isUnknownSubcommandFailure(renamed)) {
+					// Older qmd without `collection rename`: remove the legacy
+					// entry; the registration below re-adds under the correct
+					// name and the update/embed steps rebuild its index rows.
+					run(
+						entry,
+						["--index", index, "collection", "remove", legacyName],
+						`Rename unavailable — removing legacy collection '${legacyName}' instead`,
+					);
+				} else {
+					// Unexpected failure (locked store, CLI drift): do NOT
+					// destroy the legacy collection — leave it for inspection.
+					// The registration below surfaces the conflict loudly.
+					warn(
+						`Could not rename legacy collection '${legacyName}' — leaving it in place. ` +
+							`Migrate manually: qmd --index ${index} collection rename ${legacyName} ${collectionName}`,
+					);
+				}
+			}
+		}
+		// The legacy context row is keyed by the legacy path — clear it so a
+		// stale summary doesn't shadow the one attached below.
+		runIdempotent(
+			entry,
+			["--index", index, "context", "rm", `qmd://${legacyName}/`],
+			"Clearing legacy context (if any)",
+			isContextRemoveBenign,
+		);
+	}
 
 	// Re-runs are idempotent (matcher recognises the by-name "already exists"
 	// case); a path-collision warning is intentionally NOT swallowed.

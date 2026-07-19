@@ -13,6 +13,8 @@ import {
 	buildCollectionAddArgs,
 	isContextRemoveBenign,
 	makeCollectionAddBenignMatcher,
+	isUnknownSubcommandFailure,
+	legacyCollectionCandidate,
 } from "../lib/qmd-bootstrap.ts";
 
 describe("buildCollectionAddArgs", () => {
@@ -273,5 +275,52 @@ describe("isContextRemoveBenign", () => {
 
 	test("does NOT match when output is empty", () => {
 		assert.equal(isContextRemoveBenign({ stdout: "", stderr: "" }), false);
+	});
+});
+
+describe("legacyCollectionCandidate", () => {
+	test("returns the template name when it differs from the index", () => {
+		assert.equal(
+			legacyCollectionCandidate("obsidian-mind", "my-vault"),
+			"obsidian-mind",
+		);
+	});
+	test("null when template equals index (shipped default)", () => {
+		assert.equal(
+			legacyCollectionCandidate("obsidian-mind", "obsidian-mind"),
+			null,
+		);
+	});
+	test("null for absent or non-string template", () => {
+		assert.equal(legacyCollectionCandidate(undefined, "my-vault"), null);
+		assert.equal(legacyCollectionCandidate(42, "my-vault"), null);
+		assert.equal(legacyCollectionCandidate(null, "my-vault"), null);
+	});
+	test("null for template values invalid as qmd identifiers", () => {
+		assert.equal(legacyCollectionCandidate("../evil", "my-vault"), null);
+		assert.equal(legacyCollectionCandidate("has space", "my-vault"), null);
+		assert.equal(legacyCollectionCandidate("", "my-vault"), null);
+	});
+});
+
+describe("isUnknownSubcommandFailure", () => {
+	test("matches qmd's unknown-subcommand output on stdout", () => {
+		assert.equal(
+			isUnknownSubcommandFailure({
+				stdout: "Unknown subcommand: rename\nRun 'qmd collection help' for usage",
+				stderr: "",
+			}),
+			true,
+		);
+	});
+	test("false for unrelated failures (locked store, real errors)", () => {
+		assert.equal(
+			isUnknownSubcommandFailure({
+				stdout: "",
+				stderr: "SqliteError: database is locked",
+			}),
+			false,
+		);
+		assert.equal(isUnknownSubcommandFailure({ stdout: "", stderr: "" }), false);
 	});
 });

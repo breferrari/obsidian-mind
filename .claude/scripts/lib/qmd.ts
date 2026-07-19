@@ -97,3 +97,32 @@ export function buildQmdCommand(
 				shell: true,
 			};
 }
+
+/**
+ * Parse a dotted version into a numeric triple. Accepts the bare "2.5.3"
+ * shape and the `qmd --version` output shape ("qmd 2.5.3 (655769712a)") by
+ * extracting the first x.y.z run. Returns null when no triple is present.
+ */
+export function parseVersionTriple(
+	raw: string,
+): readonly [number, number, number] | null {
+	const m = raw.match(/(\d+)\.(\d+)\.(\d+)/);
+	if (!m) return null;
+	return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+/**
+ * True when the installed qmd version (raw `--version` output) satisfies the
+ * declared minimum. Fails OPEN on anything unparseable — an unknown version
+ * must never brick a bootstrap or nag a session; the declared minimum only
+ * acts when both sides are readable.
+ */
+export function qmdVersionAtLeast(actualRaw: string, minRaw: string): boolean {
+	const actual = parseVersionTriple(actualRaw);
+	const min = parseVersionTriple(minRaw);
+	if (actual === null || min === null) return true;
+	for (let i = 0; i < 3; i++) {
+		if (actual[i]! !== min[i]!) return actual[i]! > min[i]!;
+	}
+	return true;
+}
