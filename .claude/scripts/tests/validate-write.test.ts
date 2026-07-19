@@ -234,3 +234,28 @@ describe("validate-write — robustness to bad input", () => {
 		assert.equal(stderr, "");
 	});
 });
+
+describe("phantom-edge policy result (#117)", () => {
+	test("ticket-ID wikilinks emit the machine-readable finding next to the prose", () => {
+		const path = makeMd(
+			'---\ntags: [x]\ndescription: "d"\ndate: 2026-01-01\n---\n' +
+				"[[Real Note]] and a phantom [[PROJ-1234]] edge.\n",
+			"phantom.md",
+		);
+		const { stdout } = runOn(path);
+		const parsed = JSON.parse(stdout) as {
+			hookSpecificOutput: {
+				additionalContext: string;
+				policyResults?: Array<{ policy_id: string; classification: string }>;
+			};
+		};
+		assert.match(parsed.hookSpecificOutput.additionalContext, /ticket-ID/);
+		assert.ok(
+			parsed.hookSpecificOutput.policyResults?.some(
+				(r) =>
+					r.policy_id === "phantom-edge" &&
+					r.classification === "ticket-id-wikilink",
+			),
+		);
+	});
+});

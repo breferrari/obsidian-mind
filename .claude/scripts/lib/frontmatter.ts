@@ -107,18 +107,25 @@ export function validateContent(content: string): string[] {
 		);
 	}
 
-	// Ticket IDs are not notes — [[PROJ-12345]] creates a phantom graph edge
-	// that a broken-link gate then trips on (#108). Matches the bare form and
-	// the table-escaped-pipe forms. Plain text or a tracker URL, never a
-	// wikilink.
-	const ticketLinks = content.match(/\[\[[A-Z]{2,10}-\d+(\\\||&#124;|\||\]\])/g);
-	if (ticketLinks && ticketLinks.length > 0) {
+	const ticketLinks = countTicketIdWikilinks(content);
+	if (ticketLinks > 0) {
 		warnings.push(
-			`${ticketLinks.length} ticket-ID wikilink(s) (e.g. [[PROJ-…]]) — ticket IDs are plain text or tracker links, never wikilinks (they are not notes)`,
+			`${ticketLinks} ticket-ID wikilink(s) (e.g. [[PROJ-…]]) — ticket IDs are plain text or tracker links, never wikilinks (they are not notes)`,
 		);
 	}
 
 	return warnings;
+}
+
+/**
+ * Count [[PROJ-12345]]-shaped wikilinks — ticket IDs are not notes, and
+ * these phantom edges are what a broken-link gate later trips on (#108).
+ * Matches the bare form and the table-escaped-pipe forms. Exported so
+ * validate-write can emit the machine-readable policy result (#117) from
+ * the same decision validateContent's prose comes from.
+ */
+export function countTicketIdWikilinks(content: string): number {
+	return content.match(/\[\[[A-Z]{2,10}-\d+(\\\||&#124;|\||\]\])/g)?.length ?? 0;
 }
 
 /**
