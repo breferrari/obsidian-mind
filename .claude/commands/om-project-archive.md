@@ -28,6 +28,14 @@ git mv "work/active/<Note>.md" "work/archive/YYYY/"
 
 Use the year from the note's `date` field.
 
+**Clustered workstreams**: when the project lives in a topic folder (`work/active/<Topic>/` — the grouping convention for >1-note workstreams), move the WHOLE folder and keep the grouping:
+
+```bash
+git mv "work/active/<Topic>" "work/archive/YYYY/<Topic>"
+```
+
+Every note inside keeps its cluster context, and wikilinks resolve by basename so nothing breaks.
+
 ### 4. Update Indexes
 
 - **`work/Index.md`**: Move from Active Projects to the appropriate Completed quarter section

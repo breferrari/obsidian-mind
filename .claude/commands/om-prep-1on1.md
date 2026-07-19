@@ -23,7 +23,9 @@ Example: `/om-prep-1on1 Scott Detweiler`
    - Topics that recurred across sessions
    - Anything flagged in "What to Watch"
 
-3. **Load active work** — read `work/Index.md` and relevant `work/active/*.md` notes; identify:
+2b. **Carry-forward check** — open the person's last THREE 1:1 notes and diff their Action Items: any unchecked item appearing (same or near-same wording) in **two or more consecutive notes is a chronic loop**, not just an open one. List these separately with their first-seen date — "carried 3× since <date>" is the prep signal a single note can never show. (The hooks' open-loops flag only reads the latest note; this step is where the chronic pattern surfaces.)
+
+3. **Load active work** — read `work/Index.md` and relevant `work/active/**/*.md` notes (recursive — grouped workstreams live in `active/<Topic>/` subfolders); identify:
    - Projects this person is connected to (via wikilinks or shared team)
    - Blockers or open questions that need a decision or support
    - Work in progress worth giving visibility to
@@ -40,6 +42,7 @@ Example: `/om-prep-1on1 Scott Detweiler`
 
    - **Who** — one-line reminder: role, relationship, standing dynamics
    - **Since Last Time** — unresolved action items, open "What to Watch" signals
+   - **Chronic Loops** — items carried across 2+ consecutive 1:1s (from step 2b), oldest first; each one is either blocked (raise it), obsolete (kill it), or under-prioritized (say so)
    - **Wins to Share** — completed work and milestones worth mentioning, with enough context to explain impact
    - **Things to Raise** — blockers needing a decision, projects needing visibility, North Star drift
    - **Questions to Ask** — based on vault gaps or unclear priorities
