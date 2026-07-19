@@ -46,6 +46,20 @@ views:
       - project
       - description
   - type: table
+    name: Stale Actives
+    filters:
+      and:
+        - status == "active"
+        - file.mtime < now() - "14 days"
+    order:
+      - file.name
+      - date
+      - project
+      - description
+    sort:
+      - property: file.mtime
+        direction: ASC
+  - type: table
     name: Completed
     filters:
       and:

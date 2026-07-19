@@ -345,6 +345,8 @@ Five lifecycle hooks in `.claude/settings.json`:
 
 ## Rules
 
+- **For "what's most recent," use `bases/Recently Touched.base` (real modified time), never filename dates** — a creation-date prefix on a continuously-edited note inverts the recency signal.
+
 - Never modify `.obsidian/` config files unless explicitly asked.
 - Preserve existing frontmatter when editing notes.
 - Git sync is handled by the user's preferred method (obsidian-git, manual commits, etc.) -- don't configure git hooks or auto-commit.
