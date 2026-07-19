@@ -4,15 +4,27 @@
 .obsidian/plugins/*/data.json
 .obsidian/graph.json
 
+# Community plugins that ship platform executables write them under their
+# plugin dir — without this, a multi-hundred-KB binary lands in git history
+# on the next commit.
+.obsidian/plugins/*/binaries/
+
 # OS
 .DS_Store
 .Trash/
 
-# Claude Code (local settings are personal)
+# Claude Code. The re-include guard protects against user-level global
+# gitignores that exclude .claude/ (a cache-dir convention in other tools) —
+# without it, the entire hook/command/skill layer silently drops out of
+# version control. Repo-level patterns override global excludes.
+!.claude/
 .claude/settings.local.json
 
 # QMD index (local, regenerated)
 .qmd/
+
+# ShardMind runtime hook output (local, regenerated)
+.shardmind/logs/
 
 # Session logs (local transcripts)
 thinking/session-logs/
