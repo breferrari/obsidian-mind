@@ -10,7 +10,7 @@
 
 import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { realpathSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import {
 	debug,
 	readStdinJson,
@@ -18,6 +18,7 @@ import {
 	type PolicyResult,
 } from "./lib/hook-io.ts";
 import {
+	countTicketIdWikilinks,
 	isBlockedMemoryPath,
 	shouldSkipFile,
 	validateFile,
@@ -152,6 +153,9 @@ debug(`validate: ${filePath} — ${warnings.length} warning(s)`);
 
 const blocks: string[] = [];
 const policyResults: PolicyResult[] = [];
+const relPath = filePathFwd.startsWith(vaultRoot + "/")
+	? filePathFwd.slice(vaultRoot.length + 1)
+	: filePathFwd;
 
 if (warnings.length > 0) {
 	const hintList = warnings.map((w) => `  - ${w}`).join("\n");
@@ -159,6 +163,21 @@ if (warnings.length > 0) {
 	blocks.push(
 		`Vault hygiene warnings for \`${base}\`:\n${hintList}\nFix these before moving on.`,
 	);
+	// Phantom-edge findings ride the #117 contract like every other
+	// detector — same decision validateContent's prose came from.
+	try {
+		const content = readFileSync(filePath, "utf-8");
+		if (countTicketIdWikilinks(content) > 0) {
+			policyResults.push({
+				policy_id: "phantom-edge",
+				path: relPath,
+				classification: "ticket-id-wikilink",
+				action: "warn",
+			});
+		}
+	} catch {
+		debug("validate: phantom-edge policy check failed — skipped");
+	}
 }
 
 // Write-time organization flags (#103): the same detectors the scan hooks
@@ -166,9 +185,6 @@ if (warnings.length > 0) {
 // oversized (or added the note that completes a cluster) has the context
 // to organize it NOW. Each detector is isolated so a future unguarded
 // edit inside one can't kill the sibling checks in the same write.
-const relPath = filePathFwd.startsWith(vaultRoot + "/")
-	? filePathFwd.slice(vaultRoot.length + 1)
-	: filePathFwd;
 try {
 	const size = statSync(filePath).size;
 	if (
