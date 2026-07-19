@@ -20,28 +20,7 @@ This vault has [obsidian-skills](https://github.com/kepano/obsidian-skills) inst
 
 ### Custom Slash Commands
 
-Defined in `.claude/commands/`. See [[Skills]] for full documentation.
-
-| Command | Purpose |
-|---------|---------|
-| `/om-standup` | Morning kickoff -- load context, review yesterday, surface tasks, priorities |
-| `/om-dump` | Freeform capture -- dump anything, gets routed to the right notes |
-| `/om-wrap-up` | Full session review -- verify notes, indexes, links, suggest improvements |
-| `/om-humanize` | Voice-calibrated editing -- make notes sound like you, not AI |
-| `/om-weekly` | Weekly synthesis -- cross-session patterns, North Star alignment, uncaptured wins |
-| `/om-capture-1on1` | Capture 1:1 meeting transcript into structured vault note |
-| `/om-incident-capture` | Capture incident from Slack channels/DMs into structured vault notes |
-| `/om-slack-scan` | Deep scan Slack channels/DMs for evidence |
-| `/om-peer-scan` | Deep scan a peer's GitHub PRs for review prep |
-| `/om-review-brief` | Generate review brief (manager or peer version) |
-| `/om-self-review` | Write self-assessment for review tool -- projects, competencies, principles |
-| `/om-review-peer` | Write peer review -- projects, principles, performance summary |
-| `/om-vault-audit` | Audit indexes, links, orphans, stale context |
-| `/om-vault-upgrade` | Import content from an existing vault into this obsidian-mind instance |
-| `/om-prep-1on1` | Prep for an upcoming 1:1 -- load person context, open items, suggested agenda |
-| `/om-meeting` | Prep for any meeting by topic -- subject-forward briefing with open items and considerations |
-| `/om-intake` | Process meeting notes inbox -- classify and route to the right vault notes |
-| `/om-project-archive` | Move completed project from active/ to archive/, update indexes |
+Defined in `.claude/commands/`. Claude Code auto-surfaces every command with its description in the session's skills list — **that injected list is the live catalog**. Do not maintain a command table here (it drifts; the injected list can't — see Write-Correctness law 6). **Agents without that injection (Codex, Gemini, Cursor): read `brain/Skills.md`** — it carries the full command catalog plus usage docs and workflow sequences.
 
 ## Vault Structure
 
@@ -50,7 +29,7 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 | `Home.md` | **Vault entry point** -- embedded Base views, quick links | Open this first |
 | `vault-manifest.json` | **Template metadata** -- version, infrastructure vs user content boundaries, frontmatter schemas, version fingerprints | Used by `/om-vault-upgrade` for migration |
 | `CHANGELOG.md` | **Version history** -- tracks template releases (v1--v3.3) with what changed | Reference for upgrade paths |
-| `bases/` | **All Bases centralized** -- dynamic views for navigation | `Work Dashboard`, `Incidents`, `People Directory`, `1-1 History`, `Review Evidence`, `Competency Map`, `Templates` |
+| `bases/` | **All Bases centralized** -- dynamic views for navigation | `Work Dashboard` (incl. Stale Actives), `Recently Touched` (recency by real mtime — the answer to "what's most recent", not filename dates), `Incidents`, `People Directory`, `1-1 History`, `Review Evidence`, `Competency Map`, `Templates` |
 | `work/` | Work notes index | `Index.md` (detailed MOC) |
 | `work/active/` | **Current projects only** (1-3 files) | Move here when starting, move to archive when done |
 | `work/archive/YYYY/` | Completed work organized by year | Grows over time |
@@ -69,8 +48,8 @@ Defined in `.claude/commands/`. See [[Skills]] for full documentation.
 | `reference/` | Codebase knowledge, architecture maps | Flow docs, architecture docs |
 | `thinking/` | Scratchpad for drafts and reasoning | Named `YYYY-MM-DD-topic.md` |
 | `templates/` | Obsidian templates | `Work Note.md`, `Decision Record.md`, etc. |
-| `.claude/commands/` | 18 slash commands | See command table above |
-| `.claude/agents/` | 9 subagents | See subagents table below |
+| `.claude/commands/` | Slash commands (auto-surfaced in-session; catalog in `brain/Skills.md`) | One `.md` per command |
+| `.claude/agents/` | Subagents | See subagents table below |
 | `.claude/scripts/` | Hook scripts | `session-start.ts`, `classify-message.ts`, `validate-write.ts`, `pre-compact.ts`, `stop-checklist.ts`, `charcount.ts` |
 | `.claude/skills/` | Obsidian + QMD skills | Loaded automatically via Skill tool |
 
@@ -142,6 +121,7 @@ Use `thinking/` for drafts, reasoning, and analysis before writing final notes. 
 
 1. **Always use YAML frontmatter** with at minimum `date`, `description` (~150 chars), `tags`, and type-specific fields. Work notes and incidents also need `quarter` (e.g., `Q1-2026`). Incidents need `ticket`, `severity`, `role`.
 2. **Use templates** from `templates/`. Fill `{{placeholders}}` with real values.
+2b. **Write fully, organize structurally — the vault tidies itself.** Size is a STRUCTURE signal, never a brevity signal: when a note crosses the ~25KB organization threshold (bytes, not lines — giant single-line entries hide in low line counts), the PostToolUse hook flags it at write time and the hygiene scan flags it at session boundaries. The response is always a SPLIT (domain notes, event-log satellites, or a cluster folder — content moved verbatim, one-liner index left behind, inbound links retargeted), never trimming content. The same hook flags write-time topic clusters — token overlap is blind, so judge genuine shared context before grouping. `/om-tidy` is the acting half. Exempt: `*Archive*` notes (bulk is their job).
 3. **Place files correctly**:
    - **Active** work notes, decisions, peer review prep -- `work/active/`
    - **Completed** work notes -- `work/archive/YYYY/` (by year)
@@ -156,7 +136,8 @@ Use `thinking/` for drafts, reasoning, and analysis before writing final notes. 
    - Codebase knowledge -- `reference/`
    - Drafts -- `thinking/`
    - Vault root: `Home.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `vault-manifest.json`, `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, `LICENSE`, `.gitignore`. No user notes at root.
-4. **Name files descriptively.** Use the note title as filename.
+4. **Name files descriptively.** Use the note title as filename. **Date convention:** prefix **point-in-time** notes with a date — 1:1s (`<Person> YYYY-MM-DD.md`), dated captures, meeting exports. **Living and entity notes use a bare title** — work notes, person/team notes, competencies, `brain/`, `reference/`. *Why the split:* a creation-date prefix on a continuously-edited note **inverts the recency signal** (a living doc looks stale while being updated daily). For "what's most recent," use `bases/Recently Touched.base` (real modified time), never filename dates.
+5. **Group multi-note workstreams in a subfolder.** Once a workstream has more than one note, it gets a folder (`work/active/<Topic>/`; the archive mirrors the grouping). Folders are the lifecycle/context axis only — links remain the primary organization (wikilinks resolve by name across folders, so grouping never breaks links, QMD, or the graph). The hygiene scan and write-time cluster sensor flag candidates; `/om-project-archive` moves whole clusters.
 
 ### Note Types
 
@@ -171,6 +152,9 @@ Use `thinking/` for drafts, reasoning, and analysis before writing final notes. 
 | Team note | `org/teams/` | Team name | Members, Scope, Interactions |
 | Competency | `perf/competencies/` | Competency name | Definition, level criteria, Evidence (via backlinks) |
 | Brain note | `brain/` | Topic name | Topic-specific content |
+| Domain note | Beside its family index | `<Index> - <Domain>` (e.g. `Gotchas - Tooling`) | Substance lives here; the family index keeps a one-liner per entry. Born from monolith splits — never re-inline into the index |
+| Event-log satellite | Beside its core note | `<Core> — <Event> Log` or dated title | Chronological bulk offloaded from a person/project core note; the core links it. Dated entries, verbatim moves |
+| Archive note | Beside its live note | `<Live Name> Archive[ — <window>]` | Bulk by design, hygiene-exempt (name contains "Archive"). Verbatim zero-loss moves; live note keeps a one-liner index + link |
 
 ### Linking -- This Is Critical
 
