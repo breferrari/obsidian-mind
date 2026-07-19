@@ -36,6 +36,7 @@ import { isMainModule } from "../.claude/scripts/lib/main-guard.ts";
 import {
 	buildCollectionAddArgs,
 	isContextRemoveBenign,
+	isUnknownSubcommandFailure,
 	legacyCollectionCandidate,
 	makeCollectionAddBenignMatcher,
 } from "../.claude/scripts/lib/qmd-bootstrap.ts";
@@ -271,12 +272,27 @@ function main(): void {
 				collectionName,
 			]);
 			echo(renamed);
-			if (renamed.status !== 0) {
-				run(
-					entry,
-					["--index", index, "collection", "remove", legacyName],
-					`Rename unavailable — removing legacy collection '${legacyName}' instead`,
-				);
+			// qmd exits 0 even for unknown subcommands, so rename success is
+			// verified by probing the target collection — never by exit status.
+			if (!collectionExists(entry, index, collectionName)) {
+				if (isUnknownSubcommandFailure(renamed)) {
+					// Older qmd without `collection rename`: remove the legacy
+					// entry; the registration below re-adds under the correct
+					// name and the update/embed steps rebuild its index rows.
+					run(
+						entry,
+						["--index", index, "collection", "remove", legacyName],
+						`Rename unavailable — removing legacy collection '${legacyName}' instead`,
+					);
+				} else {
+					// Unexpected failure (locked store, CLI drift): do NOT
+					// destroy the legacy collection — leave it for inspection.
+					// The registration below surfaces the conflict loudly.
+					warn(
+						`Could not rename legacy collection '${legacyName}' — leaving it in place. ` +
+							`Migrate manually: qmd --index ${index} collection rename ${legacyName} ${collectionName}`,
+					);
+				}
 			}
 		}
 		// The legacy context row is keyed by the legacy path — clear it so a
@@ -286,6 +302,7 @@ function main(): void {
 			["--index", index, "context", "rm", `qmd://${legacyName}/`],
 			"Clearing legacy context (if any)",
 			isContextRemoveBenign,
+	isUnknownSubcommandFailure,
 		);
 	}
 
@@ -316,6 +333,7 @@ function main(): void {
 		["--index", index, "context", "rm", contextPath],
 		"Clearing previous context (if any)",
 		isContextRemoveBenign,
+	isUnknownSubcommandFailure,
 	);
 	run(
 		entry,

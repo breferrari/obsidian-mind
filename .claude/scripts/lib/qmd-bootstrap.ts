@@ -83,3 +83,17 @@ export function isContextRemoveBenign(o: {
 		/no context found for/i.test(o.stdout)
 	);
 }
+
+/**
+ * True when a qmd invocation failed because the subcommand doesn't exist in
+ * the installed version ("Unknown subcommand: rename"). qmd prints this to
+ * stdout and EXITS 0, so callers must classify by output, never by status.
+ * Used to distinguish "this qmd predates `collection rename`" (safe to fall
+ * back to remove+re-add) from a genuine failure (leave data untouched).
+ */
+export function isUnknownSubcommandFailure(outcome: {
+	readonly stdout: string;
+	readonly stderr: string;
+}): boolean {
+	return /unknown subcommand/i.test(outcome.stdout + outcome.stderr);
+}

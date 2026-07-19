@@ -13,6 +13,7 @@ import {
 	buildCollectionAddArgs,
 	isContextRemoveBenign,
 	makeCollectionAddBenignMatcher,
+	isUnknownSubcommandFailure,
 	legacyCollectionCandidate,
 } from "../lib/qmd-bootstrap.ts";
 
@@ -299,5 +300,27 @@ describe("legacyCollectionCandidate", () => {
 		assert.equal(legacyCollectionCandidate("../evil", "my-vault"), null);
 		assert.equal(legacyCollectionCandidate("has space", "my-vault"), null);
 		assert.equal(legacyCollectionCandidate("", "my-vault"), null);
+	});
+});
+
+describe("isUnknownSubcommandFailure", () => {
+	test("matches qmd's unknown-subcommand output on stdout", () => {
+		assert.equal(
+			isUnknownSubcommandFailure({
+				stdout: "Unknown subcommand: rename\nRun 'qmd collection help' for usage",
+				stderr: "",
+			}),
+			true,
+		);
+	});
+	test("false for unrelated failures (locked store, real errors)", () => {
+		assert.equal(
+			isUnknownSubcommandFailure({
+				stdout: "",
+				stderr: "SqliteError: database is locked",
+			}),
+			false,
+		);
+		assert.equal(isUnknownSubcommandFailure({ stdout: "", stderr: "" }), false);
 	});
 });
