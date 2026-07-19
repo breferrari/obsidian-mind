@@ -13,10 +13,22 @@
  * characters as word characters.
  */
 
+/**
+ * Secondary discriminator on a signal (#111): evaluated only when the
+ * parent signal matches, refining the routing hint within one class. The
+ * sub-hint message is emitted IN ADDITION to the parent's; once-per-session
+ * dedupe treats it as its own hint, so parent and sub fire independently.
+ */
+export type SubHint = {
+	readonly patterns: readonly string[];
+	readonly message: string;
+};
+
 export type Signal = {
 	readonly name: string;
 	readonly message: string;
 	readonly patterns: readonly string[];
+	readonly subHint?: SubHint;
 };
 
 export const SIGNALS: readonly Signal[] = [
@@ -24,6 +36,18 @@ export const SIGNALS: readonly Signal[] = [
 		name: "DECISION",
 		message:
 			"DECISION detected — consider creating a Decision Record in work/active/ and logging in work/Index.md Decisions Log",
+		subHint: {
+			message:
+				"Looks like a decision REVERSAL — update the ORIGINAL Decision Record (status: superseded, link the new one) instead of only adding a second record; the correction-sweep rule applies to every note restating the old decision.",
+			patterns: [
+				"reversed",
+				"superseded",
+				"changed our mind",
+				"rolled back the decision",
+				"overturned",
+				"un-decided",
+			],
+		},
 		patterns: [
 			// English
 			"decided",
