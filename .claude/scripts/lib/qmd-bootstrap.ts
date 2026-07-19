@@ -10,8 +10,26 @@
  */
 
 import { escapeRegex } from "./regex.ts";
+import { isValidQmdIndex } from "./session-start.ts";
 
 const DEFAULT_GLOB = "**/*.md";
+
+/**
+ * The legacy collection name a pre-#105 bootstrap may have registered: the
+ * manifest `template` field. Returns the validated name, or null when there
+ * is nothing to migrate — field absent/non-string, invalid as a qmd
+ * identifier, or equal to the index (the shipped default, where the old
+ * derivation was accidentally correct).
+ */
+export function legacyCollectionCandidate(
+	templateField: unknown,
+	index: string,
+): string | null {
+	if (typeof templateField !== "string") return null;
+	if (templateField === index) return null;
+	if (!isValidQmdIndex(templateField)) return null;
+	return templateField;
+}
 
 export function buildCollectionAddArgs(
 	index: string,

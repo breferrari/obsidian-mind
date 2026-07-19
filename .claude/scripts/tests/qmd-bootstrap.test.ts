@@ -13,6 +13,7 @@ import {
 	buildCollectionAddArgs,
 	isContextRemoveBenign,
 	makeCollectionAddBenignMatcher,
+	legacyCollectionCandidate,
 } from "../lib/qmd-bootstrap.ts";
 
 describe("buildCollectionAddArgs", () => {
@@ -273,5 +274,30 @@ describe("isContextRemoveBenign", () => {
 
 	test("does NOT match when output is empty", () => {
 		assert.equal(isContextRemoveBenign({ stdout: "", stderr: "" }), false);
+	});
+});
+
+describe("legacyCollectionCandidate", () => {
+	test("returns the template name when it differs from the index", () => {
+		assert.equal(
+			legacyCollectionCandidate("obsidian-mind", "my-vault"),
+			"obsidian-mind",
+		);
+	});
+	test("null when template equals index (shipped default)", () => {
+		assert.equal(
+			legacyCollectionCandidate("obsidian-mind", "obsidian-mind"),
+			null,
+		);
+	});
+	test("null for absent or non-string template", () => {
+		assert.equal(legacyCollectionCandidate(undefined, "my-vault"), null);
+		assert.equal(legacyCollectionCandidate(42, "my-vault"), null);
+		assert.equal(legacyCollectionCandidate(null, "my-vault"), null);
+	});
+	test("null for template values invalid as qmd identifiers", () => {
+		assert.equal(legacyCollectionCandidate("../evil", "my-vault"), null);
+		assert.equal(legacyCollectionCandidate("has space", "my-vault"), null);
+		assert.equal(legacyCollectionCandidate("", "my-vault"), null);
 	});
 });
