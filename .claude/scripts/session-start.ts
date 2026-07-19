@@ -59,8 +59,30 @@ import { readStdinJson } from "./lib/hook-io.ts";
 type HookInput = { readonly source?: unknown };
 
 // The SessionStart payload carries `source` (startup/clear/resume/compact).
-// Missing or unparseable stdin fails open to full mode.
-const hookInput = await readStdinJson<HookInput>();
+// Missing or unparseable stdin fails open to full mode. stdin is OPTIONAL
+// for this hook (unlike the payload-driven ones), so guard the read: a
+// TTY (manual run) skips it entirely, and a pipe that never delivers EOF
+// is abandoned after a short deadline — the injection must never hang on
+// a harness that doesn't send the payload.
+async function readHookInput(): Promise<HookInput | null> {
+	if (process.stdin.isTTY) return null;
+	let timer: NodeJS.Timeout | undefined;
+	const result = await Promise.race([
+		readStdinJson<HookInput>(),
+		new Promise<null>((resolveRace) => {
+			timer = setTimeout(() => resolveRace(null), 2_000);
+			timer.unref();
+		}),
+	]);
+	if (timer !== undefined) clearTimeout(timer);
+	if (result === null) {
+		// Abandoned or empty read: drop the stream so a still-open pipe
+		// can't keep the process alive after the injection is written.
+		process.stdin.destroy();
+	}
+	return result;
+}
+const hookInput = await readHookInput();
 const mode = injectionMode(hookInput?.source);
 
 function readManifestRaw(): string | null {
