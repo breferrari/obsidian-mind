@@ -8,7 +8,7 @@ tags:
 
 # Skills
 
-Custom slash commands, subagents, and reusable workflows. Defined in `.claude/commands/` and `.claude/agents/`.
+Custom slash commands, subagents, and reusable workflows. Defined in `.claude/commands/` and `.claude/agents/`. **This note is the canonical command catalog** for agents that don't get the in-session skills injection (Codex, Gemini, Cursor) — keep it current when commands change; CLAUDE.md deliberately carries no command table.
 
 ## Slash Commands
 
@@ -53,7 +53,8 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 |---------|---------|
 | `/om-vault-audit` | Deep structural audit — indexes, frontmatter, links, Bases, folder placement, stale context |
 | `/om-vault-upgrade` | Import content from an existing vault — detects version, classifies notes, transforms frontmatter, rebuilds indexes |
-| `/om-project-archive` | Move completed project from `work/active/` to `work/archive/YYYY/`, update all indexes |
+| `/om-project-archive` | Move completed project from `work/active/` to `work/archive/YYYY/`, update all indexes — moves whole `active/<Topic>/` clusters intact |
+| `/om-tidy` | Self-maintenance pass — acts on every hygiene flag: archives completed work, groups clusters, splits oversized notes, reports open loops. Never deletes, never commits |
 
 ## Usage Notes
 

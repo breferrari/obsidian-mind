@@ -253,6 +253,7 @@ obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAU
 | `/om-vault-audit` | 인덱스, 링크, 고아 노트, 오래된 컨텍스트 감사 |
 | `/om-vault-upgrade` | 기존 볼트에서 콘텐츠 가져오기 — 버전 감지, 분류, 마이그레이션 |
 | `/om-project-archive` | 완료된 프로젝트를 active/에서 archive/로 이동, 인덱스 업데이트 |
+| `/om-tidy` | 자체 유지보수 — 위생 플래그에 따라 완료 노트 아카이브, 클러스터 폴더화, 비대 노트 분할을 수행. 삭제도 커밋도 하지 않음 |
 
 ---
 
@@ -299,7 +300,8 @@ obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAU
 
 | Base | 표시 내용 |
 |------|-------|
-| Work Dashboard | 분기별 필터링, 상태별 그룹화된 활성 프로젝트 |
+| Work Dashboard | 분기별 필터링, 상태별 그룹화된 활성 프로젝트 — 14일 이상 손대지 않은 활성 노트를 보여주는 Stale Actives 뷰 포함 |
+| Recently Touched | 실제 수정 시각 순의 모든 노트 — "최근 무엇을 작업했나"에 대한 정확한 답 (살아있는 노트에서 파일명 날짜는 믿을 수 없음) |
 | Incidents | 심각도와 날짜순으로 정렬된 모든 인시던트 |
 | People Directory | `org/people/`의 모든 인물과 역할, 팀 정보 |
 | 1:1 History | 인물과 날짜로 정렬 가능한 모든 1:1 노트 |

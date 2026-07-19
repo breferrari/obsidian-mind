@@ -253,6 +253,7 @@ obsidian-mindはClaude Code、Codex CLI、Gemini CLIで動作します。`CLAUDE
 | `/om-vault-audit` | インデックス、リンク、孤立ノート、古いコンテキストを監査 |
 | `/om-vault-upgrade` | 既存ボールトからコンテンツをインポート — バージョン検出、分類、移行 |
 | `/om-project-archive` | 完了プロジェクトをactive/からarchive/に移動し、インデックスを更新 |
+| `/om-tidy` | セルフメンテナンス — 衛生フラグに基づき、完了ノートのアーカイブ、クラスタのフォルダ化、肥大ノートの分割を実行。削除もコミットもしない |
 
 ---
 
@@ -299,7 +300,8 @@ obsidian-mindはClaude Code、Codex CLI、Gemini CLIで動作します。`CLAUDE
 
 | Base | 表示内容 |
 |------|---------|
-| Work Dashboard | 四半期でフィルタリングされ、ステータスでグループ化されたアクティブプロジェクト |
+| Work Dashboard | 四半期でフィルタリングされ、ステータスでグループ化されたアクティブプロジェクト — 14日以上更新のないアクティブノートを示す Stale Actives ビュー付き |
+| Recently Touched | 実際の更新時刻順の全ノート — 「最近何に取り組んだか」への正しい答え（生きたノートではファイル名の日付は当てにならない） |
 | Incidents | 重要度と日付で並べ替えられた全インシデント |
 | People Directory | `org/people/`の全員（役割、チーム付き） |
 | 1:1 History | 人物と日付でソート可能な全1on1ノート |

@@ -182,11 +182,11 @@ Five lifecycle hooks handle routing automatically:
 
 | Hook | When | What |
 |------|------|------|
-| 🚀 SessionStart | On startup/resume | QMD re-index, inject North Star, active work, recent changes, tasks, file listing |
+| 🚀 SessionStart | On startup/resume | QMD re-index + self-heal, inject North Star focus, active work, recent changes, tasks, file listing, vault-hygiene drift flags — ending with an injection-size meter |
 | 💬 UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints |
-| ✍️ PostToolUse | After writing `.md` | Validates frontmatter, checks for wikilinks |
+| ✍️ PostToolUse | After writing `.md` | Validates frontmatter + wikilinks, blocks misplaced memory files, flags oversized notes (split, don't trim) and write-time topic clusters |
 | 💾 PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
-| 🏁 Stop | End of session | Checklist: archive completed projects, update indexes, check orphans |
+| 🏁 Stop | End of session | Checklist + concrete drift findings (same hygiene scan as SessionStart) |
 
 > [!TIP]
 > You just talk. The hooks handle the routing.
@@ -203,7 +203,7 @@ obsidian-mind does **not** dump your entire vault into context. It uses tiered l
 | **Triggered** | PostToolUse validation | After `.md` writes | ~200 tokens |
 | **Rare** | Full file reads | Only when explicitly needed | Variable |
 
-SessionStart loads **lightweight context** — small excerpts from key files, filenames, and git summary — not full note contents. The agent queries by meaning via QMD before reading files, so it pulls only what's relevant. The classification hook is one lightweight Node call per message. The validation hook only fires on markdown writes and skips excluded paths.
+SessionStart loads **lightweight context** — small excerpts from key files, filenames, and git summary — not full note contents. Four mechanisms keep the eager layer honest as the vault grows: **source-aware injection** (resume/compact re-inject only volatile sections — the static bulk is already in-conversation), an **injection-size meter** as the last line of every injection (you always see what context costs), a **single hook spawn per write** (the QMD refresh rides the validation hook), and **listing collapse** (the archive folds to one count line). The agent queries by meaning via QMD before reading files, so it pulls only what's relevant. The classification hook is one lightweight Node call per message. The validation hook only fires on markdown writes and skips excluded paths.
 
 ### 🌐 Using with Other Agents
 
@@ -254,6 +254,7 @@ Defined in `.claude/commands/`. Run them in Claude Code, Codex CLI, or Gemini CL
 | `/om-review-brief` | Generate a review brief (manager or peer version) |
 | `/om-self-review` | Write your self-assessment for review season — projects, competencies, principles |
 | `/om-review-peer` | Write a peer review — projects, principles, performance summary |
+| `/om-tidy` | Self-maintenance — acts on every hygiene flag: archive, group, split. Never deletes, never commits |
 | `/om-vault-audit` | Audit indexes, links, orphans, stale context |
 | `/om-vault-upgrade` | Import content from an existing vault — version detection, classification, migration |
 | `/om-prep-1on1` | Prep for an upcoming 1:1 — load person context, open items, suggested agenda |
@@ -306,7 +307,8 @@ The `bases/` folder contains database views that query your notes' frontmatter p
 
 | Base | Shows |
 |------|-------|
-| Work Dashboard | Active projects filtered by quarter, grouped by status |
+| Work Dashboard | Active projects filtered by quarter, grouped by status — plus a Stale Actives view (active but untouched 14+ days) |
+| Recently Touched | Every note by real modified time — the correct answer to "what did I work on recently" (filename dates lie for living notes) |
 | Incidents | All incidents sorted by severity and date |
 | People Directory | Everyone in `org/people/` with role, team |
 | 1:1 History | All 1:1 notes sortable by person and date |

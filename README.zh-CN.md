@@ -253,6 +253,7 @@ obsidian-mind 支持 Claude Code、Codex CLI 和 Gemini CLI。`CLAUDE.md` 中的
 | `/om-vault-audit` | 审计索引、链接、孤立笔记、过时内容 |
 | `/om-vault-upgrade` | 从现有仓库导入内容——版本检测、分类、迁移 |
 | `/om-project-archive` | 将已完成的项目从 active/ 移至 archive/，更新索引 |
+| `/om-tidy` | 自维护 — 依据卫生标志归档已完成笔记、归组松散集群、拆分过大笔记。从不删除、从不提交 |
 
 ---
 
@@ -299,7 +300,8 @@ obsidian-mind 支持 Claude Code、Codex CLI 和 Gemini CLI。`CLAUDE.md` 中的
 
 | Base | 显示内容 |
 |------|---------|
-| Work Dashboard | 按季度筛选、按状态分组的活跃项目 |
+| Work Dashboard | 按季度筛选、按状态分组的活跃项目 — 附 Stale Actives 视图（14 天以上未动的活跃笔记） |
+| Recently Touched | 按真实修改时间排序的全部笔记 — 「最近在做什么」的正确答案（活笔记的文件名日期不可信） |
 | Incidents | 按严重程度和日期排序的所有事件 |
 | People Directory | `org/people/` 中所有人员的角色和团队 |
 | 1:1 History | 可按人员和日期排序的所有 1:1 笔记 |
