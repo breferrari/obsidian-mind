@@ -61,3 +61,18 @@ describe("generateMemoryIndex", () => {
 		assert.equal(out, MEMORY_INDEX_HEADER + "\n\n");
 	});
 });
+
+describe("determinism under case-collisions", () => {
+	test("names differing only by case get one canonical order, input-order-independent", () => {
+		const a = generateMemoryIndex([
+			{ name: "foo", description: "lower" },
+			{ name: "Foo", description: "upper" },
+		]);
+		const b = generateMemoryIndex([
+			{ name: "Foo", description: "upper" },
+			{ name: "foo", description: "lower" },
+		]);
+		assert.equal(a, b);
+		assert.ok(a.indexOf("[[brain/Foo]]") < a.indexOf("[[brain/foo]]"));
+	});
+});

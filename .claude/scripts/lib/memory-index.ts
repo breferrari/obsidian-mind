@@ -28,8 +28,14 @@ export const MEMORY_INDEX_HEADER =
  * (case-insensitive), the same input always produces the same bytes.
  */
 export function generateMemoryIndex(notes: readonly BrainNote[]): string {
-	const sorted = [...notes].sort((a, b) =>
-		a.name.toLowerCase().localeCompare(b.name.toLowerCase(), "en"),
+	// Codepoint comparison, not locale collation (collation rules can vary
+	// across ICU versions and would leak into the bytes); case-insensitive
+	// primary with a case-sensitive tie-break so "Foo" vs "foo" still has
+	// ONE canonical order regardless of input order.
+	const cmp = (x: string, y: string): number => (x < y ? -1 : x > y ? 1 : 0);
+	const sorted = [...notes].sort(
+		(a, b) =>
+			cmp(a.name.toLowerCase(), b.name.toLowerCase()) || cmp(a.name, b.name),
 	);
 	const lines = [MEMORY_INDEX_HEADER, ""];
 	for (const n of sorted) {
