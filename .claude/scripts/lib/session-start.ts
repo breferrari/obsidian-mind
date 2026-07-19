@@ -421,3 +421,14 @@ export function resolveIndexStorePath(
 	const base = env["XDG_CACHE_HOME"] ?? join(home, ".cache");
 	return join(base, "qmd", `${indexName}.sqlite`);
 }
+
+/**
+ * Eager-layer injection mode (#107): on `resume`/`compact` the static bulk
+ * (North Star, brain index, file listing) is ALREADY in-conversation from
+ * the session's first injection — re-injecting doubles cost for zero new
+ * information. Full mode on `startup`/`clear` and on any missing/unknown
+ * source (fail open — Codex/Gemini hosts don't send one).
+ */
+export function injectionMode(source: unknown): "full" | "pointer" {
+	return source === "resume" || source === "compact" ? "pointer" : "full";
+}

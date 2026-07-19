@@ -23,6 +23,7 @@ import { join } from "node:path";
 import {
 	take,
 	formatDateHeader,
+	injectionMode,
 	formatInjectionSize,
 	formatActiveWork,
 	formatRecentChanges,
@@ -52,6 +53,15 @@ import {
 	parseOpenLoopConfig,
 	scanActiveHygiene,
 } from "./lib/active-hygiene.ts";
+
+import { readStdinJson } from "./lib/hook-io.ts";
+
+type HookInput = { readonly source?: unknown };
+
+// The SessionStart payload carries `source` (startup/clear/resume/compact).
+// Missing or unparseable stdin fails open to full mode.
+const hookInput = await readStdinJson<HookInput>();
+const mode = injectionMode(hookInput?.source);
 
 function readManifestRaw(): string | null {
 	try {
@@ -235,8 +245,32 @@ function northStar(): string {
 	// Filesystem-only: the path is fixed by template convention, so there's no
 	// wikilink-resolution value worth a CLI hop — and `spawnSync("obsidian", …)`
 	// launches the Electron app on macOS when no instance is running (#83).
+	//
+	// The 30-line budget must carry LIVE goals (#107): anchor at
+	// "## Current Focus" (skipping frontmatter + preamble) and drop
+	// struck-through completed bullets, which otherwise consume the slice
+	// and truncate current strategy.
 	try {
-		return take(readFileSync("brain/North Star.md", { encoding: "utf-8" }), 30);
+		const raw = readFileSync("brain/North Star.md", { encoding: "utf-8" });
+		const lines = stripFrontmatter(raw).split("\n");
+		const anchor = lines.findIndex((l) =>
+			l.trim().startsWith("## Current Focus"),
+		);
+		const scoped = anchor >= 0 ? lines.slice(anchor) : lines;
+		const struckCount = scoped.filter((l) =>
+			l.trimStart().startsWith("- ~~"),
+		).length;
+		const live = scoped.filter((l) => !l.trimStart().startsWith("- ~~"));
+		if (struckCount > 0) {
+			// Struck bullets can carry live tails — keep a pointer so sessions
+			// know completed context exists in the file.
+			live.splice(
+				1,
+				0,
+				`_(${struckCount} completed item${struckCount === 1 ? "" : "s"} hidden — full history in brain/North Star.md)_`,
+			);
+		}
+		return take(live.join("\n"), 30);
 	} catch {
 		return "(not found)";
 	}
@@ -347,6 +381,27 @@ const SKIP_PREFIXES: readonly string[] = [
 	".claude",
 ];
 
+// High-volume dirs the listing collapses to one count line (#107): the
+// archive grows forever and its enumeration is orientation noise — Glob
+// or QMD reach it on demand.
+const COLLAPSED_DIRS: readonly string[] = ["work/archive"];
+
+function countMd(dir: string): number {
+	let entries: Dirent[];
+	try {
+		entries = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return 0;
+	}
+	let n = 0;
+	for (const e of entries) {
+		const full = join(dir, e.name);
+		if (e.isDirectory()) n += countMd(full);
+		else if (e.isFile() && isMarkdownFilename(e.name)) n += 1;
+	}
+	return n;
+}
+
 function listMd(): string[] {
 	const results: string[] = [];
 	function walk(dir: string): void {
@@ -359,26 +414,44 @@ function listMd(): string[] {
 		for (const e of entries) {
 			const full = dir === "." ? e.name : join(dir, e.name);
 			if (isSkippedPath(full, SKIP_PREFIXES)) continue;
-			if (e.isDirectory()) walk(full);
-			else if (e.isFile() && isMarkdownFilename(e.name)) results.push(`./${full}`);
+			if (e.isDirectory()) {
+				const posix = full.replaceAll("\\", "/");
+				if (COLLAPSED_DIRS.includes(posix)) {
+					results.push(
+						`./${posix}/ — ${countMd(full)} notes (listing collapsed — Glob or QMD on demand)`,
+					);
+					continue;
+				}
+				walk(full);
+			} else if (e.isFile() && isMarkdownFilename(e.name)) results.push(`./${full}`);
 		}
 	}
 	walk(".");
 	return results.sort();
 }
 
+// Source-aware assembly (#107): on resume/compact the static bulk (North
+// Star, brain index, file listing) is already in-conversation — a pointer
+// replaces it, and only the volatile sections (recent changes, tasks,
+// active work, hygiene, QMD notes) re-inject.
 const sections = [
 	"## Session Context",
 	"",
 	"### Date",
 	formatDateHeader(new Date()),
 	"",
-	"### North Star (current goals)",
-	northStar(),
-	"",
-	"### Brain Topics (read on demand)",
-	brainIndex(),
-	"",
+];
+if (mode === "full") {
+	sections.push(
+		"### North Star (current goals)",
+		northStar(),
+		"",
+		"### Brain Topics (read on demand)",
+		brainIndex(),
+		"",
+	);
+}
+sections.push(
 	"### Recent Changes (last 48h)",
 	recentChanges(),
 	"",
@@ -387,10 +460,16 @@ const sections = [
 	"",
 	"### Active Work",
 	activeWork(),
-	"",
-	"### Vault File Listing",
-	listMd().join("\n"),
-];
+);
+if (mode === "full") {
+	sections.push("", "### Vault File Listing", listMd().join("\n"));
+} else {
+	sections.push(
+		"",
+		"### Context Pointer",
+		"(Re-entry via resume/compact — North Star, brain index, and the file listing were injected at session start and are unchanged; re-read on demand.)",
+	);
+}
 
 if (qmdSelfHealNote !== null) {
 	sections.push("", "### QMD Self-Heal", qmdSelfHealNote);

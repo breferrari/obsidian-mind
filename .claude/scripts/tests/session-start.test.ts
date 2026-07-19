@@ -12,6 +12,7 @@ import {
 	take,
 	formatDateHeader,
 	formatInjectionSize,
+	injectionMode,
 	formatActiveWork,
 	formatRecentChanges,
 	isSkippedPath,
@@ -672,4 +673,21 @@ describe("resolveIndexStorePath", () => {
 			join("/home/u", ".cache", "qmd", "my-vault.sqlite"),
 		);
 	});
+});
+
+describe("injectionMode", () => {
+	const cases: ReadonlyArray<readonly [unknown, "full" | "pointer"]> = [
+		["startup", "full"],
+		["clear", "full"],
+		["resume", "pointer"],
+		["compact", "pointer"],
+		[undefined, "full"], // missing source (Codex/Gemini)
+		[null, "full"],
+		[42, "full"], // non-string
+	];
+	for (const [source, expected] of cases) {
+		test(`${String(source)} → ${expected}`, () => {
+			assert.equal(injectionMode(source), expected);
+		});
+	}
 });

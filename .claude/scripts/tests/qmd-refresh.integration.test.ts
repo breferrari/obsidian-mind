@@ -1,19 +1,22 @@
 /**
- * Subprocess integration tests for the qmd-refresh.ts PostToolUse hook.
+ * Subprocess integration tests for the QMD-refresh trigger inside the
+ * validate-write.ts PostToolUse hook (which absorbed the retired
+ * standalone qmd-refresh.ts entry on 2026-07-14 — one spawn per write).
  *
  * Exercises the real stdin → decision → sentinel pipeline by spawning
  * the hook entry script exactly the way each agent's settings.json
  * would: `node --disable-warning=ExperimentalWarning --experimental-strip-types
- * qmd-refresh.ts` with a JSON payload on stdin. The sentinel file is the
- * only observable the hook produces (stdout AND stderr must stay silent),
- * so each test asserts on sentinel presence / mtime + exit code.
+ * validate-write.ts` with a JSON payload on stdin. The sentinel file is
+ * the refresh trigger's only observable (the fixtures below all resolve
+ * to nonexistent or out-of-root files, so validation itself stays
+ * silent), so each test asserts on sentinel presence / mtime + exit code.
  *
- * Deliberately does NOT depend on qmd being installed. The hook's
+ * Deliberately does NOT depend on qmd being installed. The trigger's
  * short-circuit when `resolveQmdEntry()` returns null means the
  * "sentinel NOT touched" path still runs cleanly on a minimal CI image
  * without polluting anyone's QMD cache. The qmd-installed path is
- * handled by one guarded test that checks `resolveQmdEntry()` directly
- * and skips itself when qmd isn't available.
+ * handled by guarded tests that check `resolveQmdEntry()` directly
+ * and assert the alternate branch when qmd isn't available.
  *
  * Runs identically on Windows, macOS, and Linux — the hook's
  * cross-platform shape is asserted through the same spawn mechanism
@@ -36,7 +39,7 @@ import { runScript as spawnHook } from "./_helpers.ts";
 import { resolveQmdEntry } from "../lib/qmd.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = resolve(SCRIPT_DIR, "../qmd-refresh.ts");
+const SCRIPT = resolve(SCRIPT_DIR, "../validate-write.ts");
 
 // Route the hook's debounce sentinel through a per-file tmp path so
 // this test can't race with any other test file (notably
@@ -93,7 +96,7 @@ beforeEach(() => {
 });
 
 // --- Silent no-op paths (must not touch the sentinel) ---
-describe("qmd-refresh — silent no-op on ineligible inputs", () => {
+describe("validate-write refresh trigger — silent no-op on ineligible inputs", () => {
 	test("empty stdin exits 0 silently without touching sentinel", () => {
 		const { stdout, stderr, code } = runHook(null);
 		assert.equal(code, 0);
@@ -190,7 +193,7 @@ describe("qmd-refresh — silent no-op on ineligible inputs", () => {
 });
 
 // --- Debounce path (sentinel controls whether worker is spawned) ---
-describe("qmd-refresh — debounce", () => {
+describe("validate-write refresh trigger — debounce", () => {
 	test("fresh sentinel blocks a subsequent trigger (sentinel unchanged)", () => {
 		// Arrange: sentinel was just "touched" (mtime = now).
 		writeFileSync(SENTINEL, "");
@@ -212,12 +215,12 @@ describe("qmd-refresh — debounce", () => {
 });
 
 // --- Happy path: qmd installed, eligible .md → sentinel gets touched ---
-describe("qmd-refresh — eligible .md path", () => {
-	// Guard: this test asserts the sentinel gets bumped when qmd is
+describe("validate-write refresh trigger — eligible .md path", () => {
+	// Guard: these tests assert the sentinel gets bumped when qmd is
 	// available. On a CI image without qmd, `resolveQmdEntry()` returns
-	// null and the hook correctly short-circuits BEFORE touching the
-	// sentinel — we assert that alternate path explicitly below so CI
-	// covers both branches regardless of qmd presence.
+	// null and the trigger correctly short-circuits BEFORE touching the
+	// sentinel — we assert that alternate path explicitly so CI covers
+	// both branches regardless of qmd presence.
 	test("sentinel is bumped when qmd resolves; skipped otherwise", () => {
 		const qmdAvailable = resolveQmdEntry() !== null;
 
@@ -249,5 +252,34 @@ describe("qmd-refresh — eligible .md path", () => {
 			);
 		}
 	});
-});
 
+	test("path skipped by validation (templates/) still triggers the refresh", () => {
+		// The merge's ordering contract: the refresh trigger fires BEFORE
+		// validate-write's skip ladder. templates/ is skipped by
+		// shouldSkipFile but was always refreshed by the old standalone
+		// hook — the sentinel must still move (when qmd resolves).
+		const qmdAvailable = resolveQmdEntry() !== null;
+
+		makeStaleSentinel(5);
+		const before = sentinelMtime();
+		assert.ok(before !== null);
+
+		const { stdout, code } = runHook({
+			tool_input: { file_path: join(VAULT_ROOT, "templates/x.md") },
+		});
+		const after = sentinelMtime();
+
+		assert.equal(code, 0);
+		assert.equal(stdout, "");
+		assert.ok(after !== null, "sentinel should remain present");
+
+		if (qmdAvailable) {
+			assert.ok(
+				after > before,
+				"validation-skipped paths must still refresh the QMD index",
+			);
+		} else {
+			assert.equal(after, before);
+		}
+	});
+});
