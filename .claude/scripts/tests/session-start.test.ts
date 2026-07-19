@@ -7,6 +7,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import {
 	take,
 	formatDateHeader,
@@ -19,6 +20,9 @@ import {
 	stripFrontmatter,
 	hasBrainContent,
 	parseQmdIndex,
+	parseQmdMinVersion,
+	isQmdNativeAbiMismatch,
+	qmdPackageRootFromEntry,
 	qmdArgsWithIndex,
 	isValidQmdIndex,
 	parseInfraRootFilenames,
@@ -308,6 +312,60 @@ describe("qmdArgsWithIndex", () => {
 		const out = qmdArgsWithIndex(null, input);
 		assert.notEqual(out, input);
 		assert.deepEqual(out, input);
+	});
+});
+
+describe("isQmdNativeAbiMismatch", () => {
+	test("detects a NODE_MODULE_VERSION mismatch message", () => {
+		assert.equal(
+			isQmdNativeAbiMismatch(
+				"Error: The module '.../better_sqlite3.node'\nwas compiled against a different Node.js version using\nNODE_MODULE_VERSION 141. This version of Node.js requires\nNODE_MODULE_VERSION 147.",
+			),
+			true,
+		);
+	});
+	test("detects the ERR_DLOPEN_FAILED error code alone", () => {
+		assert.equal(isQmdNativeAbiMismatch("code: 'ERR_DLOPEN_FAILED'"), true);
+	});
+	test("returns false for unrelated stderr", () => {
+		assert.equal(isQmdNativeAbiMismatch(""), false);
+		assert.equal(isQmdNativeAbiMismatch("command not found: qmd"), false);
+	});
+});
+
+describe("qmdPackageRootFromEntry", () => {
+	test("strips dist/cli/qmd.js to return the package root", () => {
+		const root = join("/opt/homebrew/lib/node_modules", "@tobilu", "qmd");
+		const entry = join(root, "dist", "cli", "qmd.js");
+		assert.equal(qmdPackageRootFromEntry(entry), root);
+	});
+	test("returns null for a null entry", () => {
+		assert.equal(qmdPackageRootFromEntry(null), null);
+	});
+	test("returns null when the entry doesn't match the expected shape", () => {
+		assert.equal(qmdPackageRootFromEntry("/some/other/path.js"), null);
+	});
+});
+
+describe("parseQmdMinVersion", () => {
+	test("extracts a declared min version", () => {
+		assert.equal(
+			parseQmdMinVersion(JSON.stringify({ qmd_min_version: "2.0.0" })),
+			"2.0.0",
+		);
+	});
+	test("null when absent, empty, non-string, or manifest malformed", () => {
+		assert.equal(parseQmdMinVersion(JSON.stringify({})), null);
+		assert.equal(
+			parseQmdMinVersion(JSON.stringify({ qmd_min_version: "" })),
+			null,
+		);
+		assert.equal(
+			parseQmdMinVersion(JSON.stringify({ qmd_min_version: 2 })),
+			null,
+		);
+		assert.equal(parseQmdMinVersion("not json"), null);
+		assert.equal(parseQmdMinVersion(null), null);
 	});
 });
 
