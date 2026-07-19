@@ -5,7 +5,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { anyWordMatch } from "../lib/matcher.ts";
+import { anyWordMatch, classify } from "../lib/matcher.ts";
 
 describe("anyWordMatch", () => {
 	test("basic match", () => {
@@ -64,5 +64,22 @@ describe("anyWordMatch", () => {
 
 	test("empty text matches no non-empty phrase", () => {
 		assert.equal(anyWordMatch(["hello"], ""), false);
+	});
+});
+
+describe("sub-hints (#111)", () => {
+	test("sub-hint fires only alongside its parent signal", () => {
+		const out = classify("we decided to reverse course — the old approach is superseded");
+		assert.ok(out.some((m) => m.includes("DECISION detected")));
+		assert.ok(out.some((m) => m.includes("REVERSAL")));
+	});
+	test("sub-hint patterns alone (no parent match) emit nothing", () => {
+		const out = classify("the migration superseded the old pipeline");
+		assert.ok(!out.some((m) => m.includes("REVERSAL")) || out.some((m) => m.includes("DECISION detected")));
+	});
+	test("parent without sub-hint patterns emits only the parent", () => {
+		const out = classify("we decided to ship the feature");
+		assert.ok(out.some((m) => m.includes("DECISION detected")));
+		assert.ok(!out.some((m) => m.includes("REVERSAL")));
 	});
 });
