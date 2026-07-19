@@ -32,6 +32,10 @@ Work through the current hygiene flags in order:
 
 Write `thinking/YYYY-MM-DD-tidy-report.md`: actions taken (moves, splits, links), flags cleared, judgment calls deferred, open loops listed. Keep it compact — the report is a receipt, not an essay. Delete it once its findings are resolved (thinking/ is a scratchpad by contract).
 
+## Headless subset
+
+`node --experimental-strip-types .claude/scripts/tidy-fix.ts [--apply]` runs the DETERMINISTIC subset from cron with no agent: archives completed work, migrates misplaced memory files (copy → regenerate index → verify → remove), and refuses every judgment class with a pointer back here. Dry-run by default.
+
 ## Related
 
 - `/om-weekly` § hygiene sweep — the scheduled home of this pass

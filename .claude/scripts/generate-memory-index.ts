@@ -20,18 +20,21 @@ import {
 } from "./lib/session-start.ts";
 import { generateMemoryIndex, type BrainNote } from "./lib/memory-index.ts";
 
-function main(): void {
-	const root = process.env["CLAUDE_PROJECT_DIR"] || process.cwd();
+/**
+ * Collect brain/ notes (name + description) for index generation. Exported
+ * so the tidy-fix consumer regenerates the index from the same walk.
+ * Returns null when brain/ is missing.
+ */
+export function collectBrainNotes(root: string): BrainNote[] | null {
 	let entries: string[] = [];
 	try {
 		entries = readdirSync(join(root, "brain")).filter((n) =>
 			isMarkdownFilename(n),
 		);
 	} catch {
-		process.stderr.write("brain/ not found — run from the vault root.\n");
-		process.exit(1);
+		return null;
 	}
-	const notes: BrainNote[] = entries.map((f) => {
+	return entries.map((f) => {
 		let description: string | null = null;
 		try {
 			description = extractFrontmatterField(
@@ -43,6 +46,15 @@ function main(): void {
 		}
 		return { name: f.replace(/\.md$/i, ""), description };
 	});
+}
+
+function main(): void {
+	const root = process.env["CLAUDE_PROJECT_DIR"] || process.cwd();
+	const notes = collectBrainNotes(root);
+	if (notes === null) {
+		process.stderr.write("brain/ not found — run from the vault root.\n");
+		process.exit(1);
+	}
 	process.stdout.write(generateMemoryIndex(notes));
 }
 
