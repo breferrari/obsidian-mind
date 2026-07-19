@@ -8,7 +8,8 @@
  * vault hygiene warnings when frontmatter or wikilinks are missing.
  */
 
-import { basename } from "node:path";
+import { basename, dirname, join, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import { realpathSync, statSync } from "node:fs";
 import {
 	debug,
@@ -28,6 +29,10 @@ import {
 	isMonolithExempt,
 	newNoteClusterCandidate,
 } from "./lib/active-hygiene.ts";
+import {
+	shouldRefreshForPath,
+	triggerDebouncedRefresh,
+} from "./lib/qmd-refresh.ts";
 
 type HookInput = {
 	readonly tool_input?: unknown;
@@ -50,6 +55,25 @@ const filePath = (toolInput as Record<string, unknown>).file_path;
 if (typeof filePath !== "string" || !filePath) {
 	debug("validate: missing file_path");
 	process.exit(0);
+}
+
+// Debounced QMD refresh (#107) — fire-and-forget, never blocks validation.
+// Folded here from the retired qmd-refresh.ts entry so every .md write
+// costs ONE process spawn, not two (~150-300ms each on Windows). Runs
+// before the skip ladder so template/root/memory paths still refresh.
+const DEBOUNCE_MS = 30_000;
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const SENTINEL_PATH =
+	process.env["QMD_REFRESH_SENTINEL"] ??
+	join(SCRIPT_DIR, ".qmd-refresh-sentinel");
+const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
+if (shouldRefreshForPath(filePath)) {
+	triggerDebouncedRefresh({
+		sentinelPath: SENTINEL_PATH,
+		workerPath: WORKER_PATH,
+		debounceMs: DEBOUNCE_MS,
+		logPrefix: "validate-write",
+	});
 }
 
 // Memory-location guard (#81) runs BEFORE the vault-root skip: the
