@@ -3,8 +3,8 @@
  * PR-time advisory: verify that every tracked template-infrastructure file
  * is covered by a glob in vault-manifest.json's `infrastructure` array.
  *
- * Emits GitHub workflow `::warning::` annotations for uncovered files. Does
- * not fail the job — this is an informational nudge to keep the manifest in
+ * Emits GitHub workflow `::error::` annotations for uncovered files and
+ * FAILS the job (#51) — manifest drift ships broken upgrades, so the nudge
  * sync when new template files land.
  */
 
@@ -156,7 +156,7 @@ function main(): void {
 	if (missing.length === 0) return;
 
 	console.log(
-		"::warning::The following files are not covered by vault-manifest.json infrastructure globs:",
+		"::error::The following files are not covered by vault-manifest.json infrastructure globs:",
 	);
 	for (const f of missing) console.log(`  - ${f}`);
 	console.log("");
@@ -166,6 +166,7 @@ function main(): void {
 	console.log(
 		"Also consider adding a version_fingerprints entry if this is a new version-defining file.",
 	);
+	process.exitCode = 1;
 }
 
 if (isMainModule(import.meta.url)) main();

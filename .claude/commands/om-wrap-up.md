@@ -55,7 +55,7 @@ For each note created or modified this session:
 
 ### 6. Ways of Working Review
 
-Check if this session revealed:
+**Index-first**: read each brain note's headline/one-liner structure, then open ONLY the topics this session actually touched — same knowledge transfer, a fraction of the tokens. Check if this session revealed:
 - A new pattern that should be in `brain/Patterns.md`?
 - A new gotcha that should be in `brain/Gotchas.md`?
 - A workflow improvement for `brain/Skills.md`?
