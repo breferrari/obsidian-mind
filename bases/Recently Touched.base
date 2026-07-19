@@ -1,0 +1,61 @@
+filters:
+  and:
+    - file.ext == "md"
+    - '!file.inFolder("templates")'
+    - '!file.inFolder("thinking")'
+formulas:
+  touched: file.mtime.format("YYYY-MM-DD HH:mm")
+  days_ago: (now() - file.mtime).days.round(0)
+  where: file.folder
+properties:
+  file.name:
+    displayName: Note
+  formula.touched:
+    displayName: Last Touched
+  formula.days_ago:
+    displayName: Days Ago
+  formula.where:
+    displayName: Folder
+  description:
+    displayName: Summary
+views:
+  - type: table
+    name: Last 7 Days
+    filters:
+      and:
+        - file.mtime > now() - "7 days"
+    order:
+      - file.name
+      - formula.touched
+      - formula.where
+      - description
+    sort:
+      - property: file.mtime
+        direction: DESC
+    limit: 50
+  - type: table
+    name: Recent 30
+    order:
+      - file.name
+      - formula.touched
+      - formula.days_ago
+      - formula.where
+      - description
+    sort:
+      - property: file.mtime
+        direction: DESC
+    limit: 30
+  - type: table
+    name: Work Only
+    filters:
+      and:
+        - file.inFolder("work")
+    order:
+      - file.name
+      - formula.touched
+      - formula.days_ago
+      - description
+    sort:
+      - property: file.mtime
+        direction: DESC
+    limit: 40

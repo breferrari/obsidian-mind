@@ -14,6 +14,10 @@ tags:
 
 ![[Work Dashboard.base#Active Work]]
 
+## Recently Touched
+
+![[Recently Touched.base#Last 7 Days]]
+
 ## Incidents
 
 ![[Incidents.base#All Incidents]]
