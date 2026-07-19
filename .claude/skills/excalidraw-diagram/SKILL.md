@@ -57,7 +57,7 @@ tags: [excalidraw]
 - Frontmatter must include `tags: [excalidraw]`
 - Warning message must be included in full
 - JSON must be wrapped in `%%` markers
-- Do not use any frontmatter settings other than `excalidraw-plugin: parsed`
+- No `excalidraw-*` plugin settings in frontmatter other than `excalidraw-plugin: parsed` (the `tags: [excalidraw]` entry above is separate and still required)
 - **File extension**: `.md`
 
 ### Mode 2: Standard Excalidraw Format
