@@ -36,6 +36,7 @@ import {
 	qmdArgsWithIndex,
 	isQmdNativeAbiMismatch,
 	qmdPackageRootFromEntry,
+	resolveIndexStorePath,
 	parseInfraRootFilenames,
 	isInfraFilename,
 	isMarkdownFilename,
@@ -105,11 +106,16 @@ const qmdEntry = resolveQmdEntry();
 // can't blow the hook's timeout.
 let qmdSelfHealNote: string | null = null;
 if (qmdIndex !== null && qmdEntry !== null) {
-	const preflight = spawnSync(
-		process.execPath,
-		[qmdEntry, "--index", qmdIndex, "status"],
-		{ encoding: "utf-8", timeout: 5_000 },
-	);
+	const preflightCmd = buildQmdCommand(qmdEntry, [
+		"--index",
+		qmdIndex,
+		"status",
+	]);
+	const preflight = spawnSync(preflightCmd.cmd, preflightCmd.args as string[], {
+		encoding: "utf-8",
+		timeout: 5_000,
+		shell: preflightCmd.shell,
+	});
 	if (isQmdNativeAbiMismatch(preflight.stderr ?? "")) {
 		const pkgRoot = qmdPackageRootFromEntry(qmdEntry);
 		if (pkgRoot !== null) {
@@ -134,9 +140,11 @@ if (qmdIndex !== null && qmdEntry !== null) {
 let qmdVersionNote: string | null = null;
 const qmdMinVersion = parseQmdMinVersion(manifestJson);
 if (qmdMinVersion !== null && qmdEntry !== null) {
-	const v = spawnSync(process.execPath, [qmdEntry, "--version"], {
+	const versionCmd = buildQmdCommand(qmdEntry, ["--version"]);
+	const v = spawnSync(versionCmd.cmd, versionCmd.args as string[], {
 		encoding: "utf-8",
 		timeout: 5_000,
+		shell: versionCmd.shell,
 	});
 	if (v.status === 0 && !qmdVersionAtLeast(v.stdout ?? "", qmdMinVersion)) {
 		qmdVersionNote = `⚠️ Installed qmd (${(v.stdout ?? "").trim()}) is below this vault's declared minimum (${qmdMinVersion}) — semantic search may misbehave. Update: \`npm i -g @tobilu/qmd\`, then re-run the bootstrap.`;
@@ -156,7 +164,9 @@ if (qmdMinVersion !== null && qmdEntry !== null) {
 function qmdStoreLooksEmpty(index: string | null): boolean {
 	if (!index) return false; // no named index → keep legacy update behavior
 	try {
-		const store = join(homedir(), ".cache", "qmd", `${index}.sqlite`);
+		// XDG-aware, matching qmd's own store path — a hardcoded ~/.cache
+		// would force a full bootstrap every session for XDG_CACHE_HOME users.
+		const store = resolveIndexStorePath(index, process.env, homedir());
 		return statSync(store).size < 500_000;
 	} catch {
 		return true; // store missing / path differs → bootstrap (idempotent)

@@ -405,3 +405,19 @@ export function formatBrainIndex(
 		});
 	return lines.length > 0 ? lines.join("\n") : "(none)";
 }
+
+/**
+ * Resolve the machine-local sqlite store path for a named qmd index,
+ * honoring XDG_CACHE_HOME exactly like @tobilu/qmd's own store.js (and the
+ * MCP wrapper's resolveIndexSqlitePath in qmd-mcp.mjs — kept in sync by
+ * behavior-locking tests on both, since .mjs exports can't be imported into
+ * .ts under strip-types). Pure: env and home are injected for testability.
+ */
+export function resolveIndexStorePath(
+	indexName: string,
+	env: Record<string, string | undefined>,
+	home: string,
+): string {
+	const base = env["XDG_CACHE_HOME"] ?? join(home, ".cache");
+	return join(base, "qmd", `${indexName}.sqlite`);
+}

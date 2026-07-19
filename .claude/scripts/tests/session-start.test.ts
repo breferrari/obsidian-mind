@@ -23,6 +23,7 @@ import {
 	parseQmdMinVersion,
 	isQmdNativeAbiMismatch,
 	qmdPackageRootFromEntry,
+	resolveIndexStorePath,
 	qmdArgsWithIndex,
 	isValidQmdIndex,
 	parseInfraRootFilenames,
@@ -656,4 +657,19 @@ describe("formatInjectionSize", () => {
 			assert.equal(formatInjectionSize(bytes), expected);
 		});
 	}
+});
+
+describe("resolveIndexStorePath", () => {
+	test("uses XDG_CACHE_HOME when set (matches qmd's own store rule)", () => {
+		assert.equal(
+			resolveIndexStorePath("my-vault", { XDG_CACHE_HOME: "/xdg/cache" }, "/home/u"),
+			join("/xdg/cache", "qmd", "my-vault.sqlite"),
+		);
+	});
+	test("falls back to ~/.cache when XDG_CACHE_HOME is unset", () => {
+		assert.equal(
+			resolveIndexStorePath("my-vault", {}, "/home/u"),
+			join("/home/u", ".cache", "qmd", "my-vault.sqlite"),
+		);
+	});
 });
