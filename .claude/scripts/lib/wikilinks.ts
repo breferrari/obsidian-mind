@@ -64,8 +64,13 @@ export function stripCodeRegions(content: string): string {
 			fenceMarker = trimmed.slice(0, 3);
 			continue;
 		}
-		// Inline code spans: remove `...` runs (non-greedy, single line).
-		out.push(line.replace(/`[^`]*`/g, ""));
+		// Inline code spans: remove `...` runs, including multi-backtick
+		// spans (``…`` — CommonMark closes N backticks with exactly N, and
+		// shorter runs are legal INSIDE the span, so ``[[x]]`` and
+		// ``code with ` inside`` must both strip whole). Content charwise
+		// forbids starting the same-length run early; the trailing (?!`)
+		// pins the closer to an exact-length run.
+		out.push(line.replace(/(`+)(?:(?!\1)[^\n])*?\1(?!`)/g, ""));
 	}
 	return out.join("\n");
 }

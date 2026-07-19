@@ -34,6 +34,19 @@ describe("stripCodeRegions", () => {
 		assert.ok(!out.includes("wikilinks"));
 		assert.ok(out.includes("[[Real]]"));
 	});
+	test("removes multi-backtick code spans (CommonMark N-closes-N)", () => {
+		const out = stripCodeRegions(
+			"double ``[[Not A Link]]`` and triple ```[[Also Not]]``` beside [[Real]]",
+		);
+		assert.ok(!out.includes("Not A Link"));
+		assert.ok(!out.includes("Also Not"));
+		assert.ok(out.includes("[[Real]]"));
+	});
+	test("spans containing lone backticks strip whole (`` x ` y ``)", () => {
+		const out = stripCodeRegions("odd ``code with ` inside`` then [[Real]]");
+		assert.ok(out.includes("[[Real]]"));
+		assert.ok(!out.includes("code with"));
+	});
 });
 
 describe("extractWikilinkTargets", () => {
