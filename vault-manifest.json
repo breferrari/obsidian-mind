@@ -35,7 +35,7 @@
     ".gemini/**",
     "templates/**",
     "bases/**",
-    "scripts/**",
+    ".scripts/**",
     "vault-manifest.json",
     "obsidian-mind-logo.png",
     "obsidian-mind-demo.gif",
@@ -164,7 +164,7 @@
     "v5.1": {
       "exists": [
         "ARCHITECTURE.md",
-        "scripts/qmd-bootstrap.ts",
+        ".scripts/qmd-bootstrap.ts",
         ".claude/scripts/.gitignore"
       ],
       "missing": [

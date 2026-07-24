@@ -31,10 +31,10 @@ import { join } from 'node:path';
 // Vault-relative path to the QMD bootstrap script. Centralized so a future
 // rename is a one-line change. Lives at vault root under `scripts/`, not
 // `.claude/scripts/` — the README's QMD setup section invokes the same path
-// (`node --experimental-strip-types scripts/qmd-bootstrap.ts`), and changing
+// (`node --experimental-strip-types .scripts/qmd-bootstrap.ts`), and changing
 // it would silently desync the manual setup path from the hook's automated
 // one.
-const QMD_BOOTSTRAP_RELATIVE = 'scripts/qmd-bootstrap.ts';
+const QMD_BOOTSTRAP_RELATIVE = '.scripts/qmd-bootstrap.ts';
 
 // Local mirror of ShardMind's BootstrapContext shape. Inlined (rather than
 // imported from `shardmind/runtime`) so obsidian-mind has no shardmind

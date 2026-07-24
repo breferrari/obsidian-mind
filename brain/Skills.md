@@ -116,7 +116,7 @@ If QMD is installed (`npm install -g @tobilu/qmd`), the vault has semantic searc
 - `qmd --index <name> vsearch "..."` — semantic vector search (exploratory)
 - `qmd --index <name> update && qmd --index <name> embed` — refresh index after bulk changes
 
-SessionStart hook runs `qmd --index <name> update` automatically, reading the index name from the manifest. First-time setup on a fresh clone: `node --experimental-strip-types scripts/qmd-bootstrap.ts`. See `.claude/skills/qmd/SKILL.md` for full reference, and [[Memories]] for the topics QMD is most often asked to find across the vault.
+SessionStart hook runs `qmd --index <name> update` automatically, reading the index name from the manifest. First-time setup on a fresh clone: `node --experimental-strip-types .scripts/qmd-bootstrap.ts`. See `.claude/skills/qmd/SKILL.md` for full reference, and [[Memories]] for the topics QMD is most often asked to find across the vault.
 
 ## Workflow: Weekly Review
 

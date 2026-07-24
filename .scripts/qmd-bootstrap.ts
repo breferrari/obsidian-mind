@@ -25,7 +25,7 @@
  * and Linux.
  *
  * Usage:
- *   node --experimental-strip-types scripts/qmd-bootstrap.ts
+ *   node --experimental-strip-types .scripts/qmd-bootstrap.ts
  */
 
 import { spawnSync } from "node:child_process";

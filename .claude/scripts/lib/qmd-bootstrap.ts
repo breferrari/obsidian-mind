@@ -1,5 +1,5 @@
 /**
- * Pure helpers for `scripts/qmd-bootstrap.ts`, factored out for unit-testing
+ * Pure helpers for `.scripts/qmd-bootstrap.ts`, factored out for unit-testing
  * without spawning qmd.
  *
  * Two qmd-2.x quirks drive the shape here. Its CLI runs `util.parseArgs` with

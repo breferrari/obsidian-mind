@@ -226,7 +226,7 @@ const bootstrapNeeded = qmdEntry !== null && qmdStoreLooksEmpty(qmdIndex);
 const qmdUpdate = bootstrapNeeded
 	? {
 			cmd: process.execPath,
-			args: ["--experimental-strip-types", "scripts/qmd-bootstrap.ts"],
+			args: ["--experimental-strip-types", ".scripts/qmd-bootstrap.ts"],
 			shell: false,
 		}
 	: buildQmdCommand(qmdEntry, qmdArgsWithIndex(qmdIndex, ["update"]));
