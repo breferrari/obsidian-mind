@@ -42,6 +42,13 @@ import {
 	isInfraFilename,
 	isMarkdownFilename,
 	collectOpenTasks,
+	applyInjectionBudget,
+	parseInjectionBudget,
+	parseListingCollapseThreshold,
+	shouldCollapseDir,
+	formatCollapsedDir,
+	DEFAULT_LISTING_COLLAPSE_THRESHOLD,
+	type BudgetSection,
 } from "./lib/session-start.ts";
 import {
 	buildQmdCommand,
@@ -403,101 +410,148 @@ const SKIP_PREFIXES: readonly string[] = [
 	".claude",
 ];
 
-// High-volume dirs the listing collapses to one count line (#107): the
-// archive grows forever and its enumeration is orientation noise — Glob
-// or QMD reach it on demand.
-const COLLAPSED_DIRS: readonly string[] = ["work/archive"];
+// Dirs that collapse to one count line regardless of size (#107): the
+// archive is orientation noise whether it holds 3 notes or 300 — Glob or
+// QMD reach it on demand. Everything else collapses by SIZE instead, via
+// the threshold below, so a vault cannot grow past the ceiling through
+// whichever folder nobody remembered to list here.
+const ALWAYS_COLLAPSED_DIRS: readonly string[] = ["work/archive"];
 
-function countMd(dir: string): number {
+const listingCollapseThreshold =
+	parseListingCollapseThreshold(manifestJson) ??
+	DEFAULT_LISTING_COLLAPSE_THRESHOLD;
+
+/**
+ * One traversal that carries its own subtree count, so the collapse decision
+ * costs nothing extra. (A separate recursive counter would re-walk every
+ * subtree the listing walk already visited.)
+ *
+ * The count reflects what the listing WOULD have printed — skipped prefixes
+ * are excluded — so a collapsed line never claims notes the expanded listing
+ * would not have shown.
+ */
+type WalkResult = { readonly lines: readonly string[]; readonly count: number };
+
+function walkMd(dir: string): WalkResult {
 	let entries: Dirent[];
 	try {
 		entries = readdirSync(dir, { withFileTypes: true });
 	} catch {
-		return 0;
+		return { lines: [], count: 0 };
 	}
-	let n = 0;
+	const lines: string[] = [];
+	let count = 0;
 	for (const e of entries) {
-		const full = join(dir, e.name);
-		if (e.isDirectory()) n += countMd(full);
-		else if (e.isFile() && isMarkdownFilename(e.name)) n += 1;
+		const full = dir === "." ? e.name : join(dir, e.name);
+		if (isSkippedPath(full, SKIP_PREFIXES)) continue;
+		if (e.isDirectory()) {
+			const posix = full.replaceAll("\\", "/");
+			const sub = walkMd(full);
+			count += sub.count;
+			if (
+				shouldCollapseDir(
+					sub.count,
+					listingCollapseThreshold,
+					ALWAYS_COLLAPSED_DIRS,
+					posix,
+				)
+			) {
+				lines.push(formatCollapsedDir(posix, sub.count));
+			} else {
+				lines.push(...sub.lines);
+			}
+		} else if (e.isFile() && isMarkdownFilename(e.name)) {
+			lines.push(`./${full}`);
+			count += 1;
+		}
 	}
-	return n;
+	return { lines, count };
 }
 
 function listMd(): string[] {
-	const results: string[] = [];
-	function walk(dir: string): void {
-		let entries: Dirent[];
-		try {
-			entries = readdirSync(dir, { withFileTypes: true });
-		} catch {
-			return;
-		}
-		for (const e of entries) {
-			const full = dir === "." ? e.name : join(dir, e.name);
-			if (isSkippedPath(full, SKIP_PREFIXES)) continue;
-			if (e.isDirectory()) {
-				const posix = full.replaceAll("\\", "/");
-				if (COLLAPSED_DIRS.includes(posix)) {
-					results.push(
-						`./${posix}/ — ${countMd(full)} notes (listing collapsed — Glob or QMD on demand)`,
-					);
-					continue;
-				}
-				walk(full);
-			} else if (e.isFile() && isMarkdownFilename(e.name)) results.push(`./${full}`);
-		}
-	}
-	walk(".");
-	return results.sort();
+	return [...walkMd(".").lines].sort();
 }
 
 // Source-aware assembly (#107): on resume/compact the static bulk (North
 // Star, brain index, file listing) is already in-conversation — a pointer
 // replaces it, and only the volatile sections (recent changes, tasks,
 // active work, hygiene, QMD notes) re-inject.
-const sections = [
-	"## Session Context",
-	"",
-	"### Date",
-	formatDateHeader(new Date()),
-	"",
+// `priority` orders SURRENDER under budget, highest first. Sections with no
+// fallback are load-bearing and never degrade. The listing goes first: it is
+// the section that grows with every note and is fully reconstructible with
+// one Glob. Hygiene never degrades — it is small and it is actionable.
+const PRIORITY = {
+	LOAD_BEARING: 0,
+	HYGIENE: 5,
+	VOLATILE: 10,
+	RECENT_CHANGES: 20,
+	NORTH_STAR: 30,
+	BRAIN_INDEX: 40,
+	FILE_LISTING: 50,
+} as const;
+
+const sections: BudgetSection[] = [
+	{ header: "", body: "## Session Context", priority: PRIORITY.LOAD_BEARING },
+	{
+		header: "### Date",
+		body: formatDateHeader(new Date()),
+		priority: PRIORITY.LOAD_BEARING,
+	},
 ];
 if (mode === "full") {
 	sections.push(
-		"### North Star (current goals)",
-		northStar(),
-		"",
-		"### Brain Topics (read on demand)",
-		brainIndex(),
-		"",
+		{
+			header: "### North Star (current goals)",
+			body: northStar(),
+			priority: PRIORITY.NORTH_STAR,
+			fallback: "(Over budget — re-read brain/North Star.md on demand.)",
+		},
+		{
+			header: "### Brain Topics (read on demand)",
+			body: brainIndex(),
+			priority: PRIORITY.BRAIN_INDEX,
+			fallback: "(Over budget — list brain/ on demand.)",
+		},
 	);
 }
 sections.push(
-	"### Recent Changes (last 48h)",
-	recentChanges(),
-	"",
-	"### Open Tasks",
-	openTasks(),
-	"",
-	"### Active Work",
-	activeWork(),
+	{
+		header: "### Recent Changes (last 48h)",
+		body: recentChanges(),
+		priority: PRIORITY.RECENT_CHANGES,
+		fallback: "(Over budget — run git log on demand.)",
+	},
+	{ header: "### Open Tasks", body: openTasks(), priority: PRIORITY.VOLATILE },
+	{ header: "### Active Work", body: activeWork(), priority: PRIORITY.VOLATILE },
 );
 if (mode === "full") {
-	sections.push("", "### Vault File Listing", listMd().join("\n"));
+	sections.push({
+		header: "### Vault File Listing",
+		body: listMd().join("\n"),
+		priority: PRIORITY.FILE_LISTING,
+		fallback: "(Over budget — Glob or QMD the vault on demand.)",
+	});
 } else {
-	sections.push(
-		"",
-		"### Context Pointer",
-		"(Re-entry via resume/compact — North Star, brain index, and the file listing were injected at session start and are unchanged; re-read on demand.)",
-	);
+	sections.push({
+		header: "### Context Pointer",
+		body: "(Re-entry via resume/compact — North Star, brain index, and the file listing were injected at session start and are unchanged; re-read on demand.)",
+		priority: PRIORITY.LOAD_BEARING,
+	});
 }
 
 if (qmdSelfHealNote !== null) {
-	sections.push("", "### QMD Self-Heal", qmdSelfHealNote);
+	sections.push({
+		header: "### QMD Self-Heal",
+		body: qmdSelfHealNote,
+		priority: PRIORITY.LOAD_BEARING,
+	});
 }
 if (qmdVersionNote !== null) {
-	sections.push("", "### QMD Version", qmdVersionNote);
+	sections.push({
+		header: "### QMD Version",
+		body: qmdVersionNote,
+		priority: PRIORITY.LOAD_BEARING,
+	});
 }
 
 // Hygiene drift flags (#98/#103/#106): silent when the vault is clean, so
@@ -511,10 +565,25 @@ const hygieneLines = formatActiveHygiene(
 	),
 );
 if (hygieneLines.length > 0) {
-	sections.push("", "### Vault Hygiene (drift detected)", hygieneLines.join("\n"));
+	sections.push({
+		header: "### Vault Hygiene (drift detected)",
+		body: hygieneLines.join("\n"),
+		priority: PRIORITY.HYGIENE,
+	});
 }
 
-const body = sections.join("\n") + "\n";
+// The eager layer is held under a byte ceiling. Unset budget = measure only,
+// which is the pre-budget behaviour, so an un-migrated vault is unaffected.
+const budgetBytes = parseInjectionBudget(manifestJson);
+const budgeted = applyInjectionBudget(sections, budgetBytes ?? 0);
+
+const body = budgeted.text + "\n";
 process.stdout.write(
-	body + "\n" + formatInjectionSize(Buffer.byteLength(body, "utf-8")) + "\n",
+	body +
+		"\n" +
+		formatInjectionSize(Buffer.byteLength(body, "utf-8"), {
+			budgetBytes: budgetBytes ?? undefined,
+			collapsed: budgeted.collapsed,
+		}) +
+		"\n",
 );

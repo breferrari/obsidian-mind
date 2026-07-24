@@ -182,7 +182,7 @@ Five lifecycle hooks handle routing automatically:
 
 | Hook | When | What |
 |------|------|------|
-| 🚀 SessionStart | On startup/resume | QMD re-index + self-heal, inject North Star focus, active work, recent changes, tasks, file listing, vault-hygiene drift flags — ending with an injection-size meter |
+| 🚀 SessionStart | On startup/resume | QMD re-index + self-heal, inject North Star focus, active work, recent changes, tasks, file listing, vault-hygiene drift flags — held under a byte budget, ending with an injection-size meter |
 | 💬 UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints |
 | ✍️ PostToolUse | After writing `.md` | Validates frontmatter + wikilinks, blocks misplaced memory files, flags oversized notes (split, don't trim) and write-time topic clusters |
 | 💾 PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
@@ -203,7 +203,7 @@ obsidian-mind does **not** dump your entire vault into context. It uses tiered l
 | **Triggered** | PostToolUse validation | After `.md` writes | ~200 tokens |
 | **Rare** | Full file reads | Only when explicitly needed | Variable |
 
-SessionStart loads **lightweight context** — small excerpts from key files, filenames, and git summary — not full note contents. Four mechanisms keep the eager layer honest as the vault grows: **source-aware injection** (resume/compact re-inject only volatile sections — the static bulk is already in-conversation), an **injection-size meter** as the last line of every injection (you always see what context costs), a **single hook spawn per write** (the QMD refresh rides the validation hook), and **listing collapse** (the archive folds to one count line). The agent queries by meaning via QMD before reading files, so it pulls only what's relevant. The classification hook is one lightweight Node call per message. The validation hook only fires on markdown writes and skips excluded paths.
+SessionStart loads **lightweight context** — small excerpts from key files, filenames, and git summary — not full note contents. Five mechanisms keep the eager layer honest as the vault grows: **source-aware injection** (resume/compact re-inject only volatile sections — the static bulk is already in-conversation), an **injection-size meter** as the last line of every injection (you always see what context costs), an **injection budget** that enforces what the meter measures (over the ceiling, the cheapest-to-lose sections degrade to pointers — and the meter names every one it dropped, because a silent loss is worse than the bloat), a **single hook spawn per write** (the QMD refresh rides the validation hook), and **listing collapse** (any folder past a note-count threshold folds to one count line, so a vault can't outgrow the ceiling through whichever folder nobody thought to configure). Both the budget and the threshold are tunable in `vault-manifest.json`. The agent queries by meaning via QMD before reading files, so it pulls only what's relevant. The classification hook is one lightweight Node call per message. The validation hook only fires on markdown writes and skips excluded paths.
 
 ### 🌐 Using with Other Agents
 

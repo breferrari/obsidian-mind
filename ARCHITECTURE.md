@@ -75,7 +75,9 @@ All durable knowledge lives in the vault, inside `brain/` topic notes. The agent
 
 ### 3. Progressive disclosure
 
-`SessionStart` injects ~2K tokens of lightweight context (North Star excerpt, git summary, tasks, file listing). Full note contents are pulled on demand via QMD semantic search. A full file read is a last resort, not a default. This keeps session cost flat regardless of vault size.
+`SessionStart` injects a small block of lightweight context (North Star excerpt, git summary, tasks, file listing). Full note contents are pulled on demand via QMD semantic search. A full file read is a last resort, not a default.
+
+Session cost stays flat regardless of vault size because it is **enforced**, not merely intended. Two of those inputs grow with the vault — the file listing grows with every note, the North Star excerpt with every status edit — so without a ceiling the eager layer drifts upward a little every day and nobody notices until a session is paying for it. A byte budget holds the total; over it, the cheapest-to-lose sections degrade to pointers, worst-priority first, and the closing size meter names each one it dropped. Line-based caps cannot do this job: shortening entries under a line cap just slides the window deeper and refills it. Budget and listing-collapse threshold are set in `vault-manifest.json`.
 
 ### 4. Agent-agnostic core
 

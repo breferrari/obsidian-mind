@@ -168,3 +168,116 @@ describe("session-start — openTasks aggregation", () => {
 		}
 	});
 });
+
+/**
+ * The eager layer must stay bounded as a vault grows. These run against a
+ * SEPARATE oversized vault so the fixtures above stay minimal.
+ */
+describe("session-start — listing collapse and injection budget", () => {
+	let BIG_DIR = "";
+
+	before(() => {
+		BIG_DIR = mkdtempSync(join(tmpdir(), "session-start-budget-"));
+		mkdirSync(join(BIG_DIR, "brain"), { recursive: true });
+		writeFileSync(
+			join(BIG_DIR, "brain", "North Star.md"),
+			"---\ndescription: test\n---\n\n# North Star\n\n- placeholder\n",
+		);
+		// 40 notes in one folder — well past the default threshold.
+		mkdirSync(join(BIG_DIR, "people"), { recursive: true });
+		for (let i = 0; i < 40; i++) {
+			writeFileSync(
+				join(BIG_DIR, "people", `Person ${String(i).padStart(2, "0")}.md`),
+				"---\ndescription: x\n---\n\n# p\n",
+			);
+		}
+		// 3 notes — comfortably under it.
+		mkdirSync(join(BIG_DIR, "strategy"), { recursive: true });
+		for (let i = 0; i < 3; i++) {
+			writeFileSync(join(BIG_DIR, "strategy", `Doc ${i}.md`), "---\ndescription: x\n---\n");
+		}
+	});
+
+	after(() => {
+		if (BIG_DIR) {
+			rmSync(BIG_DIR, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+		}
+	});
+
+	const runBig = () => spawnHook(SCRIPT, "", { CLAUDE_PROJECT_DIR: BIG_DIR });
+	const listingOf = (stdout: string) =>
+		stdout.split("### Vault File Listing\n")[1]?.split("\n### ")[0] ?? "";
+
+	test("a directory over the threshold collapses; one under it stays expanded", () => {
+		const { stdout, code, stderr } = runBig();
+		assert.equal(code, 0);
+		assert.equal(stderr, "");
+		const listing = listingOf(stdout);
+		assert.match(
+			listing,
+			/\.\/people\/ — 40 notes \(listing collapsed/,
+			"a 40-note folder must fold to one count line",
+		);
+		assert.doesNotMatch(listing, /Person 07/, "collapsed folders enumerate nothing");
+		assert.match(listing, /strategy[\\/]Doc 1\.md/, "a 3-note folder stays expanded");
+	});
+
+	test("no manifest budget → plain meter, nothing collapsed (pre-budget behaviour)", () => {
+		const { stdout } = runBig();
+		const last = stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
+		assert.match(last, /^_context injected: \d+\.\dkB_$/);
+	});
+
+	test("a tight manifest budget degrades sections and NAMES them in the meter", () => {
+		const manifest = join(BIG_DIR, "vault-manifest.json");
+		writeFileSync(manifest, JSON.stringify({ eager_layer_budget_bytes: 400 }));
+		try {
+			const { stdout, code, stderr } = runBig();
+			assert.equal(code, 0);
+			assert.equal(stderr, "", "the budget must never break the silence contract");
+
+			const last = stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
+			assert.match(
+				last,
+				/^_context injected: \d+\.\dkB \/ 0\.4kB budget — collapsed: .+_$/,
+				`meter must report the ceiling and name what it dropped, got: ${last}`,
+			);
+			// The listing is the first thing surrendered.
+			assert.match(last, /collapsed: Vault File Listing/);
+			assert.match(listingOf(stdout), /Over budget/, "dropped body is a pointer, not silence");
+			// Degrading is never truncation: the header survives so the session
+			// knows the section exists and can go get it.
+			assert.ok(stdout.includes("### Vault File Listing"));
+			assert.ok(stdout.includes("### Date"), "load-bearing sections are untouched");
+		} finally {
+			rmSync(manifest, { force: true });
+		}
+	});
+
+	test("a generous budget collapses nothing but still reports the ceiling", () => {
+		const manifest = join(BIG_DIR, "vault-manifest.json");
+		writeFileSync(manifest, JSON.stringify({ eager_layer_budget_bytes: 5_000_000 }));
+		try {
+			const last =
+				runBig().stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
+			assert.match(last, /^_context injected: \d+\.\dkB \/ 5000\.0kB budget_$/);
+		} finally {
+			rmSync(manifest, { force: true });
+		}
+	});
+
+	test("manifest threshold overrides the default", () => {
+		const manifest = join(BIG_DIR, "vault-manifest.json");
+		writeFileSync(manifest, JSON.stringify({ listing_collapse_threshold: 2 }));
+		try {
+			const listing = listingOf(runBig().stdout);
+			assert.match(
+				listing,
+				/\.\/strategy\/ — 3 notes \(listing collapsed/,
+				"a threshold of 2 must fold the 3-note folder that the default kept",
+			);
+		} finally {
+			rmSync(manifest, { force: true });
+		}
+	});
+});

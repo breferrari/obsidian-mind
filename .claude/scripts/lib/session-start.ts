@@ -16,10 +16,169 @@ export function take(stdout: string, n: number): string {
  * Injection-size meter line: eager-layer bloat becomes visible the day it
  * starts. kB = 1000 bytes, one decimal. Negative/NaN guard to 0.0kB — the
  * meter must never be the thing that breaks the hook.
+ *
+ * With a budget, the meter also reports the ceiling and names any section
+ * that was collapsed to stay under it. Silence about a collapse would be
+ * worse than the bloat: a session would silently lose context and never
+ * know. Called with one argument the output is byte-identical to before.
  */
-export function formatInjectionSize(bytes: number): string {
+export function formatInjectionSize(
+	bytes: number,
+	opts?: {
+		readonly budgetBytes?: number | undefined;
+		readonly collapsed?: readonly string[] | undefined;
+	},
+): string {
 	const safe = Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
-	return `_context injected: ${(safe / 1000).toFixed(1)}kB_`;
+	const size = `${(safe / 1000).toFixed(1)}kB`;
+
+	const budget = opts?.budgetBytes;
+	if (budget === undefined || !Number.isFinite(budget) || budget <= 0) {
+		return `_context injected: ${size}_`;
+	}
+
+	const ceiling = `${(budget / 1000).toFixed(1)}kB budget`;
+	const collapsed = opts?.collapsed ?? [];
+	if (collapsed.length === 0) {
+		return `_context injected: ${size} / ${ceiling}_`;
+	}
+	return `_context injected: ${size} / ${ceiling} — collapsed: ${collapsed.join(", ")}_`;
+}
+
+/**
+ * One assembled section of the eager layer, with what it costs and what it
+ * degrades to when the injection is over budget.
+ *
+ * `priority` orders SURRENDER, not importance: the highest number is given
+ * up first. A section with no `fallback` is load-bearing and never dropped
+ * (identity, the date header) regardless of priority.
+ */
+export type BudgetSection = {
+	/** Section heading, e.g. "### Vault File Listing". Empty for preamble. */
+	readonly header: string;
+	readonly body: string;
+	readonly priority: number;
+	readonly fallback?: string | undefined;
+};
+
+export type BudgetResult = {
+	readonly text: string;
+	readonly bytes: number;
+	/** Headers (heading markup stripped) that were degraded, in drop order. */
+	readonly collapsed: readonly string[];
+};
+
+function renderSections(sections: readonly BudgetSection[]): string {
+	return sections
+		.map((s) => (s.header === "" ? s.body : `${s.header}\n${s.body}`))
+		.join("\n\n");
+}
+
+/**
+ * Hold the eager layer under a byte ceiling by degrading the cheapest-to-lose
+ * sections to their pointers, highest `priority` first, until it fits.
+ *
+ * Why bytes and not lines: the pre-existing caps in this file (`take`,
+ * `formatActiveWork`, `collectOpenTasks`) are all LINE caps, and a line cap
+ * cannot bound an injection — shortening entries just slides the window
+ * deeper and refills it. Only a byte budget actually holds.
+ *
+ * Degradation is never silent truncation: a section is replaced whole by its
+ * fallback pointer, so the content is missing but its existence is not.
+ *
+ * A non-finite or non-positive budget is a no-op — as with the size meter,
+ * the budget must never be the thing that breaks the hook.
+ */
+export function applyInjectionBudget(
+	sections: readonly BudgetSection[],
+	budgetBytes: number,
+): BudgetResult {
+	const render = (s: readonly BudgetSection[]): BudgetResult => ({
+		text: renderSections(s),
+		bytes: Buffer.byteLength(renderSections(s), "utf-8"),
+		collapsed: [],
+	});
+
+	if (!Number.isFinite(budgetBytes) || budgetBytes <= 0) return render(sections);
+
+	let current = [...sections];
+	if (render(current).bytes <= budgetBytes) return render(current);
+
+	// Candidates are only those that can degrade, surrendered worst-first.
+	const order = current
+		.map((s, i) => ({ s, i }))
+		.filter(({ s }) => s.fallback !== undefined && s.fallback !== s.body)
+		.sort((a, b) => b.s.priority - a.s.priority || a.i - b.i);
+
+	const collapsed: string[] = [];
+	for (const { i } of order) {
+		const target = current[i];
+		if (target === undefined) continue;
+		current[i] = { ...target, body: target.fallback ?? target.body };
+		collapsed.push(target.header.replace(/^#+\s*/, ""));
+		if (Buffer.byteLength(renderSections(current), "utf-8") <= budgetBytes) break;
+	}
+
+	const text = renderSections(current);
+	return { text, bytes: Buffer.byteLength(text, "utf-8"), collapsed };
+}
+
+/**
+ * Collapse any directory holding more than `threshold` notes to a single
+ * count line.
+ *
+ * Replaces a hardcoded folder list: a fixed list only ever collapses the
+ * folders someone remembered to name, so a vault grows past the ceiling
+ * through whichever directory nobody listed. A threshold is blind to folder
+ * names and therefore cannot go stale as a vault evolves.
+ */
+export const DEFAULT_LISTING_COLLAPSE_THRESHOLD = 12;
+
+export function shouldCollapseDir(
+	noteCount: number,
+	threshold: number,
+	alwaysCollapse: readonly string[],
+	posixPath: string,
+): boolean {
+	if (alwaysCollapse.includes(posixPath)) return true;
+	if (!Number.isFinite(threshold) || threshold <= 0) return false;
+	return noteCount > threshold;
+}
+
+/** The one-line stand-in for a collapsed directory. Shape predates the threshold. */
+export function formatCollapsedDir(posixPath: string, noteCount: number): string {
+	return `./${posixPath}/ — ${noteCount} notes (listing collapsed — Glob or QMD on demand)`;
+}
+
+function parsePositiveIntField(
+	manifestJson: string | null,
+	field: string,
+): number | null {
+	if (manifestJson === null) return null;
+	try {
+		const parsed = JSON.parse(manifestJson) as unknown;
+		if (parsed !== null && typeof parsed === "object" && field in parsed) {
+			const value = (parsed as Record<string, unknown>)[field];
+			if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+				return value;
+			}
+		}
+	} catch {
+		/* malformed manifest → treat as missing */
+	}
+	return null;
+}
+
+/** `eager_layer_budget_bytes` from the manifest; null when unset or invalid. */
+export function parseInjectionBudget(manifestJson: string | null): number | null {
+	return parsePositiveIntField(manifestJson, "eager_layer_budget_bytes");
+}
+
+/** `listing_collapse_threshold` from the manifest; null when unset or invalid. */
+export function parseListingCollapseThreshold(
+	manifestJson: string | null,
+): number | null {
+	return parsePositiveIntField(manifestJson, "listing_collapse_threshold");
 }
 
 /**

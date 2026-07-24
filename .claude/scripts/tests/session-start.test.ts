@@ -13,6 +13,13 @@ import {
 	formatDateHeader,
 	formatInjectionSize,
 	injectionMode,
+	applyInjectionBudget,
+	shouldCollapseDir,
+	formatCollapsedDir,
+	parseInjectionBudget,
+	parseListingCollapseThreshold,
+	DEFAULT_LISTING_COLLAPSE_THRESHOLD,
+	type BudgetSection,
 	formatActiveWork,
 	formatRecentChanges,
 	isSkippedPath,
@@ -658,6 +665,174 @@ describe("formatInjectionSize", () => {
 			assert.equal(formatInjectionSize(bytes), expected);
 		});
 	}
+
+	test("an unset budget keeps the pre-budget line byte-identical", () => {
+		assert.equal(formatInjectionSize(58_400, {}), "_context injected: 58.4kB_");
+	});
+	test("a budget with nothing collapsed reports the ceiling", () => {
+		assert.equal(
+			formatInjectionSize(30_000, { budgetBytes: 40_000 }),
+			"_context injected: 30.0kB / 40.0kB budget_",
+		);
+	});
+	test("collapsed sections are NAMED — a silent loss is worse than the bloat", () => {
+		assert.equal(
+			formatInjectionSize(39_800, {
+				budgetBytes: 40_000,
+				collapsed: ["Vault File Listing", "Brain Topics (read on demand)"],
+			}),
+			"_context injected: 39.8kB / 40.0kB budget — collapsed: Vault File Listing, Brain Topics (read on demand)_",
+		);
+	});
+	test("a nonsense budget degrades to the plain meter, never throws", () => {
+		for (const b of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+			assert.equal(
+				formatInjectionSize(1_000, { budgetBytes: b }),
+				"_context injected: 1.0kB_",
+			);
+		}
+	});
+});
+
+describe("applyInjectionBudget", () => {
+	const mk = (
+		header: string,
+		body: string,
+		priority: number,
+		fallback?: string,
+	): BudgetSection =>
+		fallback === undefined
+			? { header, body, priority }
+			: { header, body, priority, fallback };
+
+	test("under budget → untouched, nothing collapsed", () => {
+		const s = [mk("### A", "short", 10, "(dropped)")];
+		const r = applyInjectionBudget(s, 10_000);
+		assert.equal(r.text, "### A\nshort");
+		assert.deepEqual(r.collapsed, []);
+	});
+
+	test("renders header+body joined by a blank line (pre-budget shape)", () => {
+		const r = applyInjectionBudget(
+			[mk("", "## Session Context", 0), mk("### Date", "2026-07-24", 0)],
+			10_000,
+		);
+		assert.equal(r.text, "## Session Context\n\n### Date\n2026-07-24");
+	});
+
+	test("surrenders the HIGHEST priority first", () => {
+		const s = [
+			mk("### Keep", "x".repeat(50), 10, "(k)"),
+			mk("### Drop", "y".repeat(50), 90, "(d)"),
+		];
+		const r = applyInjectionBudget(s, 80);
+		assert.deepEqual(r.collapsed, ["Drop"]);
+		assert.match(r.text, /### Drop\n\(d\)/);
+		assert.match(r.text, /y{0}/);
+		assert.ok(r.text.includes("x".repeat(50)), "the lower-priority section survives");
+	});
+
+	test("keeps surrendering until it fits, in descending priority", () => {
+		const s = [
+			mk("### Third", "c".repeat(100), 10, "(c)"),
+			mk("### First", "a".repeat(100), 50, "(a)"),
+			mk("### Second", "b".repeat(100), 30, "(b)"),
+		];
+		// 335 B intact; 238 after First collapses; 141 after Second. A 150 B
+		// ceiling therefore lands exactly two collapses deep and stops.
+		const r = applyInjectionBudget(s, 150);
+		assert.deepEqual(r.collapsed, ["First", "Second"]);
+		assert.ok(r.text.includes("c".repeat(100)), "the lowest priority is still intact");
+	});
+
+	test("a section without a fallback is load-bearing and never degrades", () => {
+		const s = [mk("### Identity", "z".repeat(500), 99)];
+		const r = applyInjectionBudget(s, 10);
+		assert.deepEqual(r.collapsed, []);
+		assert.ok(r.text.includes("z".repeat(500)), "identity survives an impossible budget");
+		assert.ok(r.bytes > 10, "over budget is reported honestly, not faked");
+	});
+
+	test("stops once it fits — does not over-collapse", () => {
+		const s = [
+			mk("### Big", "a".repeat(200), 50, "(a)"),
+			mk("### Also", "b".repeat(60), 40, "(b)"),
+		];
+		const r = applyInjectionBudget(s, 100);
+		assert.deepEqual(r.collapsed, ["Big"], "second section kept once the first freed enough");
+	});
+
+	test("a nonsense budget is a no-op, never throws", () => {
+		const s = [mk("### A", "x".repeat(999), 10, "(short)")];
+		for (const b of [0, -5, Number.NaN]) {
+			const r = applyInjectionBudget(s, b);
+			assert.deepEqual(r.collapsed, []);
+			assert.ok(r.text.includes("x".repeat(999)));
+		}
+	});
+
+	test("bytes are measured in UTF-8, not UTF-16 code units", () => {
+		// Four 3-byte chars: 12 bytes, but only 4 .length units. A budget of 8
+		// must therefore collapse — the bug this guards is measuring .length.
+		const s = [mk("", "日本語版", 50, "x")];
+		const r = applyInjectionBudget(s, 8);
+		assert.deepEqual(r.collapsed, [""]);
+	});
+});
+
+describe("shouldCollapseDir", () => {
+	test("collapses strictly above the threshold, not at it", () => {
+		assert.equal(shouldCollapseDir(12, 12, [], "people"), false);
+		assert.equal(shouldCollapseDir(13, 12, [], "people"), true);
+	});
+	test("an always-collapse dir folds regardless of size", () => {
+		assert.equal(shouldCollapseDir(1, 999, ["work/archive"], "work/archive"), true);
+	});
+	test("matching is on the posix path, so nesting is respected", () => {
+		assert.equal(shouldCollapseDir(1, 999, ["reference/cv"], "cv"), false);
+	});
+	test("a nonsense threshold collapses nothing by size", () => {
+		for (const t of [0, -1, Number.NaN]) {
+			assert.equal(shouldCollapseDir(9_999, t, [], "people"), false);
+		}
+	});
+});
+
+describe("formatCollapsedDir", () => {
+	test("keeps the pre-threshold line shape verbatim", () => {
+		assert.equal(
+			formatCollapsedDir("work/archive", 42),
+			"./work/archive/ — 42 notes (listing collapsed — Glob or QMD on demand)",
+		);
+	});
+});
+
+describe("manifest budget fields", () => {
+	const cases: ReadonlyArray<readonly [string | null, number | null]> = [
+		['{"eager_layer_budget_bytes":40000}', 40_000],
+		['{"eager_layer_budget_bytes":0}', null], // non-positive → unset
+		['{"eager_layer_budget_bytes":-1}', null],
+		['{"eager_layer_budget_bytes":"40000"}', null], // string → unset
+		['{"eager_layer_budget_bytes":1.5}', null], // non-integer → unset
+		["{}", null],
+		["not json", null],
+		[null, null],
+	];
+	for (const [json, expected] of cases) {
+		test(`parseInjectionBudget(${String(json)}) → ${String(expected)}`, () => {
+			assert.equal(parseInjectionBudget(json), expected);
+		});
+	}
+
+	test("parseListingCollapseThreshold reads its own field", () => {
+		assert.equal(parseListingCollapseThreshold('{"listing_collapse_threshold":25}'), 25);
+		assert.equal(parseListingCollapseThreshold('{"eager_layer_budget_bytes":25}'), null);
+	});
+
+	test("the shipped default threshold is a positive integer", () => {
+		assert.ok(Number.isInteger(DEFAULT_LISTING_COLLAPSE_THRESHOLD));
+		assert.ok(DEFAULT_LISTING_COLLAPSE_THRESHOLD > 0);
+	});
 });
 
 describe("resolveIndexStorePath", () => {

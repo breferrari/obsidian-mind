@@ -321,7 +321,7 @@ Five lifecycle hooks in `.claude/settings.json`:
 
 | Hook | When | What |
 |------|------|------|
-| SessionStart | On startup/resume | QMD re-index + self-heal, inject North Star, active work, recent changes, tasks, file listing, vault-hygiene drift flags (completed-not-archived, ungrouped clusters, 25KB oversize, stale open loops, meetings-inbox pressure); ends with an injection-size meter line |
+| SessionStart | On startup/resume | QMD re-index + self-heal, inject North Star, active work, recent changes, tasks, file listing (folders past a note-count threshold collapse to one line), vault-hygiene drift flags (completed-not-archived, ungrouped clusters, 25KB oversize, stale open loops, meetings-inbox pressure); the whole injection is held under a byte budget — over it, low-priority sections degrade to pointers and the closing injection-size meter names each one it dropped |
 | UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints |
 | PostToolUse | After writing `.md` | Validates frontmatter + wikilinks, blocks misplaced memory files, flags notes crossing the 25KB organization threshold (split, don't trim) and write-time topic clusters |
 | PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
