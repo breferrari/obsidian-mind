@@ -124,13 +124,22 @@ export function applyInjectionBudget(
 }
 
 /**
- * Collapse any directory holding more than `threshold` notes to a single
+ * Collapse a FLAT directory holding more than `threshold` notes to a single
  * count line.
  *
  * Replaces a hardcoded folder list: a fixed list only ever collapses the
  * folders someone remembered to name, so a vault grows past the ceiling
- * through whichever directory nobody listed. A threshold is blind to folder
- * names and therefore cannot go stale as a vault evolves.
+ * through whichever directory nobody listed. A threshold cannot go stale as
+ * a vault evolves.
+ *
+ * `hasSubdirs` is the guard that makes this safe. Collapsing on recursive
+ * subtree count folds whole TREES — `projects/`, `brain/`, `work/` all
+ * vanish behind one line and the vault's shape becomes invisible, which is
+ * far worse than the bytes it saves. The signal we actually want is flat
+ * bulk: a folder of same-shaped sibling notes (people, archives, captures)
+ * whose names are retrievable on demand. Structure is navigation and is
+ * kept; flat bulk is noise and is folded. Anything the threshold declines
+ * to fold is still caught by the byte budget — two mechanisms, two jobs.
  */
 export const DEFAULT_LISTING_COLLAPSE_THRESHOLD = 12;
 
@@ -139,8 +148,10 @@ export function shouldCollapseDir(
 	threshold: number,
 	alwaysCollapse: readonly string[],
 	posixPath: string,
+	hasSubdirs: boolean,
 ): boolean {
 	if (alwaysCollapse.includes(posixPath)) return true;
+	if (hasSubdirs) return false;
 	if (!Number.isFinite(threshold) || threshold <= 0) return false;
 	return noteCount > threshold;
 }

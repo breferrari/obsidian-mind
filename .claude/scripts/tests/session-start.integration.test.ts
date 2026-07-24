@@ -196,6 +196,17 @@ describe("session-start — listing collapse and injection budget", () => {
 		for (let i = 0; i < 3; i++) {
 			writeFileSync(join(BIG_DIR, "strategy", `Doc ${i}.md`), "---\ndescription: x\n---\n");
 		}
+		// A TREE well past the threshold: 30 notes, but spread over subdirs.
+		// It must stay expanded — folding it would hide the vault's shape.
+		for (const p of ["alpha", "beta", "gamma"]) {
+			mkdirSync(join(BIG_DIR, "projects", p), { recursive: true });
+			for (let i = 0; i < 10; i++) {
+				writeFileSync(
+					join(BIG_DIR, "projects", p, `Note ${i}.md`),
+					"---\ndescription: x\n---\n",
+				);
+			}
+		}
 	});
 
 	after(() => {
@@ -220,6 +231,18 @@ describe("session-start — listing collapse and injection budget", () => {
 		);
 		assert.doesNotMatch(listing, /Person 07/, "collapsed folders enumerate nothing");
 		assert.match(listing, /strategy[\\/]Doc 1\.md/, "a 3-note folder stays expanded");
+	});
+
+	test("a 30-note TREE stays expanded — structure is navigation, not bulk", () => {
+		const listing = listingOf(runBig().stdout);
+		assert.doesNotMatch(
+			listing,
+			/\.\/projects\/ — \d+ notes/,
+			"a directory with subdirectories must never collapse on size",
+		);
+		assert.match(listing, /projects[\\/]beta[\\/]Note 4\.md/);
+		// Its flat leaves are still folded — 10 notes is under the default 12.
+		assert.match(listing, /projects[\\/]alpha[\\/]Note 0\.md/);
 	});
 
 	test("no manifest budget → plain meter, nothing collapsed (pre-budget behaviour)", () => {

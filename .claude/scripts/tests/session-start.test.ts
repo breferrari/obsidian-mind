@@ -728,7 +728,10 @@ describe("applyInjectionBudget", () => {
 		const r = applyInjectionBudget(s, 80);
 		assert.deepEqual(r.collapsed, ["Drop"]);
 		assert.match(r.text, /### Drop\n\(d\)/);
-		assert.match(r.text, /y{0}/);
+		assert.ok(
+			!r.text.includes("y"),
+			"the dropped body must be replaced WHOLE, not truncated — no residue",
+		);
 		assert.ok(r.text.includes("x".repeat(50)), "the lower-priority section survives");
 	});
 
@@ -781,19 +784,38 @@ describe("applyInjectionBudget", () => {
 });
 
 describe("shouldCollapseDir", () => {
-	test("collapses strictly above the threshold, not at it", () => {
-		assert.equal(shouldCollapseDir(12, 12, [], "people"), false);
-		assert.equal(shouldCollapseDir(13, 12, [], "people"), true);
+	const flat = false;
+	const tree = true;
+
+	test("collapses a flat folder strictly above the threshold, not at it", () => {
+		assert.equal(shouldCollapseDir(12, 12, [], "people", flat), false);
+		assert.equal(shouldCollapseDir(13, 12, [], "people", flat), true);
 	});
-	test("an always-collapse dir folds regardless of size", () => {
-		assert.equal(shouldCollapseDir(1, 999, ["work/archive"], "work/archive"), true);
+
+	test("NEVER collapses a folder with subdirectories, however large", () => {
+		// The regression this locks: collapsing on recursive subtree count
+		// folded `projects/`, `brain/` and `work/` into three lines and made
+		// the vault's shape invisible. Structure is navigation; only flat
+		// bulk is noise.
+		assert.equal(shouldCollapseDir(9_999, 12, [], "projects", tree), false);
 	});
+
+	test("an always-collapse dir folds regardless of size OR structure", () => {
+		// work/archive is year-foldered, so the subdir guard would spare it;
+		// the explicit list is what makes semantic exceptions still work.
+		assert.equal(
+			shouldCollapseDir(1, 999, ["work/archive"], "work/archive", tree),
+			true,
+		);
+	});
+
 	test("matching is on the posix path, so nesting is respected", () => {
-		assert.equal(shouldCollapseDir(1, 999, ["reference/cv"], "cv"), false);
+		assert.equal(shouldCollapseDir(1, 999, ["reference/cv"], "cv", flat), false);
 	});
+
 	test("a nonsense threshold collapses nothing by size", () => {
 		for (const t of [0, -1, Number.NaN]) {
-			assert.equal(shouldCollapseDir(9_999, t, [], "people"), false);
+			assert.equal(shouldCollapseDir(9_999, t, [], "people", flat), false);
 		}
 	});
 });

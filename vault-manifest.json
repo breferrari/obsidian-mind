@@ -13,7 +13,7 @@
     "action items",
     "what to watch"
   ],
-  "eager_layer_budget_bytes": 40000,
+  "eager_layer_budget_bytes": 80000,
   "listing_collapse_threshold": 12,
   "qmd_context": "Engineer's work vault built on obsidian-mind. Active projects and archive, 1:1 notes, incidents, brag log with quarterly evidence, competency map, people and teams, decisions and patterns in brain/, reference docs and runbooks. Multi-agent (Claude Code, Codex, Gemini) with lifecycle hooks and QMD semantic search. Ground for 'what did I ship?' reviews, project status, and personal knowledge management.",
   "infrastructure": [

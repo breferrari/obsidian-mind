@@ -430,22 +430,60 @@ const listingCollapseThreshold =
  * are excluded — so a collapsed line never claims notes the expanded listing
  * would not have shown.
  */
-type WalkResult = { readonly lines: readonly string[]; readonly count: number };
+type WalkResult = {
+	readonly lines: readonly string[];
+	readonly count: number;
+	readonly hasSubdirs: boolean;
+};
+
+/**
+ * Count-only recursion for directories that are collapsing regardless of
+ * size. Building their descendant lines just to discard them is wasted work
+ * on a large archive, so the always-collapse branch counts without walking.
+ */
+function countMdOnly(dir: string): number {
+	let entries: Dirent[];
+	try {
+		entries = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return 0;
+	}
+	let n = 0;
+	for (const e of entries) {
+		const posix = (dir === "." ? e.name : join(dir, e.name)).replaceAll("\\", "/");
+		if (isSkippedPath(posix, SKIP_PREFIXES)) continue;
+		if (e.isDirectory()) n += countMdOnly(posix);
+		else if (e.isFile() && isMarkdownFilename(e.name)) n += 1;
+	}
+	return n;
+}
 
 function walkMd(dir: string): WalkResult {
 	let entries: Dirent[];
 	try {
 		entries = readdirSync(dir, { withFileTypes: true });
 	} catch {
-		return { lines: [], count: 0 };
+		return { lines: [], count: 0, hasSubdirs: false };
 	}
 	const lines: string[] = [];
 	let count = 0;
+	let hasSubdirs = false;
 	for (const e of entries) {
-		const full = dir === "." ? e.name : join(dir, e.name);
+		// Normalise to posix BEFORE the skip check: `isSkippedPath` matches on
+		// `prefix + "/"`, so a Windows `\` separator would let nested paths
+		// under a skipped prefix through.
+		const full = (dir === "." ? e.name : join(dir, e.name)).replaceAll("\\", "/");
 		if (isSkippedPath(full, SKIP_PREFIXES)) continue;
 		if (e.isDirectory()) {
-			const posix = full.replaceAll("\\", "/");
+			hasSubdirs = true;
+			const posix = full;
+			// Always-collapse dirs never render their descendants — count only.
+			if (ALWAYS_COLLAPSED_DIRS.includes(posix)) {
+				const n = countMdOnly(full);
+				count += n;
+				lines.push(formatCollapsedDir(posix, n));
+				continue;
+			}
 			const sub = walkMd(full);
 			count += sub.count;
 			if (
@@ -454,6 +492,7 @@ function walkMd(dir: string): WalkResult {
 					listingCollapseThreshold,
 					ALWAYS_COLLAPSED_DIRS,
 					posix,
+					sub.hasSubdirs,
 				)
 			) {
 				lines.push(formatCollapsedDir(posix, sub.count));
@@ -465,7 +504,7 @@ function walkMd(dir: string): WalkResult {
 			count += 1;
 		}
 	}
-	return { lines, count };
+	return { lines, count, hasSubdirs };
 }
 
 function listMd(): string[] {
