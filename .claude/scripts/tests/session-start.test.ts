@@ -11,6 +11,7 @@ import { join } from "node:path";
 import {
 	take,
 	formatDateHeader,
+	quoteForPosixShell,
 	formatInjectionSize,
 	injectionMode,
 	formatActiveWork,
@@ -53,6 +54,16 @@ describe("formatDateHeader", () => {
 	test("double-digit components pass through", () => {
 		const d = new Date(2026, 11, 25, 12, 0, 0); // December 25, 2026 (Friday)
 		assert.equal(formatDateHeader(d), "2026-12-25 (Friday)");
+	});
+});
+
+describe("quoteForPosixShell", () => {
+	test("keeps shell syntax literal and escapes apostrophes", () => {
+		const value = "vault/\"$(echo owned)\`echo owned\`/$HOME/it's\nnext";
+		assert.equal(
+			quoteForPosixShell(value),
+			"'vault/\"$(echo owned)\`echo owned\`/$HOME/it'\\''s\nnext'",
+		);
 	});
 });
 

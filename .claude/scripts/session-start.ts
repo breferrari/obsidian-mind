@@ -23,6 +23,7 @@ import { join } from "node:path";
 import {
 	take,
 	formatDateHeader,
+	quoteForPosixShell,
 	injectionMode,
 	formatInjectionSize,
 	formatActiveWork,
@@ -104,7 +105,7 @@ process.chdir(cwd);
 const envFile = process.env["CLAUDE_ENV_FILE"];
 if (envFile) {
 	try {
-		appendFileSync(envFile, `export VAULT_PATH="${cwd}"\n`);
+		appendFileSync(envFile, `export VAULT_PATH=${quoteForPosixShell(cwd)}\n`);
 	} catch {
 		/* best-effort — session continues even if persistence fails */
 	}
