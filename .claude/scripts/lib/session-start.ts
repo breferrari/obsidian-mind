@@ -204,11 +204,49 @@ export function formatDateHeader(d: Date): string {
 	return `${y}-${m}-${day} (${weekday})`;
 }
 
-/** Quote one value for the POSIX shell syntax used by `CLAUDE_ENV_FILE`.
- * The split/reopen sequence is the only way to retain a literal apostrophe.
+/**
+ * Quote one value for the POSIX shell syntax used by `CLAUDE_ENV_FILE`.
+ *
+ * Single quotes make every character literal except `'` itself, so this needs
+ * exactly one escape rule instead of the five a double-quoted string would
+ * need (`$`, backtick, `"`, `\`, newline) — and it sidesteps the shell-to-shell
+ * differences in how backslash is treated inside double quotes.
+ *
+ * The close/escape/reopen sequence (`'\''`) is the only way to carry a literal
+ * apostrophe through a single-quoted string. Same algorithm as Python's
+ * `shlex.quote`, minus its cosmetic "skip quoting when already safe" branch:
+ * quoting unconditionally costs a few bytes and removes a regex that could be
+ * wrong.
+ *
+ * Prefer `formatEnvExport` over calling this directly — see the note there.
  */
 export function quoteForPosixShell(value: string): string {
 	return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/** POSIX portable environment variable name. */
+const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Build one complete `export NAME='value'` line, newline included.
+ *
+ * This exists so no call site has to *remember* to quote. `quoteForPosixShell`
+ * gives you a safe tool but leaves the unsafe one within reach: a template
+ * literal like `export FOO="${bar}"` is still the shortest thing to type, and
+ * that is exactly the shape that shipped a command-execution bug here (#145).
+ * Owning the whole line removes the choice — there is nothing left to forget.
+ * `tests/session-start.test.ts` locks the entry script to this function so a
+ * hand-rolled export cannot quietly come back.
+ *
+ * Throws on a name the shell could not accept. The call site treats env-file
+ * persistence as best-effort and already swallows failures, so a bad name
+ * degrades to "not persisted" rather than a corrupt env file or a dead hook.
+ */
+export function formatEnvExport(name: string, value: string): string {
+	if (!ENV_NAME_PATTERN.test(name)) {
+		throw new Error(`refusing to write unsafe env var name: ${JSON.stringify(name)}`);
+	}
+	return `export ${name}=${quoteForPosixShell(value)}\n`;
 }
 
 /**

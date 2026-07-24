@@ -23,7 +23,7 @@ import { join } from "node:path";
 import {
 	take,
 	formatDateHeader,
-	quoteForPosixShell,
+	formatEnvExport,
 	injectionMode,
 	formatInjectionSize,
 	formatActiveWork,
@@ -108,11 +108,15 @@ const cwd =
 	process.cwd();
 process.chdir(cwd);
 
-// Persist vault path for any downstream shell consumers (Claude Code feature)
+// Persist vault path for any downstream shell consumers (Claude Code feature).
+// The whole line comes from formatEnvExport so quoting is not a step anyone
+// can skip; see its doc comment. A hand-rolled template here is what caused
+// the command-execution bug in #145, and a unit test now guards against one
+// reappearing.
 const envFile = process.env["CLAUDE_ENV_FILE"];
 if (envFile) {
 	try {
-		appendFileSync(envFile, `export VAULT_PATH=${quoteForPosixShell(cwd)}\n`);
+		appendFileSync(envFile, formatEnvExport("VAULT_PATH", cwd));
 	} catch {
 		/* best-effort — session continues even if persistence fails */
 	}

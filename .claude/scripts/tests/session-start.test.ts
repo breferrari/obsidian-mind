@@ -7,11 +7,16 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import {
 	take,
 	formatDateHeader,
 	quoteForPosixShell,
+	formatEnvExport,
 	formatInjectionSize,
 	injectionMode,
 	applyInjectionBudget,
@@ -65,12 +70,240 @@ describe("formatDateHeader", () => {
 });
 
 describe("quoteForPosixShell", () => {
-	test("keeps shell syntax literal and escapes apostrophes", () => {
-		const value = "vault/\"$(echo owned)\`echo owned\`/$HOME/it's\nnext";
+	// One row per hazard, so a failure names the case that broke instead of
+	// pointing at a single combined string.
+	const cases: ReadonlyArray<readonly [string, string, string]> = [
+		["plain path", "/home/me/vault", "'/home/me/vault'"],
+		["variable expansion", "/a/$HOME/b", "'/a/$HOME/b'"],
+		["command substitution", "/a/$(id)/b", "'/a/$(id)/b'"],
+		["backtick substitution", "/a/`id`/b", "'/a/`id`/b'"],
+		["double quote", '/a/"q"/b', "'/a/\"q\"/b'"],
+		["command separator", "/a/;rm -rf x/b", "'/a/;rm -rf x/b'"],
+		// Windows paths are the common real-world case for this template, and
+		// backslash is literal inside single quotes.
+		["windows path", "C:\\Users\\me\\vault", "'C:\\Users\\me\\vault'"],
+		["trailing backslash", "/a/b\\", "'/a/b\\'"],
+		["apostrophe", "/it's/vault", "'/it'\\''s/vault'"],
+		["only an apostrophe", "'", "''\\'''"],
+		["embedded newline", "a\nb", "'a\nb'"],
+		["empty string", "", "''"],
+	];
+	for (const [label, input, expected] of cases) {
+		test(label, () => {
+			assert.equal(quoteForPosixShell(input), expected);
+		});
+	}
+});
+
+describe("formatEnvExport", () => {
+	test("emits a complete, newline-terminated export line", () => {
 		assert.equal(
-			quoteForPosixShell(value),
-			"'vault/\"$(echo owned)\`echo owned\`/$HOME/it'\\''s\nnext'",
+			formatEnvExport("VAULT_PATH", "/home/me/vault"),
+			"export VAULT_PATH='/home/me/vault'\n",
 		);
+	});
+
+	test("quoting is applied without the caller asking for it", () => {
+		assert.equal(
+			formatEnvExport("VAULT_PATH", "/a/$(id)/b"),
+			"export VAULT_PATH='/a/$(id)/b'\n",
+		);
+	});
+
+	test("rejects names the shell could not accept", () => {
+		for (const bad of ["", "1ABC", "A-B", "A B", "A;rm -rf /", "A=B", "$A"]) {
+			assert.throws(
+				() => formatEnvExport(bad, "x"),
+				/unsafe env var name/,
+				`should reject ${JSON.stringify(bad)}`,
+			);
+		}
+	});
+
+	test("accepts the portable name shapes", () => {
+		for (const ok of ["A", "_A", "VAULT_PATH", "_x9"]) {
+			assert.doesNotThrow(() => formatEnvExport(ok, "v"));
+		}
+	});
+});
+
+describe("session-start entry — env export cannot be hand-rolled", () => {
+	// A source-level guard. The safe helper only helps if it is the thing the
+	// entry actually calls; nothing in the type system stops someone writing
+	// `export FOO="${bar}"` again, which is precisely the bug #145 fixed.
+	const entry = readFileSync(
+		join(dirname(fileURLToPath(import.meta.url)), "..", "session-start.ts"),
+		"utf-8",
+	);
+
+	test("writes the env file through formatEnvExport", () => {
+		assert.match(entry, /appendFileSync\(\s*envFile,\s*formatEnvExport\(/);
+	});
+
+	// Catches a hand-rolled line in any quoting style, not just backticks.
+	const HANDROLLED = /["'`]export\s/;
+
+	test("contains no hand-rolled `export ...=` literal", () => {
+		assert.doesNotMatch(
+			entry,
+			HANDROLLED,
+			"build the line with formatEnvExport instead of a string literal",
+		);
+	});
+
+	test("does not reach past the helper to the raw quoter", () => {
+		assert.doesNotMatch(
+			entry,
+			/quoteForPosixShell\(/,
+			"the entry should call formatEnvExport, which quotes internally",
+		);
+	});
+
+	// A guard that cannot fail is worse than no guard: it reads as coverage
+	// while proving nothing. These assert the patterns above actually fire on
+	// the regressions they exist to catch, including the exact pre-#145 line.
+	test("GUARD IS NOT VACUOUS — the pattern catches every hand-rolled form", () => {
+		const regressions = [
+			'appendFileSync(envFile, `export VAULT_PATH="${cwd}"\\n`);', // the pre-#145 bug
+			"appendFileSync(envFile, `export VAULT_PATH=${quoteForPosixShell(cwd)}\\n`);",
+			'appendFileSync(envFile, "export FOO=" + bar);',
+			"appendFileSync(envFile, 'export FOO=' + bar);",
+		];
+		for (const bad of regressions) {
+			assert.match(bad, HANDROLLED, `guard must reject: ${bad}`);
+		}
+	});
+
+	test("GUARD IS NOT VACUOUS — the raw-quoter pattern catches a direct call", () => {
+		assert.match("const x = quoteForPosixShell(cwd);", /quoteForPosixShell\(/);
+	});
+
+	test("GUARD IS NOT VACUOUS — the required-call pattern rejects a missing call", () => {
+		const required = /appendFileSync\(\s*envFile,\s*formatEnvExport\(/;
+		assert.doesNotMatch("appendFileSync(envFile, someOtherThing());", required);
+		assert.match("appendFileSync(envFile, formatEnvExport('A', b));", required);
+	});
+});
+
+/**
+ * The quoting contract is a claim about how a real POSIX shell parses the
+ * output, so assert it against a real POSIX shell rather than against our own
+ * idea of one. Runs on Linux/macOS CI and on Windows runners that ship Git
+ * Bash; skips cleanly where no shell exists, so it can never be the reason
+ * the suite fails on an exotic platform.
+ */
+const posixShell = (() => {
+	for (const candidate of ["sh", "bash"]) {
+		try {
+			const r = spawnSync(candidate, ["-c", "printf ok"], { encoding: "utf-8" });
+			if (r.status === 0 && r.stdout === "ok") return candidate;
+		} catch {
+			/* not available */
+		}
+	}
+	return null;
+})();
+
+describe("quoteForPosixShell — verified against a real POSIX shell", () => {
+	const skip = posixShell === null ? "no POSIX shell on this platform" : false;
+
+	/** Round-trip every value in one shell invocation, NUL-delimited. */
+	function roundTrip(values: readonly string[]): string[] {
+		const dir = mkdtempSync(join(tmpdir(), "quote-roundtrip-"));
+		try {
+			const script = join(dir, "rt.sh");
+			writeFileSync(
+				script,
+				values
+					.map((v) => `V=${quoteForPosixShell(v)}\nprintf '%s\\0' "$V"`)
+					.join("\n") + "\n",
+			);
+			const r = spawnSync(posixShell as string, [script], { encoding: "utf-8" });
+			assert.equal(r.status, 0, `shell exited ${r.status}: ${r.stderr}`);
+			const parts = (r.stdout ?? "").split("\0");
+			parts.pop(); // trailing empty after the final delimiter
+			return parts;
+		} finally {
+			rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+		}
+	}
+
+	test("adversarial paths round-trip byte-exact", { skip }, () => {
+		const values = [
+			"/home/me/vault",
+			"/a/$HOME/b",
+			"/a/$(id)/b",
+			"/a/`id`/b",
+			'/a/"q"/b',
+			"/a/;rm -rf x/b",
+			"/a/&& touch x/b",
+			"/a/| tee x/b",
+			"/it's/vault",
+			"'",
+			"''",
+			"C:\\Users\\me\\vault",
+			"/a/b\\",
+			"/a/  spaces  /b",
+			"/a/\t tab/b",
+			"/ünïcodé/路径/vault",
+			"/a/*/b",
+			"/a/~root/b",
+			"/a/!history/b",
+			"/a/#comment/b",
+			"/a/${IFS}/b",
+			"",
+		];
+		assert.deepEqual(roundTrip(values), values);
+	});
+
+	test("no adversarial value can execute anything", { skip }, () => {
+		// If substitution leaked, the marker file would exist afterwards.
+		const dir = mkdtempSync(join(tmpdir(), "quote-exec-"));
+		try {
+			const marker = join(dir, "EXECUTED").replaceAll("\\", "/");
+			roundTrip([`/a/$(touch ${marker})/b`, `/a/\`touch ${marker}\`/b`]);
+			assert.throws(
+				() => readFileSync(marker),
+				"quoting leaked — a command substitution executed",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+		}
+	});
+
+	test("fuzz: generated hostile strings round-trip", { skip }, () => {
+		// Deterministic LCG — a flaky fuzz test is worse than none.
+		let seed = 0x2026_0724;
+		const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+		const alphabet = [..."abc/ '\"`$(){}[]|&;<>*?!#~\\\t=+:,.^%@-", "\n", "é", "路"];
+		const values: string[] = [];
+		for (let i = 0; i < 120; i++) {
+			const len = 1 + Math.floor(rnd() * 24);
+			let s = "";
+			for (let j = 0; j < len; j++) {
+				s += alphabet[Math.floor(rnd() * alphabet.length)] ?? "x";
+			}
+			values.push(s);
+		}
+		assert.deepEqual(roundTrip(values), values);
+	});
+
+	test("formatEnvExport output is a sourceable export", { skip }, () => {
+		const dir = mkdtempSync(join(tmpdir(), "envexport-"));
+		try {
+			const envFile = join(dir, "env.sh");
+			const value = "/a/$(id)/it's \"weird\"/b";
+			writeFileSync(envFile, formatEnvExport("VAULT_PATH", value));
+			const r = spawnSync(
+				posixShell as string,
+				["-c", `. "$1"; printf '%s' "$VAULT_PATH"`, "sh", envFile],
+				{ encoding: "utf-8" },
+			);
+			assert.equal(r.status, 0, r.stderr);
+			assert.equal(r.stdout, value, "sourcing the file must restore the exact path");
+		} finally {
+			rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+		}
 	});
 });
 
