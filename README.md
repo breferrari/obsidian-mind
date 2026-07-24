@@ -374,6 +374,8 @@ templates/              Obsidian templates with YAML frontmatter
   skills/               Obsidian + QMD skills
   settings.json         5 hooks configuration
 
+.scripts/                Vault-level tooling — QMD bootstrap (run once on a fresh clone)
+
 .shardmind/             ShardMind sidecar — only used if installed via `shardmind install`
   shard.yaml            Manifest (name, version, modules, hooks)
   shard-schema.yaml     Wizard values + module gating

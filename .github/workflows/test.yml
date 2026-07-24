@@ -5,13 +5,13 @@ on:
     branches: [main]
     paths:
       - '.claude/scripts/**'
-      - 'scripts/**'
+      - '.scripts/**'
       - '.shardmind/**'
       - '.github/workflows/test.yml'
   pull_request:
     paths:
       - '.claude/scripts/**'
-      - 'scripts/**'
+      - '.scripts/**'
       - '.shardmind/**'
       - '.github/workflows/test.yml'
 

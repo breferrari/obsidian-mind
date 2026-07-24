@@ -367,6 +367,8 @@ templates/              带有 YAML frontmatter 的 Obsidian 模板
   skills/               Obsidian + QMD 技能
   settings.json         5 个钩子配置
 
+.scripts/                仓库级工具 — QMD 引导脚本（新克隆时运行一次）
+
 .shardmind/             ShardMind 旁挂目录——仅在通过 `shardmind install` 安装时使用
   shard.yaml            清单文件（名称、版本、模块、钩子）
   shard-schema.yaml     向导值 + 模块门控

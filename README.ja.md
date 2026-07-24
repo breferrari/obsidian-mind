@@ -367,6 +367,8 @@ templates/              YAMLフロントマター付きObsidianテンプレー�
   skills/               Obsidian + QMDスキル
   settings.json         5つのフック設定
 
+.scripts/                ボールトレベルのツール — QMDブートストラップ（新規クローン時に一度実行）
+
 .shardmind/             ShardMindサイドカー — `shardmind install`でインストールした場合のみ使用
   shard.yaml            マニフェスト（名前、バージョン、モジュール、フック）
   shard-schema.yaml     ウィザードの値 + モジュールゲーティング

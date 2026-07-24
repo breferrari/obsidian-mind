@@ -367,6 +367,8 @@ templates/              YAML 프론트매터가 포함된 Obsidian 템플릿
   skills/               Obsidian + QMD 스킬
   settings.json         5개 훅 설정
 
+.scripts/                볼트 수준 도구 — QMD 부트스트랩 (새 클론에서 한 번 실행)
+
 .shardmind/             ShardMind 사이드카 — `shardmind install`로 설치한 경우에만 사용
   shard.yaml            매니페스트 (이름, 버전, 모듈, 훅)
   shard-schema.yaml     마법사 값 + 모듈 게이팅
