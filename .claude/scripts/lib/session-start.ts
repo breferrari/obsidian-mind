@@ -34,6 +34,13 @@ export function formatDateHeader(d: Date): string {
 	return `${y}-${m}-${day} (${weekday})`;
 }
 
+/** Quote one value for the POSIX shell syntax used by `CLAUDE_ENV_FILE`.
+ * The split/reopen sequence is the only way to retain a literal apostrophe.
+ */
+export function quoteForPosixShell(value: string): string {
+	return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 /**
  * Format the "Active Work" section from a list of filenames in work/active.
  * Strips `.md`, keeps the first `limit`, returns "(none)" for empty input.
