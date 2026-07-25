@@ -132,7 +132,7 @@ npm install -g @tobilu/qmd
 node --experimental-strip-types .scripts/qmd-bootstrap.ts
 ```
 
-부트스트랩은 멱등성이 있어 재실행해도 안전합니다. `vault-manifest.json` 의 `qmd_index` 와 `qmd_context` 필드를 읽어 명명된 인덱스를 등록하고 임베딩을 생성합니다 (기본 인덱스 이름: `obsidian-mind`). SessionStart 훅, `.mcp.json` 래퍼, CLI 명령은 모두 동일한 매니페스트 필드를 참조하므로, 같은 머신의 다른 볼트와 QMD 데이터가 섞이지 않습니다. CLI 명령에는 항상 `--index <이름>` 을 전달하세요:
+부트스트랩은 멱등성이 있어 재실행해도 안전합니다. `vault-manifest.json` 의 `qmd_index` 와 `qmd_context` 필드를 읽어 명명된 인덱스를 등록하고 임베딩을 생성합니다 (인덱스 이름은 `qmd_index` 가 설정되어 있으면 그 값, 설정되어 있지 않으면 볼트 폴더 이름을 슬러그화한 값). SessionStart 훅, `.mcp.json` 래퍼, CLI 명령은 모두 동일한 매니페스트 필드를 참조하므로, 같은 머신의 다른 볼트와 QMD 데이터가 섞이지 않습니다. CLI 명령에는 항상 `--index <이름>` 을 전달하세요:
 
 ```bash
 qmd --index obsidian-mind query "캐싱에 대해 뭘 결정했지?"

@@ -105,7 +105,7 @@ The `qmd_index` field is the most load-bearing. Three independent callers read i
 
 ```mermaid
 flowchart LR
-    Manifest["vault-manifest.json<br/>qmd_index: obsidian-mind"]
+    Manifest["vault-manifest.json<br/>qmd_index (or folder slug)"]
     SessionStart["SessionStart hook<br/>(session-start.ts)"]
     MCP[".mcp.json wrapper<br/>(qmd-mcp.mjs)"]
     Refresh["Mid-session refresh<br/>(PostToolUse / Stop / PreCompact<br/>→ qmd-refresh-run.ts worker)"]
@@ -119,7 +119,7 @@ flowchart LR
     MCP -->|search tools| Store
 ```
 
-Because all three callers derive the index name from the same field, the vault can coexist with other QMD-indexed projects on the same machine without collision. Change `qmd_index` in the manifest and the next bootstrap creates a fresh, isolated store.
+Because all three callers resolve the index name the same way — the `qmd_index` field when pinned, otherwise the vault folder name slugified — the vault coexists with other QMD-indexed projects on the same machine without collision. The template ships the field empty so two installs never share a store by default. Set `qmd_index` and the next bootstrap creates a fresh, isolated store under that name.
 
 The `infrastructure[]` vs `user_content_roots[]` split is what makes `/om-vault-upgrade` work. When importing from an older template, the migrator overwrites infrastructure files wholesale and preserves user content untouched.
 
@@ -346,7 +346,7 @@ The design makes these changes easy:
 | Change | Touch this |
 |--------|------------|
 | Add a new note type | `vault-manifest.json` → `frontmatter_required`, and a template in `templates/` |
-| Isolate this vault from others on the same machine | `vault-manifest.json` → `qmd_index`, then re-bootstrap |
+| Isolate this vault from others on the same machine | automatic (folder-derived); override with `vault-manifest.json` → `qmd_index`, then re-bootstrap |
 | Add a new classification category | `.claude/scripts/classify-message.ts` + `CLAUDE.md` routing rules |
 | Add a new lifecycle behavior | A new script in `.claude/scripts/` wired into all three agent configs |
 | Add a new agent (Cursor, Windsurf, …) | New config file mapping events to existing scripts, optionally a new operating manual |

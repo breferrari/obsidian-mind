@@ -109,7 +109,7 @@ Subagents run in isolated context windows via `.claude/agents/`. They don't poll
 
 ## Semantic Search (QMD)
 
-If QMD is installed (`npm install -g @tobilu/qmd`), the vault has semantic search. Every command takes `--index <name>` where `<name>` is `vault-manifest.json`'s `qmd_index` field (default: `obsidian-mind`):
+If QMD is installed (`npm install -g @tobilu/qmd`), the vault has semantic search. Every command takes `--index <name>`, where `<name>` is `vault-manifest.json`'s `qmd_index` field when set and otherwise the vault folder name slugified:
 
 - `qmd --index <name> query "..."` — hybrid BM25 + vector + LLM reranking (best quality)
 - `qmd --index <name> search "..."` — fast BM25 keyword search

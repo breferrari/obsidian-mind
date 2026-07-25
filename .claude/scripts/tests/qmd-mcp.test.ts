@@ -26,7 +26,13 @@ import {
 	readQmdIndex,
 	resolveIndexSqlitePath,
 	resolveVaultRoot,
+	deriveQmdIndex as deriveQmdIndexMjs,
+	resolveQmdIndex as resolveQmdIndexMjs,
 } from "../qmd-mcp.mjs";
+import {
+	deriveQmdIndex as deriveQmdIndexTs,
+	resolveQmdIndex as resolveQmdIndexTs,
+} from "../lib/session-start.ts";
 
 describe("resolveQmdEntry", () => {
 	test("returns an absolute path to an existing qmd entrypoint when qmd is installed", () => {
@@ -246,5 +252,120 @@ describe("resolveIndexSqlitePath", () => {
 		assert.match(out, /[\\/]Users[\\/]test[\\/]\.cache[\\/]qmd[\\/]vault\.sqlite$/);
 		assert.doesNotMatch(out, /Library[\\/]Caches/);
 		assert.doesNotMatch(out, /AppData/);
+	});
+});
+
+/**
+ * The MCP wrapper is `.mjs` and cannot import the `.ts` lib at strip-types
+ * runtime, so `deriveQmdIndex` exists twice. A drift between the two copies
+ * is the worst kind of bug this template can have: the SessionStart hook
+ * would index one store while the agent's search reads another, and the
+ * symptom is "0 documents" rather than an error. These tests are the only
+ * thing holding the copies together.
+ */
+describe("qmd index derivation — .mjs and .ts copies agree", () => {
+	const CASES = [
+		"vigil-mind",
+		"Obsidian Mind",
+		"MY_VAULT",
+		"vault.with.dots",
+		"trailing---dashes---",
+		"-leading-dash",
+		"UPPER",
+		"a",
+		"work vault (2026)",
+		"...",
+		"日本語",
+	];
+
+	for (const name of CASES) {
+		test(`agree on ${JSON.stringify(name)}`, () => {
+			const root = `/tmp/${name}`;
+			assert.equal(deriveQmdIndexMjs(root), deriveQmdIndexTs(root));
+		});
+	}
+
+	test("agree when a manifest pins the index", () => {
+		const manifest = JSON.stringify({ qmd_index: "pinned-name" });
+		assert.equal(
+			resolveQmdIndexMjs(manifest, "/tmp/ignored"),
+			resolveQmdIndexTs(manifest, "/tmp/ignored"),
+		);
+	});
+
+	test("agree when the manifest is absent", () => {
+		assert.equal(
+			resolveQmdIndexMjs(null, "/tmp/some-vault"),
+			resolveQmdIndexTs(null, "/tmp/some-vault"),
+		);
+	});
+});
+
+describe("deriveQmdIndex", () => {
+	test("uses the vault folder name, slugified", () => {
+		assert.equal(deriveQmdIndexTs("/home/me/Obsidian Mind"), "obsidian-mind");
+	});
+
+	test("lowercases and collapses runs of separators", () => {
+		assert.equal(deriveQmdIndexTs("/x/My   Work__Vault"), "my-work__vault");
+	});
+
+	test("strips leading non-alphanumerics and trailing separators", () => {
+		assert.equal(deriveQmdIndexTs("/x/--vault--"), "vault");
+	});
+
+	test("keeps dots, dashes and underscores", () => {
+		assert.equal(deriveQmdIndexTs("/x/a.b-c_d"), "a.b-c_d");
+	});
+
+	test("returns null when nothing usable remains", () => {
+		assert.equal(deriveQmdIndexTs("/x/日本語"), null);
+		assert.equal(deriveQmdIndexTs("/x/..."), null);
+	});
+
+	test("never yields a value that fails the index validator", () => {
+		for (const name of ["ok", "A B", "...", "-x-", "1", "_a"]) {
+			const out = deriveQmdIndexTs(`/x/${name}`);
+			if (out !== null) assert.match(out, /^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+		}
+	});
+});
+
+describe("resolveQmdIndex", () => {
+	test("an explicit pin beats the folder name", () => {
+		assert.equal(
+			resolveQmdIndexTs(JSON.stringify({ qmd_index: "pinned" }), "/x/folder"),
+			"pinned",
+		);
+	});
+
+	test("an empty qmd_index falls through to derivation", () => {
+		assert.equal(
+			resolveQmdIndexTs(JSON.stringify({ qmd_index: "" }), "/x/my-vault"),
+			"my-vault",
+		);
+	});
+
+	test("a missing qmd_index falls through to derivation", () => {
+		assert.equal(resolveQmdIndexTs(JSON.stringify({}), "/x/my-vault"), "my-vault");
+	});
+
+	test("an invalid pin falls through rather than propagating a bad name", () => {
+		assert.equal(
+			resolveQmdIndexTs(JSON.stringify({ qmd_index: "has/slash" }), "/x/my-vault"),
+			"my-vault",
+		);
+	});
+
+	test("returns null when there is no pin and nothing to derive", () => {
+		assert.equal(resolveQmdIndexTs(JSON.stringify({}), "/x/日本語"), null);
+	});
+
+	test("two vaults in different folders resolve to different indexes", () => {
+		const manifest = JSON.stringify({ qmd_index: "" });
+		assert.notEqual(
+			resolveQmdIndexTs(manifest, "/a/vault-one"),
+			resolveQmdIndexTs(manifest, "/b/vault-two"),
+		);
 	});
 });

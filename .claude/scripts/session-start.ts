@@ -33,7 +33,7 @@ import {
 	formatBrainIndex,
 	stripFrontmatter,
 	hasBrainContent,
-	parseQmdIndex,
+	resolveQmdIndex,
 	parseQmdMinVersion,
 	qmdArgsWithIndex,
 	isQmdNativeAbiMismatch,
@@ -134,11 +134,13 @@ const infraRootFilenames = parseInfraRootFilenames(manifestJson);
 // emission) is independent of this index update, so blocking on qmd's
 // startup (notably slow on Windows × Node 24 cold start, where it can
 // approach 10s before the actual update work begins) is wasted user
-// latency. Scope to this vault's named index when the manifest declares
-// one; fall back silently for forks that haven't adopted `qmd_index`.
+// latency. Scope to this vault's named index: an explicit `qmd_index` when
+// the manifest pins one, otherwise a slug derived from the vault folder so
+// two vaults on one machine don't share a store (#137). Falls back silently
+// to qmd's global index for forks that have neither.
 // Route through `buildQmdCommand` so the shim-bypass logic that fixes
 // the MCP wrapper applies here too.
-const qmdIndex = parseQmdIndex(manifestJson);
+const qmdIndex = resolveQmdIndex(manifestJson, cwd);
 const qmdEntry = resolveQmdEntry();
 
 // qmd is OPTIONAL in this template: every self-heal path below is gated on

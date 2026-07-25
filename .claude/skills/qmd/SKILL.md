@@ -9,7 +9,7 @@ Before reading vault files directly, search with QMD first. It returns relevant 
 
 ## Tool Surfaces — Preference Order
 
-Pick the highest surface available and stop. All three read the same SQLite store (scoped by `qmd_index` in `vault-manifest.json`), so they return the same results; the choice is about interface ergonomics and context cost.
+Pick the highest surface available and stop. All three read the same SQLite store (see [Named Index](#named-index-this-vault)), so they return the same results; the choice is about interface ergonomics and context cost.
 
 1. **MCP tools (preferred when registered)** — `mcp__qmd__query`, `mcp__qmd__get`, `mcp__qmd__multi_get`, `mcp__qmd__status`. If these appear in your tool menu, the MCP server is live and pre-scoped to this vault. Call them directly — no `--index` argument needed, no shell involved, typed arguments. This is the intended path during a session.
 2. **CLI fallback** — `qmd --index <name> query|search|vsearch|get|multi-get`. Use when the MCP server isn't registered (older vault clones, Windows install drift, disabled in `.mcp.json`), or for one-off shell checks outside a session. Always pass `--index <name>`.
@@ -19,22 +19,30 @@ Never fall through surfaces without cause — if MCP is registered, calling the 
 
 ## Named Index (This Vault)
 
-This vault declares a **named QMD index** in `vault-manifest.json` under `qmd_index`. Every QMD command in this document uses `--index <name>` so queries, updates, and context strings stay scoped to this vault — not blended with any other vault that shares the machine.
+This vault uses a **named QMD index** so queries, updates, and context strings stay scoped to this vault — not blended with any other vault that shares the machine. Every QMD command in this document passes `--index <name>`.
 
-The MCP server (`.mcp.json`) and the SessionStart hook read the same field, so all three surfaces (CLI, MCP, hook) point at the same SQLite store.
+The name resolves the same way on all three surfaces (CLI, MCP, SessionStart hook), so they always point at the same SQLite store:
 
-**Read the index name from the manifest** before running commands. This snippet prints a clear error when the field is missing instead of silently running `qmd --index undefined`:
+1. `qmd_index` in `vault-manifest.json`, when set — an explicit pin.
+2. Otherwise the **vault folder name**, slugified. The template ships `qmd_index` empty so every install gets its own store without being asked a question.
+
+Pin the field if you want a name that survives renaming the vault folder, or want to keep a store you already built.
+
+**Read the resolved name** before running commands rather than assuming either branch:
 
 ```bash
 INDEX=$(node -e '
   const m = JSON.parse(require("fs").readFileSync("vault-manifest.json", "utf8"));
-  if (!m.qmd_index) { process.stderr.write("qmd_index not set in vault-manifest.json\n"); process.exit(1); }
-  process.stdout.write(m.qmd_index);
+  const slug = require("path").basename(process.cwd()).normalize("NFKD").toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-").replace(/-{2,}/g, "-").replace(/^[^a-z0-9]+|[-._]+$/g, "");
+  const name = m.qmd_index || slug;
+  if (!name) { process.stderr.write("no usable qmd index name — set qmd_index in vault-manifest.json\n"); process.exit(1); }
+  process.stdout.write(name);
 ') || exit 1
 qmd --index "$INDEX" query "..."
 ```
 
-In-session, substitute the value of `qmd_index` directly in your commands (the index name is stable across the vault's lifetime). The default in a fresh template is `obsidian-mind`.
+In-session, substitute the resolved value directly in your commands — it is stable across the vault's lifetime unless the folder is renamed.
 
 ## Commands
 
@@ -62,7 +70,7 @@ The QMD SQLite store lives outside the repo (`~/.cache/qmd/<index>.sqlite`), so 
 node --experimental-strip-types .scripts/qmd-bootstrap.ts
 ```
 
-It reads `qmd_index` and `qmd_context` from `vault-manifest.json`, registers the collection, attaches the vault context, walks the vault, and generates embeddings. Idempotent — safe to re-run.
+It resolves the index name (pinned `qmd_index`, else the vault folder slug) and reads `qmd_context` from `vault-manifest.json`, registers the collection, attaches the vault context, walks the vault, and generates embeddings. Idempotent — safe to re-run.
 
 ## When to Search
 

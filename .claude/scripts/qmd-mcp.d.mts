@@ -27,6 +27,22 @@ export function resolveVaultRoot(
 export function readQmdIndex(manifestJson: string | null): string | null;
 
 /**
+ * Derive an index name from the vault folder, slugified. Returns null when
+ * the folder name yields nothing usable. Mirrors
+ * `lib/session-start.ts:deriveQmdIndex`; the tests assert the two agree.
+ */
+export function deriveQmdIndex(vaultRoot: string): string | null;
+
+/**
+ * The index this vault owns: an explicit `qmd_index` pin wins, else the
+ * folder-derived slug. Null means "use QMD's default global index".
+ */
+export function resolveQmdIndex(
+	manifestJson: string | null,
+	vaultRoot: string,
+): string | null;
+
+/**
  * Compute the SQLite store path qmd would use for a given named index,
  * using the same rule as @tobilu/qmd's store.js.
  */

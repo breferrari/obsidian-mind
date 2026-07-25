@@ -51,7 +51,10 @@ import {
 	translateToGlob,
 	writeQmdIgnore,
 } from "../.claude/scripts/lib/qmd-ignore.ts";
-import { isValidQmdIndex } from "../.claude/scripts/lib/session-start.ts";
+import {
+	deriveQmdIndex,
+	isValidQmdIndex,
+} from "../.claude/scripts/lib/session-start.ts";
 
 type ManifestSubset = {
 	readonly qmd_index?: string;
@@ -188,20 +191,46 @@ function main(): void {
 		process.exit(1);
 	}
 
-	const index = manifest.qmd_index;
-	if (!index) {
+	// A non-empty `qmd_index` is an explicit pin and is taken literally — a
+	// typo there must fail loudly rather than silently fall through to a
+	// derived name, or the vault quietly indexes somewhere the user didn't ask
+	// for. Only an absent/empty field opts into derivation (#137).
+	const pinned = manifest.qmd_index;
+	if (pinned !== undefined && pinned !== "" && !isValidQmdIndex(pinned)) {
 		process.stderr.write(
-			"vault-manifest.json has no `qmd_index` field. Add one before running the bootstrap.\n",
-		);
-		process.exit(1);
-	}
-	if (!isValidQmdIndex(index)) {
-		process.stderr.write(
-			`vault-manifest.json \`qmd_index\` value ${JSON.stringify(index)} is not a valid index name.\n` +
+			`vault-manifest.json \`qmd_index\` value ${JSON.stringify(pinned)} is not a valid index name.\n` +
 				"Allowed: alphanumerics, dot, dash, underscore; must start with an alphanumeric.\n" +
 				"(The value is used both in CLI argv and a filesystem path, so path separators and whitespace aren't accepted.)\n",
 		);
 		process.exit(1);
+	}
+
+	// Derive from the vault folder when unpinned. `process.cwd()` is the vault
+	// root — `readManifest()` above already resolved `vault-manifest.json`
+	// relative to it, so a wrong cwd has failed by this point.
+	const index = isValidQmdIndex(pinned)
+		? pinned
+		: (deriveQmdIndex(process.cwd()) ??
+			(isValidQmdIndex(manifest.template) ? manifest.template : null));
+
+	if (index === null) {
+		process.stderr.write(
+			"Could not determine a qmd index name for this vault.\n" +
+				"The vault folder name yields no usable slug and the manifest has no " +
+				"`template` to fall back on.\n" +
+				'Set one explicitly: "qmd_index": "my-vault" in vault-manifest.json.\n',
+		);
+		process.exit(1);
+	}
+
+	// Falling back to the shared `template` name means this vault shares a
+	// store with every other install that did the same — the exact collision
+	// #137 exists to fix. Say so rather than degrading silently.
+	if (!isValidQmdIndex(pinned) && index === manifest.template) {
+		warn(
+			`Vault folder name yields no usable index slug — falling back to the shared '${index}' index. ` +
+				'Set "qmd_index" in vault-manifest.json to keep this vault\'s search store isolated.',
+		);
 	}
 
 	// Resolve once up front so every downstream spawn reuses the same entry.

@@ -4,7 +4,7 @@
  * system, or invoking the Obsidian CLI.
  */
 
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import { escapeRegex } from "./regex.ts";
 
@@ -408,6 +408,53 @@ export function parseQmdIndex(manifestJson: string | null): string | null {
 		/* malformed manifest → treat as missing */
 	}
 	return null;
+}
+
+/**
+ * Derive a qmd index name from the vault's own directory name.
+ *
+ * The shipped manifest leaves `qmd_index` empty because the template is one
+ * package installed many times — any literal it ships is identical in every
+ * vault, so two vaults on one machine share a single SQLite store, search
+ * bleeds across them, and re-indexing one clobbers the other (#137). The
+ * install location is the only per-vault identity available without asking
+ * the user a question, and it exists on both install paths.
+ *
+ * The slug rules mirror ShardMind's `slugifyVaultName` (shardmind#143)
+ * deliberately: if a future engine-side substitution ever bakes the name in,
+ * it resolves to the same string this derives, so the two mechanisms cannot
+ * disagree about which store a vault owns.
+ *
+ * Returns null when the folder name has no usable characters (e.g. a purely
+ * non-Latin name), so the caller falls back rather than emitting a broken
+ * index name.
+ */
+export function deriveQmdIndex(vaultRoot: string): string | null {
+	const slug = basename(resolve(vaultRoot))
+		.normalize("NFKD")
+		.toLowerCase()
+		.replace(/[^a-z0-9._-]+/g, "-")
+		.replace(/-{2,}/g, "-")
+		.replace(/^[^a-z0-9]+|[-._]+$/g, "");
+	return isValidQmdIndex(slug) ? slug : null;
+}
+
+/**
+ * The index name this vault owns: an explicit `qmd_index` wins, otherwise the
+ * folder-derived slug.
+ *
+ * Keeping the manifest field as an override is what makes this safe to adopt.
+ * A vault that wants a stable name across folder renames — or wants to keep
+ * the store it already built — pins the field and nothing derives. Returns
+ * null only when there is no pin *and* nothing usable to derive; the caller
+ * decides whether that means "fall back to the shared name" or "use qmd's
+ * global default".
+ */
+export function resolveQmdIndex(
+	manifestJson: string | null,
+	vaultRoot: string,
+): string | null {
+	return parseQmdIndex(manifestJson) ?? deriveQmdIndex(vaultRoot);
 }
 
 /**

@@ -28,7 +28,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
@@ -135,6 +135,37 @@ export function readQmdIndex(manifestJson) {
 }
 
 /**
+ * Derive an index name from the vault folder. Duplicated from
+ * `lib/session-start.ts:deriveQmdIndex` for the same reason as the pattern
+ * above (this file is .mjs and can't import the .ts lib at strip-types
+ * runtime); the tests assert both copies agree.
+ *
+ * Returns null when the folder name yields no usable slug.
+ */
+export function deriveQmdIndex(vaultRoot) {
+	const slug = basename(resolve(vaultRoot))
+		.normalize("NFKD")
+		.toLowerCase()
+		.replace(/[^a-z0-9._-]+/g, "-")
+		.replace(/-{2,}/g, "-")
+		.replace(/^[^a-z0-9]+|[-._]+$/g, "");
+	return QMD_INDEX_PATTERN.test(slug) ? slug : null;
+}
+
+/**
+ * The index this vault owns: an explicit `qmd_index` pin wins, else the
+ * folder-derived slug (#137). Null means "use QMD's default global index".
+ *
+ * The MCP wrapper MUST resolve this the same way the SessionStart hook and
+ * the bootstrap script do — a disagreement points the agent's search at a
+ * different store than the one being indexed, which fails as "0 documents"
+ * rather than as an error.
+ */
+export function resolveQmdIndex(manifestJson, vaultRoot) {
+	return readQmdIndex(manifestJson) ?? deriveQmdIndex(vaultRoot);
+}
+
+/**
  * Compute the SQLite store path qmd would use for a given named index, using
  * the same rule as @tobilu/qmd's store.js (XDG_CACHE_HOME || ~/.cache +
  * qmd/<indexName>.sqlite). Exported so tests can lock the platform-neutral
@@ -175,7 +206,7 @@ function readManifestRaw() {
 }
 
 function runAsMcp() {
-	const qmdIndex = readQmdIndex(readManifestRaw());
+	const qmdIndex = resolveQmdIndex(readManifestRaw(), VAULT_ROOT);
 
 	if (qmdIndex && !process.env["INDEX_PATH"]) {
 		// Apply the qmd 2.1.0 MCP bug workaround: pin the SQLite store to the

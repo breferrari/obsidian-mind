@@ -2,7 +2,7 @@
   "template": "obsidian-mind",
   "version": "7.0.1",
   "released": "2026-07-24",
-  "qmd_index": "obsidian-mind",
+  "qmd_index": "",
   "qmd_min_version": "2.0.0",
   "open_loop_dirs": [
     "work/1-1",

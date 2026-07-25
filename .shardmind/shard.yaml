@@ -31,7 +31,11 @@ hooks:
     # v2 (v7.0.0): collection name derives from qmd_index with an in-place
     # legacy-name migration, plus the qmd_min_version gate — upgrading
     # installs must re-run bootstrap for the migration to execute.
-    fingerprint: "qmd-v2"
+    # v3 (#137): qmd_index ships empty and the index name is derived from the
+    # vault folder, so two vaults on one machine stop sharing a store. An
+    # updating vault's index name changes, which means a new (empty) SQLite
+    # store — bootstrap must re-run to build it, or search returns nothing.
+    fingerprint: "qmd-v3"
   personalize: .shardmind/hooks/personalize.ts
   post-update: .shardmind/hooks/post-update.ts
   # 60 s to accommodate first-run qmd bootstrap (index creation + initial embed pass).
