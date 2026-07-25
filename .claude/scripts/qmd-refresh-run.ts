@@ -35,7 +35,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { debug } from "./lib/hook-io.ts";
-import { parseQmdIndex } from "./lib/session-start.ts";
+import { resolveQmdIndex } from "./lib/session-start.ts";
 import { resolveQmdEntry } from "./lib/qmd.ts";
 import {
 	composeWorkerInvocations,
@@ -54,7 +54,11 @@ function readManifestRaw(): string | null {
 	}
 }
 
-const qmdIndex = parseQmdIndex(readManifestRaw());
+// Must resolve the index exactly as SessionStart, the MCP wrapper, and the
+// bootstrap script do. This worker WRITES to the store; if it resolved
+// differently it would index one store while search reads another, and the
+// symptom is stale results rather than an error.
+const qmdIndex = resolveQmdIndex(readManifestRaw(), VAULT_ROOT);
 const invocations = composeWorkerInvocations(qmdIndex, resolveQmdEntry());
 
 for (const inv of invocations) {

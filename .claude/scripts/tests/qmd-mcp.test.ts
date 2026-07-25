@@ -369,3 +369,49 @@ describe("resolveQmdIndex", () => {
 		);
 	});
 });
+
+/**
+ * The `template` fallback tier (Copilot review on #154). An earlier revision
+ * had the bootstrap script fall back to `template` privately while the read
+ * surfaces fell back to null (qmd's global index) — so a vault with a
+ * non-derivable folder name got its content indexed into one store while
+ * every reader looked in another. Silent, and shaped like an empty vault.
+ */
+describe("resolveQmdIndex — template fallback", () => {
+	const NON_DERIVABLE = "/x/日本語";
+
+	test("falls back to template when there is no pin and no derivable slug", () => {
+		const manifest = JSON.stringify({ qmd_index: "", template: "obsidian-mind" });
+		assert.equal(resolveQmdIndexTs(manifest, NON_DERIVABLE), "obsidian-mind");
+	});
+
+	test(".mjs agrees on the template fallback", () => {
+		const manifest = JSON.stringify({ qmd_index: "", template: "obsidian-mind" });
+		assert.equal(
+			resolveQmdIndexMjs(manifest, NON_DERIVABLE),
+			resolveQmdIndexTs(manifest, NON_DERIVABLE),
+		);
+	});
+
+	test("a derivable folder still beats template", () => {
+		const manifest = JSON.stringify({ qmd_index: "", template: "obsidian-mind" });
+		assert.equal(resolveQmdIndexTs(manifest, "/x/my-vault"), "my-vault");
+	});
+
+	test("a pin still beats both", () => {
+		const manifest = JSON.stringify({ qmd_index: "pinned", template: "obsidian-mind" });
+		assert.equal(resolveQmdIndexTs(manifest, NON_DERIVABLE), "pinned");
+	});
+
+	test("an invalid template is not used", () => {
+		const manifest = JSON.stringify({ qmd_index: "", template: "has/slash" });
+		assert.equal(resolveQmdIndexTs(manifest, NON_DERIVABLE), null);
+		assert.equal(resolveQmdIndexMjs(manifest, NON_DERIVABLE), null);
+	});
+
+	test("null only when nothing at any tier is usable", () => {
+		const manifest = JSON.stringify({ qmd_index: "" });
+		assert.equal(resolveQmdIndexTs(manifest, NON_DERIVABLE), null);
+		assert.equal(resolveQmdIndexMjs(manifest, NON_DERIVABLE), null);
+	});
+});

@@ -153,16 +153,44 @@ export function deriveQmdIndex(vaultRoot) {
 }
 
 /**
- * The index this vault owns: an explicit `qmd_index` pin wins, else the
- * folder-derived slug (#137). Null means "use QMD's default global index".
+ * Read a validated `template` name — the last-resort index name when there is
+ * neither a pin nor a derivable folder slug.
+ */
+function readTemplateName(manifestJson) {
+	if (manifestJson === null) return null;
+	try {
+		const parsed = JSON.parse(manifestJson);
+		if (
+			parsed !== null &&
+			typeof parsed === "object" &&
+			typeof parsed.template === "string" &&
+			QMD_INDEX_PATTERN.test(parsed.template)
+		) {
+			return parsed.template;
+		}
+	} catch {
+		/* malformed manifest → treat as missing */
+	}
+	return null;
+}
+
+/**
+ * The index this vault owns: explicit `qmd_index` pin, else the folder-derived
+ * slug, else the shared `template` name (#137). Null means "use QMD's default
+ * global index".
  *
- * The MCP wrapper MUST resolve this the same way the SessionStart hook and
- * the bootstrap script do — a disagreement points the agent's search at a
- * different store than the one being indexed, which fails as "0 documents"
- * rather than as an error.
+ * The MCP wrapper MUST resolve this exactly the way the SessionStart hook, the
+ * refresh worker, and the bootstrap script do — a disagreement points the
+ * agent's search at a different store than the one being indexed, and fails as
+ * "0 documents" rather than as an error. Mirrors
+ * `lib/session-start.ts:resolveQmdIndex`; the tests assert the two agree.
  */
 export function resolveQmdIndex(manifestJson, vaultRoot) {
-	return readQmdIndex(manifestJson) ?? deriveQmdIndex(vaultRoot);
+	return (
+		readQmdIndex(manifestJson) ??
+		deriveQmdIndex(vaultRoot) ??
+		readTemplateName(manifestJson)
+	);
 }
 
 /**

@@ -440,21 +440,56 @@ export function deriveQmdIndex(vaultRoot: string): string | null {
 }
 
 /**
- * The index name this vault owns: an explicit `qmd_index` wins, otherwise the
- * folder-derived slug.
+ * Extract a validated `template` name from a manifest source — the shared
+ * package identity, and the last-resort index name when a vault has neither
+ * a pin nor a derivable folder slug.
+ */
+function parseTemplateName(manifestJson: string | null): string | null {
+	if (manifestJson === null) return null;
+	try {
+		const parsed = JSON.parse(manifestJson) as unknown;
+		if (parsed !== null && typeof parsed === "object") {
+			const value = (parsed as Record<string, unknown>)["template"];
+			if (isValidQmdIndex(value)) return value;
+		}
+	} catch {
+		/* malformed manifest → treat as missing */
+	}
+	return null;
+}
+
+/**
+ * The index name this vault owns, in precedence order:
  *
- * Keeping the manifest field as an override is what makes this safe to adopt.
- * A vault that wants a stable name across folder renames — or wants to keep
- * the store it already built — pins the field and nothing derives. Returns
- * null only when there is no pin *and* nothing usable to derive; the caller
- * decides whether that means "fall back to the shared name" or "use qmd's
- * global default".
+ *   1. an explicit `qmd_index` pin,
+ *   2. the vault folder name, slugified,
+ *   3. the manifest `template` name — shared across installs, so it
+ *      reintroduces the collision #137 fixes, but a working shared store
+ *      beats silently indexing somewhere nobody reads.
+ *
+ * Every caller MUST route through here. There are four (SessionStart, the
+ * mid-session refresh worker, the MCP wrapper, the bootstrap script) and they
+ * do not fail loudly when they disagree — one writes to a store another never
+ * reads, which surfaces as "0 documents". Step 3 exists because an earlier
+ * revision had bootstrap fall back to `template` while the read surfaces fell
+ * back to qmd's global index, producing exactly that split.
+ *
+ * Keeping the pin as an override is what makes derivation safe to adopt: a
+ * vault that wants a name surviving a folder rename — or wants to keep a store
+ * it already built — pins the field and nothing derives.
+ *
+ * Null means "use qmd's default global index" and is reachable only when the
+ * manifest is absent or carries neither field.
  */
 export function resolveQmdIndex(
 	manifestJson: string | null,
 	vaultRoot: string,
 ): string | null {
-	return parseQmdIndex(manifestJson) ?? deriveQmdIndex(vaultRoot);
+	return (
+		parseQmdIndex(manifestJson) ??
+		deriveQmdIndex(vaultRoot) ??
+		parseTemplateName(manifestJson)
+	);
 }
 
 /**

@@ -54,6 +54,7 @@ import {
 import {
 	deriveQmdIndex,
 	isValidQmdIndex,
+	resolveQmdIndex,
 } from "../.claude/scripts/lib/session-start.ts";
 
 type ManifestSubset = {
@@ -63,9 +64,17 @@ type ManifestSubset = {
 	readonly template?: string;
 };
 
-function readManifest(): ManifestSubset | null {
+function readManifestRaw(): string | null {
 	try {
-		const raw = readFileSync("vault-manifest.json", { encoding: "utf-8" });
+		return readFileSync("vault-manifest.json", { encoding: "utf-8" });
+	} catch {
+		return null; /* handled by caller */
+	}
+}
+
+function parseManifest(raw: string | null): ManifestSubset | null {
+	if (raw === null) return null;
+	try {
 		const parsed = JSON.parse(raw) as unknown;
 		if (parsed !== null && typeof parsed === "object") {
 			return parsed as ManifestSubset;
@@ -183,7 +192,8 @@ function runIdempotent(
 }
 
 function main(): void {
-	const manifest = readManifest();
+	const manifestRaw = readManifestRaw();
+	const manifest = parseManifest(manifestRaw);
 	if (!manifest) {
 		process.stderr.write(
 			"vault-manifest.json missing or unreadable. Run from the vault root.\n",
@@ -205,13 +215,15 @@ function main(): void {
 		process.exit(1);
 	}
 
-	// Derive from the vault folder when unpinned. `process.cwd()` is the vault
-	// root — `readManifest()` above already resolved `vault-manifest.json`
-	// relative to it, so a wrong cwd has failed by this point.
-	const index = isValidQmdIndex(pinned)
-		? pinned
-		: (deriveQmdIndex(process.cwd()) ??
-			(isValidQmdIndex(manifest.template) ? manifest.template : null));
+	// Route through the SAME resolver the read surfaces use rather than
+	// reimplementing the precedence here. This script WRITES the store; a
+	// private fallback would populate one index while SessionStart, the
+	// refresh worker, and the MCP wrapper read another — which surfaces as
+	// "0 documents", not as an error.
+	// `process.cwd()` is the vault root: `readManifest()` above already
+	// resolved `vault-manifest.json` relative to it, so a wrong cwd has
+	// already failed.
+	const index = resolveQmdIndex(manifestRaw, process.cwd());
 
 	if (index === null) {
 		process.stderr.write(
@@ -223,10 +235,12 @@ function main(): void {
 		process.exit(1);
 	}
 
-	// Falling back to the shared `template` name means this vault shares a
-	// store with every other install that did the same — the exact collision
-	// #137 exists to fix. Say so rather than degrading silently.
-	if (!isValidQmdIndex(pinned) && index === manifest.template) {
+	// Reaching the `template` fallback means this vault shares a store with
+	// every other install that did the same — the exact collision #137 fixes.
+	// Keyed on derivation FAILING, not on the resolved name matching
+	// `template`: a vault whose folder legitimately slugifies to the template
+	// name is correctly isolated and must not be warned at.
+	if (!isValidQmdIndex(pinned) && deriveQmdIndex(process.cwd()) === null) {
 		warn(
 			`Vault folder name yields no usable index slug — falling back to the shared '${index}' index. ` +
 				'Set "qmd_index" in vault-manifest.json to keep this vault\'s search store isolated.',

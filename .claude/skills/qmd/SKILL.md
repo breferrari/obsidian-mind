@@ -32,15 +32,22 @@ Pin the field if you want a name that survives renaming the vault folder, or wan
 
 ```bash
 INDEX=$(node -e '
+  const ok = (s) => typeof s === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(s);
   const m = JSON.parse(require("fs").readFileSync("vault-manifest.json", "utf8"));
+  if (m.qmd_index && !ok(m.qmd_index)) {
+    process.stderr.write("qmd_index is set to an invalid name: " + JSON.stringify(m.qmd_index) + "\n");
+    process.exit(1);
+  }
   const slug = require("path").basename(process.cwd()).normalize("NFKD").toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-").replace(/-{2,}/g, "-").replace(/^[^a-z0-9]+|[-._]+$/g, "");
-  const name = m.qmd_index || slug;
+  const name = [m.qmd_index, slug, m.template].find(ok);
   if (!name) { process.stderr.write("no usable qmd index name — set qmd_index in vault-manifest.json\n"); process.exit(1); }
   process.stdout.write(name);
 ') || exit 1
 qmd --index "$INDEX" query "..."
 ```
+
+The value is used as both a CLI argument and a filesystem path (`~/.cache/qmd/<name>.sqlite`), so an invalid pin must fail here rather than propagate — hence the explicit check instead of `m.qmd_index || slug`.
 
 In-session, substitute the resolved value directly in your commands — it is stable across the vault's lifetime unless the folder is renamed.
 
