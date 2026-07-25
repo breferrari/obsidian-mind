@@ -18,3 +18,20 @@ README.*.md
 # new marketing media ship.
 obsidian-mind-logo.*
 obsidian-mind-demo.*
+
+# Tests for repo-only machinery. Each of these statically imports a script
+# under `.github/scripts/` or `.shardmind/hooks/` — both Tier 1 exclusions in
+# the engine, which authors cannot toggle off. The import target therefore can
+# never exist in an installed vault, and because the import is top-level the
+# whole file fails to load (ERR_MODULE_NOT_FOUND) rather than failing a single
+# assertion — so shipping them makes a user's first `npm test` fail on four
+# missing modules they never asked for.
+#
+# They stay in the repo: CI exercises the repo-only scripts through exactly
+# these tests. They just don't belong in a vault, same as CONTRIBUTING.md.
+# `.claude/scripts/tests/shardmindignore.test.ts` enforces the rule generally,
+# so a new test crossing the same boundary fails CI until it is listed here.
+.claude/scripts/tests/manifest-check.test.ts
+.claude/scripts/tests/generate-changelog.test.ts
+.claude/scripts/tests/bootstrap-hook.test.ts
+.claude/scripts/tests/personalize-hook.test.ts
