@@ -34,6 +34,8 @@ export interface Facets {
 	readonly flags: string[];
 	readonly origin: string | null;
 	readonly date: string | null;
+	/** ISO timestamp of the write; breaks ties within a day. */
+	readonly session: string | null;
 	readonly superseded_by: string[];
 	readonly source: string | null;
 }
@@ -110,6 +112,7 @@ export function facetsOf(fm: Record<string, unknown> | null | undefined): Facets
 		flags: list(fm?.flags),
 		origin: str(fm?.origin),
 		date: str(fm?.date),
+		session: str(fm?.session),
 		superseded_by: list(fm?.superseded_by),
 		source: str(fm?.source),
 	};
@@ -213,7 +216,12 @@ export function rankMemories<T extends { facets: Facets }>(entries: readonly T[]
 		if (supA !== supB) return supA - supB;
 		const s = specificity(b.facets, caller) - specificity(a.facets, caller);
 		if (s !== 0) return s;
-		return String(b.facets.date ?? "").localeCompare(String(a.facets.date ?? ""));
+		const byDate = String(b.facets.date ?? "").localeCompare(String(a.facets.date ?? ""));
+		if (byDate !== 0) return byDate;
+		// `date` is day-granular, so same-day memories would otherwise sort
+		// arbitrarily and a just-written one could fall outside the caller's limit
+		// entirely. `session` is the ISO timestamp of the write.
+		return String(b.facets.session ?? "").localeCompare(String(a.facets.session ?? ""));
 	});
 }
 
