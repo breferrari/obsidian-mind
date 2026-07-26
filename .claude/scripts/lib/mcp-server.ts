@@ -33,6 +33,7 @@ import { captureNote } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
 import { recall, type MemoryEntry } from "./memory-recall.ts";
+import { createMemoryIndex, type MemoryIndex } from "./memory-index.ts";
 import { validateMemory, writeMemory, renderMemory, resolveLinks, neutralizeWikilinks } from "./memory-write.ts";
 import { findSimilar } from "./memory-similarity.ts";
 import { markSuperseded, resolveSupersedes } from "./memory-supersede.ts";
@@ -54,6 +55,11 @@ export interface ServerDeps {
 	readonly audit: (action: string, detail?: Record<string, unknown>) => void;
 	readonly reindex?: () => boolean;
 	readonly now?: () => Date;
+	/**
+	 * Parse cache over the memory store, shared by `recall` and the duplicate
+	 * scan. Injectable so a test can assert what it avoided re-reading.
+	 */
+	readonly memoryIndex?: MemoryIndex;
 }
 
 const text = (s: string): { content: { type: "text"; text: string }[] } => ({
@@ -111,6 +117,14 @@ export function createHandlers(deps: ServerDeps): Handlers {
 	const { ctx, policy, session, qmd, audit } = deps;
 	const now = deps.now ?? (() => new Date());
 	const reindex = deps.reindex ?? (() => reindexSync(ctx.qmdIndex));
+	const memoryIndex = deps.memoryIndex ?? createMemoryIndex();
+
+	/**
+	 * The store, parsed. Lists and stats every file on every call — only the
+	 * re-parse of an unchanged file is skipped — so this is safe on the duplicate
+	 * path, where a stale view would admit a memory that already exists.
+	 */
+	const storeEntries = (): MemoryEntry[] => memoryIndex.all(ctx.vaultRoot, ctx.memoryRoot);
 
 	/** Who is asking, as the memory layer understands it. */
 	const caller = () => ({
@@ -145,9 +159,10 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		const explain = args.explain === true;
 		const query = String(args.query ?? "").trim();
 
+		const entries = storeEntries();
 		const result = explain
-			? recall(ctx.vaultRoot, who, { root: ctx.memoryRoot, explain: true })
-			: { visible: recall(ctx.vaultRoot, who, { root: ctx.memoryRoot }), withheld: [] as MemoryEntry[] };
+			? recall(ctx.vaultRoot, who, { root: ctx.memoryRoot, explain: true, entries })
+			: { visible: recall(ctx.vaultRoot, who, { root: ctx.memoryRoot, entries }), withheld: [] as MemoryEntry[] };
 
 		let visible = result.visible;
 
@@ -256,7 +271,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			return `Refused:\n${v.errors.map((e) => `- ${e}`).join("\n")}`;
 		}
 
-		const digests = loadMemoryDigests(ctx.vaultRoot, ctx.memoryRoot);
+		const digests = loadMemoryDigests(ctx.vaultRoot, ctx.memoryRoot, storeEntries());
 
 		// Near-duplicate suppression, facet-gated so two projects can each hold
 		// their own copy of the same lesson.
@@ -291,10 +306,18 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		}
 
 		const written = writeMemory(ctx.vaultRoot, v.value, resolved, { root: ctx.memoryRoot });
+		// Explicit, rather than relying on the cache's size+mtime check to notice.
+		// A filesystem that keeps mtime to a whole second could otherwise serve the
+		// previous parse of a path a collision loop just reused.
+		memoryIndex.invalidate(written.rel);
 
 		const retired: string[] = [];
 		for (const m of supers.matched) {
-			if (markSuperseded(ctx.vaultRoot, m.rel, v.value.title).ok) retired.push(m.title);
+			if (markSuperseded(ctx.vaultRoot, m.rel, v.value.title).ok) {
+				retired.push(m.title);
+				// Rewritten in place, and the new frontmatter is what makes it sink.
+				memoryIndex.invalidate(m.rel);
+			}
 		}
 
 		const indexed = reindex();

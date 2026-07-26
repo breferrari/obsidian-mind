@@ -390,6 +390,7 @@ flowchart TB
     Caller["mcp-caller.ts<br/>identity · sanitise · audit log"]
     Bridge["mcp-memory-bridge.ts<br/>memory ↔ vault seam"]
     Capture["mcp-capture.ts<br/>record_work filing"]
+    Idx["memory-index.ts<br/>parse cache over the store"]
     subgraph Core["Memory core — no MCP knowledge at all"]
         MW["memory-write.ts"]
         MR["memory-recall.ts"]
@@ -408,7 +409,9 @@ flowchart TB
     Server --> Graph
     Server --> Bridge
     Server --> Capture
+    Server --> Idx
     Server --> Core
+    Idx --> Core
     Graph --> Exp
     Qmd --> Exp
     Bridge --> Core
@@ -624,6 +627,30 @@ Three properties in that path each closed a real defect:
 - **Relevance orders within groups, never across the supersession boundary.** Reordering by relevance alone puts a corrected-away fact above the correction that replaced it, which is the one thing supersession exists to prevent.
 
 A missing index degrades *ordering*, never availability. "The vault knows nothing" is not an acceptable answer to a wiring problem.
+
+### Reading the store without re-reading it
+
+`recall` and the duplicate scan read the same files and parse the same frontmatter, once per call each. That is linear in the store, and it runs on every recall and every write. `memory-index.ts` caches the **parse** — and only the parse.
+
+```mermaid
+flowchart TB
+    Call["recall, or the duplicate scan"] --> List["list the store<br/>every call"]
+    List --> Stat["stat each file<br/>every call"]
+    Stat --> Q{"size AND mtime<br/>unchanged?"}
+    Q -->|yes| Hit["reuse the parsed entry"]
+    Q -->|no| Read["read + parse, then cache it"]
+    Hit --> Out["entries"]
+    Read --> Out
+    Gone["a file that vanished"] --> Drop["dropped from the cache,<br/>so it tracks the store"]
+```
+
+The listing and the stat happen on **every** call. Only re-reading and re-parsing an unchanged file is skipped, which is what makes this safe on the duplicate path: a memory written a second ago is always seen, and a stale view there would admit a duplicate permanently, because nothing downstream re-checks.
+
+Size *and* mtime, because either alone is weak — some filesystems keep mtime to a whole second, and supersession rewrites frontmatter in place, which can preserve length. Writers also invalidate explicitly, so correctness never rests on timestamp resolution.
+
+**It is deliberately in-process, not on disk.** Measured, these walks are a minority of a queried recall — the local query embedding dominates — so persisting the index buys a fraction of one operation while adding a file that can rot, disagree with the store, or need migrating in every vault that ever installed the template. The server is long-lived per repo, so every call after the first is warm and a cold start costs what it always did.
+
+The same reasoning trimmed a second cost. Four call sites inspected only a note's frontmatter — is it private, what is its description, what are its aliases, was it agent-written — and each read the **whole file** to look at its first kilobyte. `visibleFiles` does that for every note it enumerates, on every search, expand and write, so the cost scaled with the vault's total **bytes**: one long reference note made every unrelated call slower. `read-head.ts` reads a bounded prefix instead, preserving the exact string the old expression produced.
 
 ### The write path
 

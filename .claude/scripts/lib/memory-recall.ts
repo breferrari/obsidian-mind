@@ -27,6 +27,12 @@ import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { MEMORY_ROOT } from "./memory-write.ts";
 
+/**
+ * The `source:` value that marks a file as agent-written. A note in the store
+ * without it is somebody's own note and is left alone.
+ */
+export const MEMORY_SOURCE = "mcp-capture";
+
 export interface Facets {
 	readonly scope: string;
 	readonly projects: string[];
@@ -267,29 +273,31 @@ function safeDirs(dir: string): string[] {
 }
 
 /**
- * Load every memory visible to this caller, ranked.
+ * Parse one file from the store.
  *
- * `explain` attaches the visibility reason to each entry AND returns the
- * withheld ones with theirs — used to prove a memory was excluded deliberately
- * rather than missed by accident.
+ * The single parse implementation, so the cache in `memory-index.ts` and a cold
+ * read cannot drift into producing different entries from the same bytes.
  */
-export function recall(
-	vaultRoot: string,
-	caller: Caller,
-	opts?: { root?: string; explain?: false },
-): MemoryEntry[];
-export function recall(
-	vaultRoot: string,
-	caller: Caller,
-	opts: { root?: string; explain: true },
-): { visible: MemoryEntry[]; withheld: MemoryEntry[] };
-export function recall(
-	vaultRoot: string,
-	caller: Caller,
-	{ root = MEMORY_ROOT, explain = false }: { root?: string; explain?: boolean } = {},
-): MemoryEntry[] | { visible: MemoryEntry[]; withheld: MemoryEntry[] } {
-	const visible: MemoryEntry[] = [];
-	const withheld: MemoryEntry[] = [];
+export function parseMemory(rel: string, full: string, md: string): MemoryEntry {
+	const heading = md.match(/^#\s+(.+)$/m);
+	return {
+		rel,
+		full,
+		facets: facetsOf(parseFrontmatter(md)),
+		title: heading ? (heading[1] ?? "").trim() : null,
+		// The body travels with the entry. A caller past the visibility rule has
+		// earned the content, and the memory root is not in the resource-exposure
+		// list anyway — so a pointer-only result hands back a path it cannot open.
+		body: md
+			.replace(/^---[\s\S]*?\r?\n---\r?\n/, "")
+			.replace(/^#\s+.*$/m, "")
+			.trim(),
+	};
+}
+
+/** Read and parse the whole store. The uncached path. */
+export function readMemories(vaultRoot: string, root: string = MEMORY_ROOT): MemoryEntry[] {
+	const out: MemoryEntry[] = [];
 	for (const file of listMemoryFiles(vaultRoot, root)) {
 		let md: string;
 		try {
@@ -297,15 +305,49 @@ export function recall(
 		} catch {
 			continue; // an unreadable file must not take down retrieval
 		}
-		const fm = parseFrontmatter(md);
+		out.push(parseMemory(file.rel, file.full, md));
+	}
+	return out;
+}
+
+/**
+ * Load every memory visible to this caller, ranked.
+ *
+ * `explain` attaches the visibility reason to each entry AND returns the
+ * withheld ones with theirs — used to prove a memory was excluded deliberately
+ * rather than missed by accident.
+ *
+ * `entries` supplies an already-parsed store, which is how the server avoids
+ * re-reading every file on every call. Omitted, this reads from disk exactly as
+ * before — the caching decision belongs to the caller that owns a lifetime, not
+ * to a function a test drives once.
+ */
+export function recall(
+	vaultRoot: string,
+	caller: Caller,
+	opts?: { root?: string; explain?: false; entries?: readonly MemoryEntry[] },
+): MemoryEntry[];
+export function recall(
+	vaultRoot: string,
+	caller: Caller,
+	opts: { root?: string; explain: true; entries?: readonly MemoryEntry[] },
+): { visible: MemoryEntry[]; withheld: MemoryEntry[] };
+export function recall(
+	vaultRoot: string,
+	caller: Caller,
+	{
+		root = MEMORY_ROOT,
+		explain = false,
+		entries,
+	}: { root?: string; explain?: boolean; entries?: readonly MemoryEntry[] } = {},
+): MemoryEntry[] | { visible: MemoryEntry[]; withheld: MemoryEntry[] } {
+	const visible: MemoryEntry[] = [];
+	const withheld: MemoryEntry[] = [];
+	for (const entry of entries ?? readMemories(vaultRoot, root)) {
 		// Only agent-written memories participate; a human note that wandered in
 		// here is left alone rather than silently governed by these rules.
-		if (fm.source !== "mcp-capture") continue;
-		const facets = facetsOf(fm);
-		// The body travels with the entry. A caller past the visibility rule has
-		// earned the content, and the memory root is not in the resource-exposure
-		// list anyway — so a pointer-only result hands back a path it cannot open.
-		const entry: MemoryEntry = { ...file, facets, title: titleOf(md), body: bodyOf(md) };
+		if (entry.facets.source !== MEMORY_SOURCE) continue;
+		const facets = entry.facets;
 		if (isVisibleTo(facets, caller)) {
 			visible.push(explain ? { ...entry, why: visibilityReason(facets, caller) } : entry);
 		} else if (explain) {
@@ -314,17 +356,4 @@ export function recall(
 	}
 	const ranked = rankMemories(visible, caller);
 	return explain ? { visible: ranked, withheld } : ranked;
-}
-
-function titleOf(md: string): string | null {
-	const m = md.match(/^#\s+(.+)$/m);
-	return m ? (m[1] ?? "").trim() : null;
-}
-
-/** The note minus its frontmatter and H1 — the part worth carrying. */
-function bodyOf(md: string): string {
-	return md
-		.replace(/^---[\s\S]*?\r?\n---\r?\n/, "")
-		.replace(/^#\s+.*$/m, "")
-		.trim();
 }

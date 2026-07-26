@@ -16,9 +16,16 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { listMemoryFiles, parseFrontmatter, facetsOf, type Facets } from "./memory-recall.ts";
+import {
+	readMemories,
+	parseFrontmatter,
+	MEMORY_SOURCE,
+	type Facets,
+	type MemoryEntry,
+} from "./memory-recall.ts";
 import { qmdRelKey, vaultRelKey, subQueries, type QmdClient } from "./mcp-qmd-client.ts";
 import type { VisibleFile } from "./mcp-exposure.ts";
+import { readHead } from "./read-head.ts";
 
 const HEAD_BYTES = 1200;
 
@@ -47,12 +54,8 @@ export function resolvableNames(files: readonly VisibleFile[]): Set<string> {
 	const names = new Set<string>();
 	for (const f of files) {
 		names.add(f.label.toLowerCase());
-		let head: string;
-		try {
-			head = readFileSync(f.full, "utf8").slice(0, HEAD_BYTES);
-		} catch {
-			continue; // an unreadable file still contributes its basename
-		}
+		const head = readHead(f.full, HEAD_BYTES);
+		if (head === null) continue; // an unreadable file still contributes its basename
 		const block = head.match(/^aliases:\s*$([\s\S]*?)^(?=\S|---)/m);
 		if (block?.[1]) {
 			for (const line of block[1].split("\n")) {
@@ -72,25 +75,17 @@ export function resolvableNames(files: readonly VisibleFile[]): Set<string> {
 }
 
 /** Load every agent-written memory with its facets, title and body. */
-export function loadMemoryDigests(vaultRoot: string, memoryRoot: string): MemoryDigest[] {
+export function loadMemoryDigests(
+	vaultRoot: string,
+	memoryRoot: string,
+	entries?: readonly MemoryEntry[],
+): MemoryDigest[] {
 	const out: MemoryDigest[] = [];
-	for (const f of listMemoryFiles(vaultRoot, memoryRoot)) {
-		let md: string;
-		try {
-			md = readFileSync(f.full, "utf8");
-		} catch {
-			continue;
-		}
-		const fm = parseFrontmatter(md);
+	for (const m of entries ?? readMemories(vaultRoot, memoryRoot)) {
 		// Only agent-written memories participate. A human note that wandered in
 		// here is left alone rather than silently governed by these rules.
-		if (fm.source !== "mcp-capture") continue;
-		const title = (md.match(/^#\s+(.+)$/m)?.[1] ?? "").trim();
-		const body = md
-			.replace(/^---[\s\S]*?\r?\n---\r?\n/, "")
-			.replace(/^#\s+.*$/m, "")
-			.trim();
-		out.push({ rel: f.rel, full: f.full, title, body, ...facetsOf(fm) });
+		if (m.facets.source !== MEMORY_SOURCE) continue;
+		out.push({ rel: m.rel, full: m.full, title: m.title ?? "", body: m.body, ...m.facets });
 	}
 	return out;
 }

@@ -17,11 +17,12 @@
  * defect this module is shaped to prevent.
  */
 
-import { readFileSync, readdirSync, statSync, lstatSync, existsSync, realpathSync } from "node:fs";
+import { readdirSync, statSync, lstatSync, existsSync, realpathSync } from "node:fs";
 import { join, basename, resolve, sep } from "node:path";
 
 
 import { vaultRelKey } from "./mcp-qmd-client.ts";
+import { readHead } from "./read-head.ts";
 
 /** How deep to walk inside an exposed root. */
 const MAX_DEPTH = 4;
@@ -164,23 +165,17 @@ export function resolveExposure(
  * private".
  */
 export function isPrivate(path: string): boolean {
-	try {
-		const head = readFileSync(path, "utf8").slice(0, HEAD_BYTES);
-		return /^\s*-?\s*private\s*$/m.test(head) || /^private:\s*true/m.test(head);
-	} catch {
-		return true;
-	}
+	const head = readHead(path, HEAD_BYTES);
+	if (head === null) return true;
+	return /^\s*-?\s*private\s*$/m.test(head) || /^private:\s*true/m.test(head);
 }
 
 /** Pull the frontmatter `description:` so a resource list is self-describing. */
 export function firstDescription(path: string, fallback = "Vault note"): string {
-	try {
-		const head = readFileSync(path, "utf8").slice(0, HEAD_BYTES);
-		const m = head.match(/^description:\s*"?(.+?)"?\s*$/m);
-		return m?.[1] ? m[1].slice(0, 200) : fallback;
-	} catch {
-		return fallback;
-	}
+	const head = readHead(path, HEAD_BYTES);
+	if (head === null) return fallback;
+	const m = head.match(/^description:\s*"?(.+?)"?\s*$/m);
+	return m?.[1] ? m[1].slice(0, 200) : fallback;
 }
 
 /**

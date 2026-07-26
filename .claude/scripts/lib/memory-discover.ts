@@ -22,6 +22,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { normalizePath } from "./mcp-caller.ts";
+import { readHead } from "./read-head.ts";
 import { join, relative, sep } from "node:path";
 
 /** Directories never worth walking, in any vault. */
@@ -108,15 +109,12 @@ export function walkMarkdown(root: string, { maxDepth = MAX_DEPTH }: { maxDepth?
 	return out;
 }
 
-/** Cheap frontmatter probe — reads only the head of a file. */
+/** Cheap frontmatter probe — reads only the head of a file, not all of it. */
 export function probeFrontmatter(full: string, bytes = 800): string | null {
-	try {
-		const head = readFileSync(full, "utf8").slice(0, bytes);
-		const m = head.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-		return m ? (m[1] ?? null) : null;
-	} catch {
-		return null;
-	}
+	const head = readHead(full, bytes);
+	if (head === null) return null;
+	const m = head.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+	return m ? (m[1] ?? null) : null;
 }
 
 /**
