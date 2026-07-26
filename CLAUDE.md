@@ -324,6 +324,8 @@ This is the part worth understanding, and it is what the layer is for. Every mem
 
 A reader never widens what the writer declared, so a sibling app on the same platform does not inherit another app's project-scoped constraints. `recall` with `explain: true` reports why each memory was shown and how many were withheld.
 
+**A repo is identified by its folder name**, which is usually right and occasionally not: two repos both called `api` share one identity, so each receives the other's memories. Write a distinct name into a `.om-project` file at the repo root to separate them — `health` reports which repo it thinks is calling and where that name came from.
+
 ### Which notes the server serves
 
 Your vault, your notes, your session. The default is the vault's own `user_content_roots`, at the granularity it declares them (`work/active/`, not all of `work/`). Set `mcp_exposed_roots` only if this vault holds material that is **not yours to share** — employer-confidential notes, a client's data.

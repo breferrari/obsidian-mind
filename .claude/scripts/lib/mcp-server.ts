@@ -27,7 +27,7 @@ import {
 } from "./mcp-exposure.ts";
 import { expandNote } from "./mcp-graph.ts";
 import { qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
-import { callerProject, isVaultItself } from "./mcp-caller.ts";
+import { callerProject, callerProjectSource, isVaultItself, PROJECT_MARKER } from "./mcp-caller.ts";
 import { callerPlatforms, loadMemoryDigests, resolvableNames } from "./mcp-memory-bridge.ts";
 import { captureNote } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
@@ -358,7 +358,10 @@ export function createHandlers(deps: ServerDeps): Handlers {
 						"    If that is not deliberate, unset it — everything below describes the OTHER vault.",
 					]
 				: []),
-			`Caller: ${who.project ?? "ANONYMOUS (no MCP roots — only general-scope memories are visible)"}`,
+			`Caller: ${who.project ?? "ANONYMOUS (no MCP roots — only general-scope memories are visible)"}${who.project ? ` (from the ${callerProjectSource(session.roots) === "declared" ? PROJECT_MARKER + " file" : "folder name"})` : ""}`,
+			...(who.project && callerProjectSource(session.roots) === "folder"
+				? [`  Another repo with this folder name would share this identity. Write a distinct name into ${PROJECT_MARKER} to separate them.`]
+				: []),
 			`Platforms: ${who.platforms.length ? who.platforms.join(", ") : "(none declared)"}`,
 			`Memory root: ${h.memory.root}/ (${h.memory.memories} memor${h.memory.memories === 1 ? "y" : "ies"}, ${h.memory.source})`,
 			`Exposed roots: ${policy.roots.join(", ") || "(none)"} [${policy.source}]`,

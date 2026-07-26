@@ -41,3 +41,4 @@ node_modules/
 # text. Local forensics, never history: it churns on every session, and the
 # query strings are the user's own thinking.
 .claude/om-mcp-audit.jsonl
+.claude/om-mcp-audit.jsonl.1

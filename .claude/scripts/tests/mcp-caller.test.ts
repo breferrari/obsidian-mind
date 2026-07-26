@@ -12,15 +12,17 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, dirname, basename } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
 	normalizePath,
 	rootToPath,
 	callerProject,
+	callerProjectSource,
+	PROJECT_MARKER,
 	isVaultItself,
 	sanitize,
 	createAuditor,
@@ -91,6 +93,36 @@ describe("reading the caller's identity from roots", () => {
 
 	test("the first root wins when a session has several", () => {
 		assert.equal(callerProject([root("file:///C:/Dev/atlas"), root("file:///C:/Dev/other")]), "atlas");
+	});
+
+	test("a repo can declare its own identity, which separates same-named repos", () => {
+		// Two repos both called `api` otherwise share an identity, so each
+		// receives the other's memories — a relevance failure, not a security one.
+		const dir = mkdtempSync(join(tmpdir(), "marker-"));
+		try {
+			const uri = pathToFileURL(dir).href;
+			assert.equal(callerProject([root(uri)]), basename(dir).toLowerCase(), "folder name by default");
+			assert.equal(callerProjectSource([root(uri)]), "folder");
+
+			writeFileSync(join(dir, PROJECT_MARKER), "# which api is this\nbilling-api\n", "utf8");
+			assert.equal(callerProject([root(uri)]), "billing-api");
+			assert.equal(callerProjectSource([root(uri)]), "declared");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a declared identity cannot smuggle in a path or junk", () => {
+		const dir = mkdtempSync(join(tmpdir(), "marker2-"));
+		try {
+			const uri = pathToFileURL(dir).href;
+			for (const bad of ["../escape", "a/b", "with spaces", "", "   "]) {
+				writeFileSync(join(dir, PROJECT_MARKER), bad, "utf8");
+				assert.equal(callerProject([root(uri)]), basename(dir).toLowerCase(), `refused: ${JSON.stringify(bad)}`);
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -253,6 +285,30 @@ describe("the audit log", () => {
 		// A control that can take the server down is a liability, not a control.
 		const audit = createAuditor(join("Z:", "definitely", "not", "here.jsonl"), () => "x");
 		assert.doesNotThrow(() => audit("search", { query: "q" }));
+	});
+
+	test("the log rotates instead of growing without bound", () => {
+		withDir((dir) => {
+			const log = join(dir, "audit.jsonl");
+			const audit = createAuditor(log, () => "atlas", () => "2026-07-26T00:00:00Z", 400);
+			for (let i = 0; i < 40; i++) audit("search", { query: `query number ${i} with some padding` });
+			assert.ok(existsSync(`${log}.1`), "a rotated generation must exist");
+			assert.ok(readFileSync(log, "utf8").length < 400 * 3, "the live log stays bounded");
+			// The most recent entry is still in the live file, not lost to rotation.
+			assert.match(readFileSync(log, "utf8"), /query number 39/);
+		});
+	});
+
+	test("rotation never breaks the write", () => {
+		withDir((dir) => {
+			const log = join(dir, "audit.jsonl");
+			const audit = createAuditor(log, () => "atlas", () => "t", 1);
+			assert.doesNotThrow(() => {
+				audit("a");
+				audit("b");
+				audit("c");
+			});
+		});
 	});
 
 	test("the log lands inside the vault, where the repo can ignore it", () => {

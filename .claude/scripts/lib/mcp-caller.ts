@@ -8,7 +8,7 @@
  * empty vault.
  */
 
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,20 +54,53 @@ export function rootToPath(uri: unknown): string {
 	}
 }
 
+/** Where a repo may declare its own project name, overriding the folder name. */
+export const PROJECT_MARKER = ".om-project";
+
 /**
- * The calling repo's name, used as its project identity: the last segment of
- * the first root. A convention rather than a guarantee — two repos sharing a
- * folder name collide.
+ * The calling repo's project identity.
+ *
+ * The folder name by default. A repo can override that by writing a single
+ * line into `.om-project`, which is what resolves the one real failure here:
+ * two repos both called `api` otherwise share an identity, so each receives
+ * the other's memories. Declaring a distinct name in either repo separates
+ * them, and nothing changes for anyone who does not hit the collision.
  */
 export function callerProject(roots: readonly Root[]): string | null {
 	const first = roots[0];
 	if (!first) return null;
-	const seg = rootToPath(first.uri)
-		.replace(/\/+$/, "")
-		.split(/[\\/]/)
-		.filter(Boolean)
-		.pop();
+	const root = rootToPath(first.uri).replace(/\/+$/, "");
+
+	const declared = readProjectMarker(root);
+	if (declared) return declared;
+
+	const seg = root.split(/[\\/]/).filter(Boolean).pop();
 	return seg ? seg.toLowerCase() : null;
+}
+
+/** How the identity was decided, so `health` can explain itself. */
+export function callerProjectSource(roots: readonly Root[]): "declared" | "folder" | "none" {
+	const first = roots[0];
+	if (!first) return "none";
+	const root = rootToPath(first.uri).replace(/\/+$/, "");
+	if (readProjectMarker(root)) return "declared";
+	return root.split(/[\\/]/).filter(Boolean).length ? "folder" : "none";
+}
+
+function readProjectMarker(root: string): string | null {
+	try {
+		const raw = readFileSync(join(root, PROJECT_MARKER), "utf8")
+			.split("\n")
+			.map((l) => l.trim())
+			.find((l) => l && !l.startsWith("#"));
+		if (!raw) return null;
+		// Same shape as a folder name, so a declared identity cannot smuggle in a
+		// path segment or anything the scope rule would compare oddly.
+		const name = raw.toLowerCase();
+		return /^[\w.-]+$/.test(name) ? name : null;
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -109,10 +142,14 @@ export interface AuditEntry {
  * Append-only log of what each caller read. Write failures are swallowed: the
  * log must never be able to break the server.
  */
+/** Rotate at 5MB — roughly a year of ordinary use, kept for one generation. */
+export const AUDIT_MAX_BYTES = 5 * 1024 * 1024;
+
 export function createAuditor(
 	logPath: string,
 	getCaller: () => string | null,
 	now: () => string = () => new Date().toISOString(),
+	maxBytes: number = AUDIT_MAX_BYTES,
 ): (action: string, detail?: Record<string, unknown>) => void {
 	let ensured = false;
 	return (action, detail = {}) => {
@@ -120,6 +157,13 @@ export function createAuditor(
 			if (!ensured) {
 				mkdirSync(dirname(logPath), { recursive: true });
 				ensured = true;
+			}
+			// One generation kept, then dropped. An append-only log with no bound
+			// grows for the life of the vault, and this one records a line per read.
+			try {
+				if (statSync(logPath).size >= maxBytes) renameSync(logPath, `${logPath}.1`);
+			} catch {
+				/* absent, or a rotation that lost a race — either way, keep writing */
 			}
 			// Detail spreads first so the authoritative fields win: a tool argument
 			// named `caller` must not be able to forge the recorded identity.
