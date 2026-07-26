@@ -216,6 +216,48 @@ describe("the identity handshake", () => {
 		assert.equal(s.project, "beacon");
 	});
 
+	test("a request during a roots REFRESH waits for the new identity", async () => {
+		// The stale-identity race, one step later in the lifecycle than the first
+		// one. Identity was already established, so identityReady() returned
+		// immediately and a call arriving between the list_changed notification
+		// and the roots reply was served as the PREVIOUS project — the wrong
+		// scope, silently.
+		const served: string[] = [];
+		const { s, sent } = session({
+			"tools/call": async (id) => {
+				await s.identityReady();
+				served.push(String(s.project));
+				s.ok(id, {});
+			},
+		});
+		await s.handleLine(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
+		const first = sent.find((m) => m.method === "roots/list");
+		await s.handleLine(JSON.stringify({ jsonrpc: "2.0", id: first!.id, result: { roots: [{ uri: ROOT }] } }));
+		assert.equal(s.project, "atlas");
+
+		// Client says the roots changed; a call races the re-fetch.
+		await s.handleLine(JSON.stringify({ jsonrpc: "2.0", method: "notifications/roots/list_changed" }));
+		const pending = s.handleLine(JSON.stringify({ jsonrpc: "2.0", id: 42, method: "tools/call" }));
+		const second = sent.filter((m) => m.method === "roots/list")[1];
+		await s.handleLine(
+			JSON.stringify({ jsonrpc: "2.0", id: second!.id, result: { roots: [{ uri: "file:///C:/Dev/beacon" }] } }),
+		);
+		await pending;
+		assert.deepEqual(served, ["beacon"], "must be served as the NEW project, never the old one");
+	});
+
+	test("a refresh the client never answers still releases, as anonymous-ish", async () => {
+		// The cap has to apply to the refresh gate too, or a client that announces
+		// a change and never answers hangs every subsequent call.
+		const { s, sent } = session({}, 30);
+		await s.handleLine(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
+		const first = sent.find((m) => m.method === "roots/list");
+		await s.handleLine(JSON.stringify({ jsonrpc: "2.0", id: first!.id, result: { roots: [{ uri: ROOT }] } }));
+		await s.handleLine(JSON.stringify({ jsonrpc: "2.0", method: "notifications/roots/list_changed" }));
+		await s.identityReady(); // must not hang
+		assert.equal(s.project, "atlas", "the last known identity stands rather than going blank");
+	});
+
 	test("the onIdentified hook fires with the roots", async () => {
 		const seen: string[] = [];
 		const sent: Sent[] = [];

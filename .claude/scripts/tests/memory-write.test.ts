@@ -128,20 +128,25 @@ describe("scope narrowing", () => {
 		assert.equal(r.downgraded_from, "general");
 	});
 
-	test("general + nothing named, inside a repo, attributes to the origin", () => {
-		const r = narrowScope({ scope: "general", projects: [], origin: "pocket" });
-		assert.deepEqual(r.projects, ["pocket"]);
-		assert.equal(r.downgraded_from, "general");
-	});
-
-	test("general survives only when there is no origin to attribute to", () => {
-		const r = narrowScope({ scope: "general", projects: [], origin: null });
-		assert.equal(r.scope, "general");
-		assert.equal(r.downgraded_from, null);
+	test("general naming nothing STANDS, with or without an origin", () => {
+		// Regression. An earlier version attributed this case to the origin repo,
+		// so every general memory silently became project-scoped to whoever wrote
+		// it and the general tier was UNREACHABLE through the server — while the
+		// reader, the tool schema, the Base view and the docs all still described
+		// it. Found by an adversarial run in which five of six callers could not
+		// see a memory explicitly written as general.
+		for (const origin of ["pocket", null]) {
+			const r = narrowScope({ scope: "general", projects: [], origin });
+			assert.equal(r.scope, "general", `origin=${origin}`);
+			assert.deepEqual(r.projects, []);
+			assert.equal(r.downgraded_from, null);
+		}
 	});
 
 	test("a downgrade is recorded in the note, not hidden", () => {
-		const v = validateMemory({ ...OK, scope: "general" }, { now: DAY, origin: "pocket" });
+		// The surviving downgrade: general WITH named projects is scoped to them
+		// by the caller's own admission.
+		const v = validateMemory({ ...OK, scope: "general", projects: ["pocket"] }, { now: DAY, origin: "pocket" });
 		const md = renderMemory(v.value!, []);
 		assert.equal(fmValue(md, "claimed_scope"), "general");
 	});

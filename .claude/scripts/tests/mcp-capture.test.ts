@@ -116,12 +116,24 @@ describe("resolving the destination", () => {
 		});
 	});
 
-	test("a traversal that starts inside an exposed root is still refused", () => {
+	test("a traversal that starts inside an exposed root is refused", () => {
 		withVault((dir) => {
 			assert.throws(
 				() => resolveDestination(dir, POLICY, {}, "atlas", "brain/../../elsewhere", "note"),
-				/escapes the vault/,
+				/traversal segment/,
 			);
+		});
+	});
+
+	test("a traversal that lands back INSIDE the vault is still refused", () => {
+		// The one that got through. `brain/../work` passes the first-segment root
+		// check and resolves to a path still inside the vault, so a containment
+		// test against the vault accepted it — and a capture landed in the fenced
+		// work/ folder. Containment has to be against the DECLARED ROOT.
+		withVault((dir) => {
+			for (const escape of ["brain/../work", "brain/../../vault/work", "brain/./../org", "projects/../perf"]) {
+				assert.throws(() => resolveDestination(dir, POLICY, {}, "atlas", escape, "note"), /refused/, escape);
+			}
 		});
 	});
 

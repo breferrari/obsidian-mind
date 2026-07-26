@@ -18,7 +18,7 @@
  * help someone working in a different repo?*
  */
 
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, copyFileSync, unlinkSync, constants } from "node:fs";
 import { join, dirname } from "node:path";
 
 /** Vault-relative root for every memory. The whole write fence is this prefix. */
@@ -90,6 +90,10 @@ export function slugify(title: unknown): string {
 		.replace(/[\u0300-\u036f]/g, "")
 		.replace(/[<>:"|?*\u0000-\u001f]/g, " ")
 		.replace(/[/\\]/g, " ")
+		// Square brackets go too. A title carrying `[[Something]]` otherwise
+		// produces a file literally named `... [[Something]].md`, which reads as a
+		// wikilink embedded in a filename and confuses every surface showing it.
+		.replace(/[[\]]/g, " ")
 		.replace(/\.{2,}/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();
@@ -160,11 +164,21 @@ export function narrowScope(input: {
 	if (claimed === "general" && named.length > 0) {
 		return { scope: "project", projects: named, downgraded_from: "general" };
 	}
-	// `general` from inside a known repo, naming nothing: attribute it to the
-	// origin rather than letting one session speak for the whole vault.
-	if (claimed === "general" && named.length === 0 && origin) {
-		return { scope: "project", projects: [origin], downgraded_from: "general" };
-	}
+	// `general` naming nothing STANDS.
+	//
+	// An earlier revision narrowed this to the origin repo, reasoning that one
+	// session should not speak for the whole vault. The effect was that `general`
+	// became UNREACHABLE through the server — every caller has an origin, so
+	// every general memory silently became project-scoped to whoever wrote it.
+	// The tier stayed in the reader, the tool schema, the Base view and the docs,
+	// and nothing could ever produce it.
+	//
+	// It also contradicted the rule immediately above: general is honest exactly
+	// WHEN no project is named, and this narrowed precisely that case. Declared
+	// reach is the design; silently overriding an explicit declaration is not a
+	// narrowing, it is a different memory. Over-claiming is answered by the
+	// contract's warnings and by `origin` being recorded as evidence, not by
+	// rewriting what the caller said.
 	if (claimed === "project" && named.length === 0 && origin) {
 		return { scope: "project", projects: [origin], downgraded_from: null };
 	}
@@ -174,6 +188,40 @@ export function narrowScope(input: {
 // ---------------------------------------------------------------------------
 // Link resolution
 // ---------------------------------------------------------------------------
+
+/**
+ * Neutralise wikilinks in free text that point at notes which do not exist.
+ *
+ * `resolveLinks` below governs the `links:` ARRAY. This governs the BODY, and it
+ * is needed for the same reason with a sharper consequence: a broken wikilink
+ * anywhere in a note trips the vault's own wikilink gate, so an agent writing
+ * `[[Some Note]]` from another repo can turn the user's test suite red in a
+ * repository it has never seen.
+ *
+ * Neutralised rather than refused, and reported rather than silent. The text
+ * survives as plain words — `[[Ghost]]` becomes `Ghost`, `[[Ghost|shown]]`
+ * becomes `shown` — so the meaning is kept while the dangling edge is not
+ * created. Refusing the whole write would throw away a good memory over a
+ * formatting detail; writing it unchanged degrades the graph silently.
+ */
+export function neutralizeWikilinks(
+	text: unknown,
+	resolvableSet: ReadonlySet<string>,
+): { text: string; dropped: string[] } {
+	const dropped: string[] = [];
+	const out = String(text ?? "").replace(
+		/\[\[([^\]|#]+)((?:[#|][^\]]*)?)\]\]/g,
+		(whole, rawTarget: string, suffix: string) => {
+			const target = rawTarget.trim();
+			if (resolvableSet.has(target.toLowerCase())) return whole;
+			if (!dropped.includes(target)) dropped.push(target);
+			// Prefer the alias, which is what a human was meant to read.
+			const alias = suffix.startsWith("|") ? suffix.slice(1).trim() : "";
+			return alias || target;
+		},
+	);
+	return { text: out, dropped };
+}
 
 /**
  * Resolve proposed wikilink targets against names that actually exist.
@@ -505,27 +553,56 @@ export function renderMemory(value: MemoryValue, links: readonly string[] = []):
  * day with the same title would otherwise silently overwrite, and the loser is
  * unrecoverable. Suffix rather than clobber.
  */
+/** Per-process counter, so two in-flight writes cannot share a temp name. */
+let tmpSeq = 0;
+
 export function writeMemory(
 	vaultRoot: string,
 	value: MemoryValue,
 	links: readonly string[],
 	{ root = MEMORY_ROOT }: { root?: string } = {},
 ): { rel: string; full: string } {
-	let rel = memoryPath(value.date, value.title, root);
-	let full = join(vaultRoot, rel);
+	const base = memoryPath(value.date, value.title, root).replace(/\.md$/, "");
+	const dir = dirname(join(vaultRoot, `${base}.md`));
+	mkdirSync(dir, { recursive: true });
+	const body = renderMemory(value, links);
 
-	let n = 2;
-	while (existsSync(full)) {
-		const base = memoryPath(value.date, value.title, root).replace(/\.md$/, "");
-		rel = `${base} (${n}).md`;
-		full = join(vaultRoot, rel);
-		n++;
-		if (n > 50) throw new Error("too many same-titled memories on one day");
+	// ATOMIC CLAIM, not check-then-write.
+	//
+	// The obvious loop — `while (existsSync(x)) bump(x); writeFileSync(x)` — is a
+	// TOCTOU race, and this is not theoretical: the deployment shape is one
+	// server process PER CONSUMING REPO, all writing into one vault. Six
+	// processes recording the same lesson title at the same moment produced four
+	// files and six success messages. Two memories were lost silently, which is
+	// the worst possible outcome for a layer whose entire job is not losing them.
+	//
+	// `COPYFILE_EXCL` fails instead of clobbering, so the loser simply takes the
+	// next suffix. The temp file also means a crash mid-write cannot leave a
+	// half-note for the indexer to pick up.
+	// The temp name carries the pid AND a per-call counter: one process can have
+	// two writes to the same title in flight, and a shared temp name would let
+	// them overwrite each other before either claimed a final name.
+	const tmp = join(dir, `.om-${process.pid}-${++tmpSeq}.tmp`);
+	writeFileSync(tmp, body, "utf8");
+	try {
+		for (let n = 1; n <= 50; n++) {
+			const rel = n === 1 ? `${base}.md` : `${base} (${n}).md`;
+			const full = join(vaultRoot, rel);
+			try {
+				copyFileSync(tmp, full, constants.COPYFILE_EXCL);
+				return { rel, full };
+			} catch (e) {
+				if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
+			}
+		}
+		throw new Error("too many same-titled memories on one day");
+	} finally {
+		try {
+			unlinkSync(tmp);
+		} catch {
+			/* temp cleanup is best-effort */
+		}
 	}
-
-	mkdirSync(dirname(full), { recursive: true });
-	writeFileSync(full, renderMemory(value, links), "utf8");
-	return { rel, full };
 }
 
 /** Read back what was written — used by tests and the post-write self-check. */

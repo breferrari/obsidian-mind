@@ -67,6 +67,8 @@ export class McpSession {
 	#rootsRequestId: number | null = null;
 	#nextServerId = SERVER_ID_BASE;
 	#identified = false;
+	#refresh: Promise<void> | null = null;
+	#resolveRefresh: (() => void) | null = null;
 	#resolveIdentity!: () => void;
 	readonly #identityKnown: Promise<void>;
 
@@ -100,7 +102,15 @@ export class McpSession {
 	 * the safe degradation. Hanging would be worse than being unhelpful.
 	 */
 	identityReady(): Promise<void> {
+		// A refresh in flight is awaited even though identity is already known:
+		// answering now would answer for whoever the caller USED to be.
+		if (this.#refresh) return this.#bounded(this.#refresh);
 		if (this.#identified) return Promise.resolve();
+		return this.#bounded(this.#identityKnown);
+	}
+
+	/** Await `p`, or give up after the cap. Resolves either way. */
+	#bounded(p: Promise<void>): Promise<void> {
 		return new Promise<void>((res) => {
 			// The timer is deliberately NOT unref'd: it is the only thing keeping
 			// this wait alive, and an unref'd one lets the loop drain with the
@@ -111,13 +121,27 @@ export class McpSession {
 				clearTimeout(timer);
 				res();
 			};
-			this.#identityKnown.then(settle, settle);
+			p.then(settle, settle);
 		});
 	}
 
-	/** Ask the client who it is. */
+	/**
+	 * Ask the client who it is.
+	 *
+	 * A REFRESH (triggered by `notifications/roots/list_changed`) opens a pending
+	 * gate. Without it, `identityReady()` returned immediately because identity
+	 * was already established, so a tool call arriving between the notification
+	 * and the reply was served under the STALE identity — the wrong project, and
+	 * therefore the wrong scope. Same class as the original first-listing race,
+	 * one step later in the lifecycle.
+	 */
 	requestRoots(): void {
 		this.#rootsRequestId = ++this.#nextServerId;
+		if (this.#identified && !this.#refresh) {
+			this.#refresh = new Promise<void>((res) => {
+				this.#resolveRefresh = res;
+			});
+		}
 		this.#send({ jsonrpc: "2.0", id: this.#rootsRequestId, method: "roots/list" });
 	}
 
@@ -191,6 +215,10 @@ export class McpSession {
 		this.#roots = Array.isArray(result?.roots) ? (result.roots as Root[]) : [];
 		this.#identified = true;
 		this.#resolveIdentity();
+		// Close the refresh gate: the new roots are in hand.
+		this.#resolveRefresh?.();
+		this.#refresh = null;
+		this.#resolveRefresh = null;
 		this.#onIdentified?.(this.#roots);
 
 		// Belt-and-braces for clients that DO re-fetch on this notification.

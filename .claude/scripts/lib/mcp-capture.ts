@@ -136,10 +136,20 @@ export function resolveDestination(
 		if (!policy.roots.some((r) => r.toLowerCase() === root.toLowerCase())) {
 			throw new Error(`refused: "${root}" is not an exposed root (allowed: ${policy.roots.join(", ")})`);
 		}
+		// No traversal segments at all. Checking containment against the VAULT is
+		// not enough: `brain/../work` passes the root check on its first segment
+		// and resolves to a path still inside the vault, so an earlier version
+		// wrote into the fenced `work/` folder. Verified doing exactly that.
+		if (rel.split(/[\\/]/).some((seg) => seg === "..")) {
+			throw new Error(`refused: "${folder}" contains a traversal segment`);
+		}
 		const dir = resolve(join(vaultRoot, rel));
-		// Containment: the root check passes on the first segment, but the rest of
-		// the path could still climb out.
-		if (!dir.startsWith(resolve(vaultRoot) + sep)) throw new Error("refused: path escapes the vault");
+		// Containment against the DECLARED ROOT, not merely the vault — the fence
+		// is per-folder, so "inside the vault" is the wrong question.
+		const rootDir = resolve(join(vaultRoot, root));
+		if (dir !== rootDir && !dir.startsWith(rootDir + sep)) {
+			throw new Error(`refused: "${folder}" escapes the "${root}" root`);
+		}
 		return { dir, rel, project: null, routed: "caller" };
 	}
 

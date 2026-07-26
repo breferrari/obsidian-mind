@@ -24,11 +24,21 @@ export interface Root {
 	readonly name?: string;
 }
 
-/** Normalise a path for comparison: separators, trailing slash, case. */
+/**
+ * Normalise a path for comparison: separators, trailing slash, case, and the
+ * leading slash a drive-letter path picks up when a Windows-shaped `file://`
+ * URI is parsed somewhere without a drive concept.
+ *
+ * That last one is not hypothetical. `fileURLToPath("file:///C:/x")` returns
+ * `C:\x` on Windows and `/C:/x` on POSIX, so the same root URI compares
+ * unequal to the same vault depending on which platform did the parsing.
+ * Comparison must not depend on that.
+ */
 export function normalizePath(x: unknown): string {
 	return String(x ?? "")
 		.split("\\")
 		.join("/")
+		.replace(/^\/(?=[A-Za-z]:)/, "")
 		.replace(/\/+$/, "")
 		.toLowerCase();
 }

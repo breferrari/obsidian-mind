@@ -33,7 +33,7 @@ import { captureNote } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
 import { recall, type MemoryEntry } from "./memory-recall.ts";
-import { validateMemory, writeMemory, renderMemory, resolveLinks } from "./memory-write.ts";
+import { validateMemory, writeMemory, renderMemory, resolveLinks, neutralizeWikilinks } from "./memory-write.ts";
 import { findSimilar } from "./memory-similarity.ts";
 import { markSuperseded, resolveSupersedes } from "./memory-supersede.ts";
 import { health } from "./memory-discover.ts";
@@ -202,7 +202,21 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		}
 
 		const who = caller();
-		const v = validateMemory(args, { now: now(), origin: who.project });
+		const resolvable = resolvableNames(visibleFiles(ctx.vaultRoot, policy));
+
+		// Neutralise dangling wikilinks in the TITLE and BODY before validation, so
+		// what is checked is what will be written. An agent in another repo writing
+		// `[[Some Note]]` would otherwise turn the vault's own wikilink gate red.
+		// The title matters as much as the body and was missed first time round:
+		// it becomes the H1 *and* the filename, so a dangling link there is both a
+		// broken edge and a file called `... [[Ghost Link]].md`.
+		const titleLinks = neutralizeWikilinks((args as { title?: unknown }).title, resolvable);
+		const bodyLinks = neutralizeWikilinks((args as { body?: unknown }).body, resolvable);
+		const unlinked = [...new Set([...titleLinks.dropped, ...bodyLinks.dropped])];
+		const v = validateMemory(
+			{ ...args, title: titleLinks.text, body: bodyLinks.text },
+			{ now: now(), origin: who.project },
+		);
 		if (!v.ok || !v.value) {
 			return `Refused:\n${v.errors.map((e) => `- ${e}`).join("\n")}`;
 		}
@@ -226,7 +240,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			}
 		}
 
-		const { resolved, dropped } = resolveLinks(args.links, resolvableNames(visibleFiles(ctx.vaultRoot, policy)));
+		const { resolved, dropped } = resolveLinks(args.links, resolvable);
 		const supers = resolveSupersedes(args.supersedes, digests);
 
 		if (args.dry_run === true) {
@@ -235,6 +249,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				"",
 				renderMemory(v.value, resolved),
 				...(dropped.length ? ["", `Links dropped as unresolvable: ${dropped.join(", ")}`] : []),
+				...(unlinked.length ? [`Dangling wikilinks were unlinked: ${unlinked.join(", ")}`] : []),
 				...(supers.unmatched.length ? [`Supersedes not matched: ${supers.unmatched.join(", ")}`] : []),
 				...(v.warnings.length ? ["", "Warnings:", ...v.warnings.map((w) => `- ${w}`)] : []),
 			].join("\n");
@@ -256,6 +271,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			...(retired.length ? [`Superseded: ${retired.join("; ")} (kept and back-linked)`] : []),
 			...(supers.unmatched.length ? [`Supersedes NOT matched: ${supers.unmatched.join(", ")}`] : []),
 			...(dropped.length ? [`Links dropped as unresolvable: ${dropped.join(", ")}`] : []),
+			...(unlinked.length ? [`Dangling wikilinks were unlinked: ${unlinked.join(", ")}`] : []),
 			...(v.warnings.length ? ["", "Warnings:", ...v.warnings.map((w) => `- ${w}`)] : []),
 			...(indexed ? [] : ["", "NOTE: the search index could not be refreshed, so this memory may not be findable by query yet."]),
 		].join("\n");

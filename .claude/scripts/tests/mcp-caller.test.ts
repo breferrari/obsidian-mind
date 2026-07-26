@@ -36,13 +36,24 @@ const root = (uri: string): Root => ({ uri });
 
 describe("reading the caller's identity from roots", () => {
 	test("handles the two- and three-slash file URI forms", () => {
-		// Asserted through normalizePath, not as an exact string: a drive-letter
-		// URI resolves to the NATIVE form, which is `C:\Dev\atlas` on Windows and
-		// `/C:/Dev/atlas` on POSIX. Pinning either one makes the suite pass on the
-		// machine it was written on and fail on the CI matrix — and comparison is
-		// what the callers actually do.
+		// Asserted through normalizePath rather than as an exact string, because a
+		// drive-letter URI resolves to the NATIVE form: `C:\Dev\atlas` on Windows
+		// but `/C:/Dev/atlas` on POSIX, which has no drive concept. Pinning either
+		// passes on the machine it was written on and fails on the CI matrix — as
+		// this test did. normalizePath absorbs the difference, and comparison is
+		// what every caller actually does with the value.
 		assert.equal(normalizePath(rootToPath("file:///C:/Dev/atlas")), normalizePath("C:/Dev/atlas"));
 		assert.equal(normalizePath(rootToPath("file://C:/Dev/atlas")), normalizePath("C:/Dev/atlas"));
+	});
+
+	test("a drive path compares equal however the platform rendered it", () => {
+		// The regression itself: identical roots must not compare unequal because
+		// of which platform parsed the URI.
+		assert.equal(normalizePath("/C:/Dev/atlas"), normalizePath("C:\\Dev\\atlas"));
+		assert.equal(normalizePath("/c:/dev/atlas"), "c:/dev/atlas");
+		// A POSIX root must NOT have its leading slash stripped — that slash is
+		// the filesystem root, not a URI artifact.
+		assert.equal(normalizePath("/home/x/atlas"), "/home/x/atlas");
 	});
 
 	test("a POSIX root KEEPS its leading slash — that slash is the filesystem root", () => {
