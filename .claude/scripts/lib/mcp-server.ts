@@ -29,6 +29,7 @@ import { expandNote } from "./mcp-graph.ts";
 import { qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
 import { callerProject, isVaultItself } from "./mcp-caller.ts";
 import { callerPlatforms, loadMemoryDigests, resolvableNames } from "./mcp-memory-bridge.ts";
+import { captureNote } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
 import { recall, type MemoryEntry } from "./memory-recall.ts";
@@ -260,6 +261,35 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		].join("\n");
 	}
 
+	function callRecordWork(args: Record<string, unknown>): string {
+		const who = callerProject(session.roots);
+		const resolvable = resolvableNames(visibleFiles(ctx.vaultRoot, policy));
+		let r;
+		try {
+			r = captureNote(ctx.vaultRoot, policy, ctx.manifest, who, args, resolvable, {
+				now: now(),
+				reindex,
+			});
+		} catch (e) {
+			// A refusal is the expected outcome for a bad folder, so it is reported
+			// as a message rather than thrown — the caller can correct and retry,
+			// which a protocol-level error makes harder.
+			return `Not recorded: ${e instanceof Error ? e.message : String(e)}`;
+		}
+
+		if (!r.written) {
+			return [`Preview (nothing written) → ${r.path}`, `Routing: ${r.routed}`, "", r.preview ?? ""].join("\n");
+		}
+		audit("record_work", { path: r.path, routed: r.routed, indexed: r.indexed });
+		return [
+			`Recorded: ${r.path}`,
+			`Routing: ${r.routed}`,
+			...(r.indexed === false
+				? ["", "NOTE: the search index could not be refreshed, so this note may not be findable by query yet."]
+				: []),
+		].join("\n");
+	}
+
 	function callHealth(): string {
 		const who = caller();
 		const names = new Set(visibleFiles(ctx.vaultRoot, policy).map((f) => f.label));
@@ -317,6 +347,8 @@ export function createHandlers(deps: ServerDeps): Handlers {
 					return session.ok(id, text(await callRecall(args)));
 				case "remember":
 					return session.ok(id, text(callRemember(args)));
+				case "record_work":
+					return session.ok(id, text(callRecordWork(args)));
 				case "health":
 					return session.ok(id, text(callHealth()));
 				default:

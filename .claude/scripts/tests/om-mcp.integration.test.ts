@@ -17,7 +17,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -139,7 +139,7 @@ describe("the om server on the wire", () => {
 		const r = await call("tools/list");
 		const tools = (r.result?.tools ?? []) as { name: string; annotations?: Record<string, unknown> }[];
 		const names = tools.map((t) => t.name).sort();
-		assert.deepEqual(names, ["expand", "health", "recall", "remember", "search"]);
+		assert.deepEqual(names, ["expand", "health", "recall", "record_work", "remember", "search"]);
 		for (const t of tools) {
 			assert.ok(t.annotations, `${t.name} must annotate so a client can pick without trial-and-error`);
 		}
@@ -218,6 +218,71 @@ describe("the om server on the wire", () => {
 		const got = await call("prompts/get", { name: "prior_art", arguments: { question: "should we cache this" } });
 		const messages = (got.result?.messages ?? []) as { content?: { text?: string } }[];
 		assert.match(String(messages[0]?.content?.text), /should we cache this/);
+	});
+
+	test("record_work files a note and refuses a fenced destination", async () => {
+		const ok = await call("tools/call", {
+			name: "record_work",
+			arguments: {
+				title: "Wire up the archive command",
+				summary: "Added the archive command behind a flag, with the reasoning recorded.",
+				changes: ["src/store.ts - added a pure archive()"],
+				informed_by: ["Gotchas", "A Note That Does Not Exist"],
+				folder: "brain",
+			},
+		});
+		const t = textOf(ok);
+		assert.match(t, /Recorded: brain\//);
+
+		const filed = readFileSync(join(vault, t.split("\n")[0]!.replace("Recorded: ", "")), "utf8");
+		assert.match(filed, /source_repo: atlas/, "provenance is derived, not asserted by the caller");
+		assert.match(filed, /- \[\[Gotchas\]\]/, "a resolvable reference becomes a link");
+		assert.match(filed, /_\(no note yet\)_/, "an unresolvable one must NOT become a broken link");
+
+		// The fence governs writes too, not only reads.
+		const denied = await call("tools/call", {
+			name: "record_work",
+			arguments: { title: "sneak", summary: "should not land", folder: "work" },
+		});
+		assert.match(textOf(denied), /Not recorded:.*not an exposed root/);
+		assert.ok(!existsSync(join(vault, "work", "sneak.md")));
+	});
+
+	test("a memory written through remember comes back through recall", async () => {
+		// The whole point of the layer, asserted end to end over the wire: a write
+		// that cannot be read back is not a memory, and both halves must agree
+		// about scope without either being told what the other did.
+		const wrote = await call("tools/call", {
+			name: "remember",
+			arguments: {
+				title: "tsup externals decide what a patch can fix",
+				body: "A dependency marked external is resolved on the user's machine at install time, so a local patch never reaches them.",
+				confidence: "verified",
+				verification: "Checked the built artifact directly.",
+				scope: "project",
+				projects: [CALLER],
+			},
+		});
+		assert.match(textOf(wrote), /Recorded: memories\//);
+
+		const back = await call("tools/call", { name: "recall", arguments: {} });
+		const t = textOf(back);
+		assert.match(t, /tsup externals decide what a patch can fix/);
+		assert.match(t, /verified/, "the confidence marker survives the round trip");
+
+		// Writing the same lesson again must be caught rather than duplicated.
+		const dup = await call("tools/call", {
+			name: "remember",
+			arguments: {
+				title: "tsup externals decide what a patch can fix",
+				body: "A dependency marked external is resolved on the user's machine at install time, so a local patch never reaches them.",
+				confidence: "verified",
+				verification: "Checked the built artifact directly.",
+				scope: "project",
+				projects: [CALLER],
+			},
+		});
+		assert.match(textOf(dup), /near-identical memory already exists/);
 	});
 
 	test("ping works", async () => {

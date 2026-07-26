@@ -89,6 +89,78 @@ export const TOOLS: readonly ToolDef[] = [
 		annotations: { title: "Recall durable lessons", ...READ_ONLY },
 	},
 	{
+		name: "record_work",
+		description:
+			"Record work that happened in this repo into the vault, filed where it belongs. This is a durable record, not a scratch note — write it for a future session that will NOT have your context and cannot re-read your diff. Fill every field you can; sparse records are near-worthless six weeks later. Use dry_run to preview the filed note first.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				title: { type: "string", description: "Short, specific. 'Add archive command' not 'update'." },
+				summary: {
+					type: "string",
+					description:
+						"2-4 sentences: what happened and why it was done. Enough for someone to decide whether to read on.",
+				},
+				changes: {
+					type: "array",
+					items: { type: "string" },
+					description:
+						"One line per file or component touched, saying what changed and why. e.g. 'src/store.mjs - added pure archive(db,id); marks a flag rather than removing, so seq is untouched'.",
+				},
+				decisions: {
+					type: "array",
+					items: { type: "string" },
+					description:
+						"Choices made and the reasoning, especially where you rejected an alternative. These are the entries most likely to matter later.",
+				},
+				learned: {
+					type: "array",
+					items: { type: "string" },
+					description:
+						"Surprises, gotchas, things that cost time or nearly went wrong. What you wish you had known starting out.",
+				},
+				verification: {
+					type: "string",
+					description:
+						"How you know it works: tests run and their result, manual checks performed. State failures honestly.",
+				},
+				open: {
+					type: "array",
+					items: { type: "string" },
+					description:
+						"Unresolved threads, deferred work, known limits. Anything a reader should not assume is handled.",
+				},
+				informed_by: {
+					type: "array",
+					items: { type: "string" },
+					description:
+						"Vault notes you read that shaped this work, by title. Rendered as links, so those notes accumulate evidence they were actually used.",
+				},
+				folder: {
+					type: "string",
+					description:
+						"Vault-relative destination, e.g. 'projects/pocket/notes'. Omit to file it under the calling repo's project automatically. Search the vault first if unsure where similar notes live.",
+				},
+				kind: {
+					type: "string",
+					enum: ["note", "decision"],
+					description:
+						"'decision' files it as a decision record with an undated title; 'note' is a dated point-in-time record. Default 'note'.",
+				},
+				dry_run: { type: "boolean", description: "Preview without writing (default false)" },
+			},
+			required: ["title", "summary"],
+		},
+		annotations: {
+			title: "Record work into the vault",
+			readOnlyHint: false,
+			// Creates a new note; never edits or deletes an existing one.
+			destructiveHint: false,
+			idempotentHint: false,
+			openWorldHint: false,
+		},
+	},
+	{
 		name: "remember",
 		description:
 			"Record a DURABLE LESSON into the vault's memory — something that will still be true, and still useful, in a repo that is not this one. The test: would this help someone working on a different project? If yes, remember it. If it is a log of what you did here today, use record_work instead. Good memories: a constraint you discovered, a gotcha that cost you time, a rule that generalises. Bad memories: status updates, task summaries, anything you would not want to be told again in six weeks.",
