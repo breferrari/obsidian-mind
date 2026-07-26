@@ -75,15 +75,26 @@ const text = (s: string): { content: { type: "text"; text: string }[] } => ({
  * degrades to a warning rather than hanging the tool.
  */
 export function reindexSync(indexName: string | null): boolean {
-	try {
-		const entry = resolveQmdEntry();
-		const args = indexName ? ["--index", indexName, "update"] : ["update"];
-		const { cmd, args: argv, shell } = buildQmdCommand(entry, args);
-		const r = spawnSync(cmd, [...argv], { shell, timeout: REINDEX_TIMEOUT_MS, stdio: "ignore" });
-		return r.status === 0;
-	} catch {
-		return false;
-	}
+	const run = (sub: string): boolean => {
+		try {
+			const entry = resolveQmdEntry();
+			const args = indexName ? ["--index", indexName, sub] : [sub];
+			const { cmd, args: argv, shell } = buildQmdCommand(entry, args);
+			const r = spawnSync(cmd, [...argv], { shell, timeout: REINDEX_TIMEOUT_MS, stdio: "ignore" });
+			return r.status === 0;
+		} catch {
+			return false;
+		}
+	};
+
+	// `update` indexes the text; `embed` generates the vector. Without the second
+	// step a new memory is invisible to semantic recall until something else
+	// embeds — findable by keyword, missing from the query path that matters.
+	// Incremental, so it costs little beyond the one new note.
+	const indexed = run("update");
+	if (!indexed) return false;
+	run("embed");
+	return true;
 }
 
 export function createHandlers(deps: ServerDeps): Handlers {

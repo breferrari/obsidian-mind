@@ -82,17 +82,27 @@ function cleanRoots(value: unknown): string[] {
 	const out: string[] = [];
 	for (const raw of value) {
 		if (typeof raw !== "string") continue;
-		const s = raw.trim().replace(/^\.\//, "").replace(/^[\\/]+|[\\/]+$/g, "");
+		const trimmed = raw.trim().replace(/^\.\//, "");
+		// A trailing slash marks the last segment as a FOLDER; without one it is a
+		// file pattern. That distinction decides how a glob is handled.
+		const endsInFolder = /[\\/]$/.test(trimmed);
+		const s = trimmed.replace(/^[\\/]+|[\\/]+$/g, "");
 		if (!s) continue;
 		const parts = s.split(/[\\/]/);
-		// A glob contributes its literal prefix; `perf/h*-*/` means `perf`. A
-		// leading glob contributes nothing rather than everything.
-		const literal: string[] = [];
-		for (const p of parts) {
-			if (!p || p === "." || p === ".." || p.includes("*")) break;
-			literal.push(p);
+		if (parts.some((p) => p === "." || p === "..")) continue;
+
+		const globAt = parts.findIndex((p) => p.includes("*"));
+		if (globAt < 0) {
+			out.push(parts.join("/"));
+			continue;
 		}
-		if (literal.length) out.push(literal.join("/"));
+		// `brain/*.md` — a file pattern, so the parent folder is what was meant.
+		// `perf/h*-*/` — a set of FOLDERS under perf. Truncating that to `perf`
+		// would serve every folder under it, which is more than the vault
+		// declared, so the entry is dropped instead.
+		if (!endsInFolder && globAt === parts.length - 1 && globAt > 0) {
+			out.push(parts.slice(0, globAt).join("/"));
+		}
 	}
 	return [...new Set(out)];
 }

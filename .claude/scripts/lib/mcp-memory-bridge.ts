@@ -215,17 +215,29 @@ export async function semanticMemoryOrder<T extends { full: string }>(
 
 		const ordered: T[] = [];
 		const seen = new Set<string>();
+		const placed = new Set<T>();
 		for (const h of hits as { file?: string }[]) {
 			const key = qmdRelKey(h.file);
 			if (seen.has(key)) continue;
 			seen.add(key);
 			const m = byKey.get(key);
 			// Absent from `byKey` means the visibility rule already excluded it.
-			// Skipped silently and never counted aloud: naming a withheld memory —
-			// even as a number — leaks what the scope rule exists to hide.
-			if (m) ordered.push(m);
+			// Skipped silently: naming a withheld memory, even as a count, leaks
+			// what the scope rule exists to hide.
+			if (m) {
+				ordered.push(m);
+				placed.add(m);
+			}
 		}
-		return ordered.length ? ordered : null;
+		if (!ordered.length) return null;
+
+		// REORDER, never filter. The index ranks what it matched; everything else
+		// the visibility rule allowed follows in its declared order. Returning only
+		// the matches would DROP a visible memory from recall entirely — which is
+		// what happens to one written moments ago, since a fresh note carries no
+		// embedding until the index next embeds. A memory that exists, is in
+		// scope, and cannot be recalled is the false negative this layer is for.
+		return [...ordered, ...visible.filter((m) => !placed.has(m))];
 	} catch {
 		return null;
 	}

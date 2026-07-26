@@ -85,12 +85,34 @@ describe("resolving the policy", () => {
 		});
 	});
 
-	test("a glob contributes its literal prefix only", () => {
+	test("a FILE glob yields its parent folder; a FOLDER glob is dropped", () => {
 		withVault((dir) => {
-			const p = resolveExposure(dir, { mcp_exposed_roots: ["perf/h*-*", "*/anything", "brain"] });
-			assert.ok(p.roots.includes("perf"), `${p.roots}`);
+			const p = resolveExposure(dir, {
+				mcp_exposed_roots: ["brain/*.md", "perf/competencies/*.md", "perf/h*-*/", "*/anything", "reference"],
+			});
+			// `brain/*.md` means the notes in brain — the parent is exactly right.
+			assert.ok(p.roots.includes("brain"), `${p.roots}`);
+			assert.ok(p.roots.includes("perf/competencies"));
+			// `perf/h*-*/` names SOME folders under perf. Truncating it to `perf`
+			// would serve every folder under it, including ones never declared.
+			assert.ok(!p.roots.includes("perf"), `bare perf must not appear: ${p.roots}`);
 			assert.ok(!p.roots.some((r) => r.includes("*")));
-			assert.ok(!p.roots.includes(""), "a leading glob must contribute nothing");
+			assert.ok(!p.roots.includes(""), "a leading glob contributes nothing");
+		});
+	});
+
+	test("the shipped manifest resolves to exactly what it declares", () => {
+		// Guards the same over-widening on the real template shape.
+		withVault((dir) => {
+			for (const d of ["work/active", "perf/brag", "perf/secret-draft", "brain"]) {
+				mkdirSync(join(dir, d), { recursive: true });
+			}
+			const p = resolveExposure(dir, {
+				user_content_roots: ["work/active/", "perf/brag/", "perf/h*-*/", "brain/*.md"],
+			});
+			assert.ok(!p.roots.includes("perf"), `${p.roots}`);
+			assert.ok(p.roots.includes("perf/brag"));
+			assert.ok(!p.roots.includes("perf/secret-draft"), "an undeclared sibling must not ride along");
 		});
 	});
 
