@@ -46,6 +46,8 @@ export interface ExposurePolicy {
 	readonly neverExpose: ReadonlySet<string>;
 	/** Where the root list came from, for `health` to report. */
 	readonly source: "manifest" | "derived" | "fallback";
+	/** The memory root, excluded from every read surface unconditionally. */
+	readonly memoryRoot: string;
 }
 
 export interface VisibleFile {
@@ -85,7 +87,34 @@ function cleanRoots(value: unknown): string[] {
  * `user_content_roots` (which the template already maintains for other reasons,
  * so there is no second list to keep correct), then the narrow default.
  */
-export function resolveExposure(vaultRoot: string, manifest: Record<string, unknown> | null | undefined): ExposurePolicy {
+/**
+ * Memories are NEVER part of the exposure surface.
+ *
+ * They have their own access rule — declared scope, evaluated per caller — and
+ * serving them as ordinary notes is a second path around that fence, which is
+ * the defect this whole module exists to prevent.
+ *
+ * This is not hypothetical. `memories/` genuinely belongs in the manifest's
+ * `user_content_roots`, because that key is the boundary `/om-vault-upgrade`
+ * copies across versions and a memory store left out of it is silently dropped
+ * on upgrade. Exposure DERIVES from that same key. So doing the correct thing
+ * for upgrades exposes every memory in the vault, scoped to any project, to
+ * every caller — verified before this guard existed.
+ *
+ * Hence unconditional: not a default, not overridable by config. A vault that
+ * explicitly lists its memory root under `mcp_exposed_roots` still does not get
+ * it, because there is no version of that request which is safe to honour.
+ */
+function withoutMemoryRoot(roots: readonly string[], memoryRoot: string): string[] {
+	const mem = memoryRoot.toLowerCase();
+	return roots.filter((r) => r.toLowerCase() !== mem);
+}
+
+export function resolveExposure(
+	vaultRoot: string,
+	manifest: Record<string, unknown> | null | undefined,
+	memoryRoot = "memories",
+): ExposurePolicy {
 	// `mcp_never_expose` holds FILENAMES, which legitimately contain spaces and
 	// dots, so the root-name rule is too strict for it. Taken as declared.
 	const never = new Set(
@@ -95,17 +124,25 @@ export function resolveExposure(vaultRoot: string, manifest: Record<string, unkn
 	);
 
 	const declared = cleanRoots(manifest?.mcp_exposed_roots);
-	if (declared.length) return { roots: declared, neverExpose: never, source: "manifest" };
+	if (declared.length) {
+		return { roots: withoutMemoryRoot(declared, memoryRoot), neverExpose: never, source: "manifest", memoryRoot };
+	}
 
 	try {
 		const found = discoverExposedRoots(vaultRoot, manifest ?? {}, [...DEFAULT_EXPOSED_ROOTS]);
 		return {
-			roots: found.roots,
+			roots: withoutMemoryRoot(found.roots, memoryRoot),
 			neverExpose: never,
 			source: found.source === "manifest" ? "derived" : "fallback",
+			memoryRoot,
 		};
 	} catch {
-		return { roots: [...DEFAULT_EXPOSED_ROOTS], neverExpose: never, source: "fallback" };
+		return {
+			roots: withoutMemoryRoot([...DEFAULT_EXPOSED_ROOTS], memoryRoot),
+			neverExpose: never,
+			source: "fallback",
+			memoryRoot,
+		};
 	}
 }
 
@@ -140,6 +177,11 @@ export function firstDescription(path: string, fallback = "Vault note"): string 
 export function isExposedPath(policy: ExposurePolicy, relPath: string): boolean {
 	const first = relPath.replace(/\\/g, "/").split("/")[0];
 	if (!first) return false;
+	// Re-checked here as well as in resolveExposure. The policy could be built by
+	// hand, and there is no caller for whom "read a memory as a plain note" is a
+	// legitimate request — memories are reached through recall, which applies the
+	// visibility rule, or not at all.
+	if (policy.memoryRoot && first.toLowerCase() === policy.memoryRoot.toLowerCase()) return false;
 	return policy.roots.some((r) => r.toLowerCase() === first.toLowerCase());
 }
 
@@ -182,7 +224,12 @@ export function visibleFiles(vaultRoot: string, policy: ExposurePolicy): Visible
 		}
 	};
 
-	for (const root of policy.roots) walk(join(vaultRoot, root), root, 0);
+	for (const root of policy.roots) {
+		// Belt and braces: resolveExposure already strips it, but a hand-built
+		// policy must not be able to walk the memory store into the read surface.
+		if (policy.memoryRoot && root.toLowerCase() === policy.memoryRoot.toLowerCase()) continue;
+		walk(join(vaultRoot, root), root, 0);
+	}
 	return files;
 }
 

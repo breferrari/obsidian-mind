@@ -29,7 +29,7 @@ import {
 import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
 
 const NOW = new Date("2026-07-26T10:00:00Z");
-const POLICY: ExposurePolicy = { roots: ["brain", "projects"], neverExpose: new Set(), source: "manifest" };
+const POLICY: ExposurePolicy = { roots: ["brain", "projects"], neverExpose: new Set(), source: "manifest", memoryRoot: "memories" };
 
 function withVault(fn: (dir: string) => void): void {
 	const dir = mkdtempSync(join(tmpdir(), "cap-"));

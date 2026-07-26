@@ -1,0 +1,93 @@
+filters:
+  and:
+    - file.ext == "md"
+    - source == "mcp-capture"
+formulas:
+  reach: if(scope == "general", "everywhere", if(scope == "platform", list(platforms).join(", "), list(projects).join(", ")))
+  age_days: (now() - date).days.round(0)
+  corrected: if(list(superseded_by).isEmpty(), "", "superseded")
+properties:
+  file.name:
+    displayName: Memory
+  scope:
+    displayName: Scope
+  formula.reach:
+    displayName: Reaches
+  confidence:
+    displayName: Confidence
+  origin:
+    displayName: Learned in
+  date:
+    displayName: Recorded
+  formula.age_days:
+    displayName: Days Old
+  formula.corrected:
+    displayName: Status
+views:
+  - type: table
+    name: Recent
+    order:
+      - file.name
+      - formula.reach
+      - confidence
+      - origin
+      - date
+    sort:
+      - property: date
+        direction: DESC
+    limit: 50
+  - type: table
+    name: By project
+    filters:
+      and:
+        - scope == "project"
+    order:
+      - file.name
+      - formula.reach
+      - confidence
+      - date
+    sort:
+      - property: projects
+        direction: ASC
+    limit: 100
+  - type: table
+    name: Needs review
+    filters:
+      and:
+        - confidence != "verified"
+    order:
+      - file.name
+      - confidence
+      - origin
+      - formula.age_days
+    sort:
+      - property: date
+        direction: ASC
+    limit: 50
+  - type: table
+    name: Superseded
+    filters:
+      and:
+        - '!list(superseded_by).isEmpty()'
+    order:
+      - file.name
+      - superseded_by
+      - date
+    sort:
+      - property: date
+        direction: DESC
+    limit: 30
+  - type: table
+    name: General reach
+    filters:
+      and:
+        - scope == "general"
+    order:
+      - file.name
+      - confidence
+      - origin
+      - date
+    sort:
+      - property: date
+        direction: DESC
+    limit: 50

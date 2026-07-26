@@ -30,7 +30,7 @@ import { createHandlers } from "./lib/mcp-server.ts";
 
 const vaultRoot = resolveVaultRoot(import.meta.url);
 const ctx = createContext(vaultRoot);
-const policy = resolveExposure(vaultRoot, ctx.manifest);
+const policy = resolveExposure(vaultRoot, ctx.manifest, ctx.memoryRoot);
 
 /**
  * One long-lived qmd child, started on first use.

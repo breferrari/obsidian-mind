@@ -244,9 +244,83 @@ describe("every surface applies the same fence", () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// Memories are never ordinary notes
+// ---------------------------------------------------------------------------
+
+describe("the memory store is never part of the read surface", () => {
+	/** A vault holding one memory scoped to a DIFFERENT project. */
+	function withMemories(fn: (dir: string) => void, root = "memories"): void {
+		withVault((dir) => {
+			put(dir, "brain/Gotchas.md");
+			put(
+				dir,
+				`${root}/2026/07/a.md`,
+				"---\ndate: 2026-07-26\nsource: mcp-capture\nscope: project\nprojects: [other-app]\n---\n\n# another project private lesson\n\nbody\n",
+			);
+			fn(dir);
+		});
+	}
+
+	test("memories/ in user_content_roots does NOT expose them", () => {
+		// This is the real configuration, not a contrived one. `memories/` belongs
+		// in user_content_roots because that key is what /om-vault-upgrade copies
+		// across versions — leaving it out silently drops the store on upgrade.
+		// Exposure derives from the same key, so doing the right thing for
+		// upgrades used to expose every memory in the vault to every caller.
+		withMemories((dir) => {
+			const policy = resolveExposure(dir, { user_content_roots: ["brain/", "memories/"] }, "memories");
+			assert.ok(!policy.roots.includes("memories"));
+			assert.deepEqual(visibleFiles(dir, policy).map((f) => f.label), ["Gotchas"]);
+			assert.equal(listResources(dir, policy).length, 1);
+			assert.equal([...allowedSearchPaths(dir, policy)].filter((p) => p.startsWith("memories/")).length, 0);
+		});
+	});
+
+	test("naming it explicitly in mcp_exposed_roots does NOT override the exclusion", () => {
+		// There is no version of "serve memories as plain notes" that is safe to
+		// honour: it bypasses the declared-scope rule the whole layer rests on.
+		withMemories((dir) => {
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain", "memories"] }, "memories");
+			assert.ok(!policy.roots.includes("memories"), "config must not be able to ask for this");
+			assert.ok(!visibleFiles(dir, policy).some((f) => f.full.includes("memories")));
+		});
+	});
+
+	test("a RENAMED memory root is excluded too", () => {
+		// The exclusion follows the DISCOVERED root, not the configured name —
+		// otherwise renaming memories/ in Obsidian silently exposes the store.
+		withMemories((dir) => {
+			const policy = resolveExposure(dir, { user_content_roots: ["brain/", "knowledge/"] }, "knowledge");
+			assert.ok(!policy.roots.includes("knowledge"));
+			assert.ok(!visibleFiles(dir, policy).some((f) => f.full.includes("knowledge")));
+		}, "knowledge");
+	});
+
+	test("a hand-built policy naming the memory root still cannot walk it", () => {
+		withMemories((dir) => {
+			const forced = {
+				roots: ["brain", "memories"],
+				neverExpose: new Set<string>(),
+				source: "manifest" as const,
+				memoryRoot: "memories",
+			};
+			assert.ok(!visibleFiles(dir, forced).some((f) => f.full.includes("memories")));
+			assert.equal(isExposedPath(forced, "memories/2026/07/a.md"), false);
+		});
+	});
+
+	test("a memory cannot be read by URI either", () => {
+		withMemories((dir) => {
+			const policy = resolveExposure(dir, { user_content_roots: ["brain/", "memories/"] }, "memories");
+			assert.equal(resolveResourceUri(dir, policy, "vault://note/memories/2026/07/a.md"), null);
+		});
+	});
+});
+
 describe("path exposure checks", () => {
 	test("matches the first segment only", () => {
-		const policy = { roots: ["brain"], neverExpose: new Set<string>(), source: "manifest" as const };
+		const policy = { roots: ["brain"], neverExpose: new Set<string>(), source: "manifest" as const, memoryRoot: "memories" };
 		assert.equal(isExposedPath(policy, "brain/Gotchas.md"), true);
 		assert.equal(isExposedPath(policy, "work/brain/Secret.md"), false, "brain must not match mid-path");
 		assert.equal(isExposedPath(policy, ""), false);
