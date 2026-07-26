@@ -419,11 +419,12 @@ export function health(
 			`Captures are split across ${mem.split.map((s) => `${s.root}/ (${s.memories})`).join(" and ")} — retrieval only sees "${mem.root}/". Move the rest.`,
 		);
 	}
-	if (exposed.source === "fallback") {
-		warnings.push(
-			"No usable user_content_roots in the manifest; exposure fell back to defaults, which may hide or over-expose content.",
-		);
-	}
+	// Deliberately NOT a warning any more. Exposure no longer derives from
+	// `user_content_roots` — that key answers "what is the user's content"
+	// (preserve on upgrade), not "what may leave the vault" (egress), and
+	// conflating them exposed work/, org/ and perf/ by default. An undeclared
+	// `mcp_exposed_roots` now means the narrow built-in pair, which is the
+	// correct and safe state rather than a problem to report.
 	if (qmd.source === "absent") {
 		warnings.push("qmd launcher not found — search and recall degrade to lexical matching.");
 	}

@@ -81,12 +81,41 @@ describe("resolving the policy", () => {
 		});
 	});
 
-	test("falls back to the manifest key the template already maintains", () => {
+	test("user_content_roots does NOT widen exposure — the two keys answer different questions", () => {
+		// The regression this locks down. An earlier version derived exposure from
+		// user_content_roots, reasoning that the template already maintains it.
+		// Measured against the shipped manifest that gave work, org, perf, brain,
+		// reference — third parties' personal notes, review and compensation
+		// evidence, and 1:1 records readable by any repo the server was wired into.
+		//
+		//   user_content_roots — what is the user's content?  (preserve on upgrade)
+		//   mcp_exposed_roots  — what may leave the vault?    (egress)
+		//
+		// Adding a folder for backup reasons must never widen what a foreign
+		// session can read.
+		withVault((dir) => {
+			for (const d of ["brain", "reference", "work", "org", "perf"]) {
+				mkdirSync(join(dir, d), { recursive: true });
+			}
+			const p = resolveExposure(dir, {
+				user_content_roots: ["work/active/", "org/people/", "perf/brag/", "brain/*.md", "reference/"],
+			});
+			assert.deepEqual([...p.roots].sort(), ["brain", "reference"]);
+			assert.equal(p.source, "fallback");
+			for (const sensitive of ["work", "org", "perf"]) {
+				assert.ok(!p.roots.includes(sensitive), `${sensitive}/ must not be exposed by a backup setting`);
+			}
+		});
+	});
+
+	test("the shipped default resolves to the narrow pair on a real clean install", () => {
 		withVault((dir) => {
 			mkdirSync(join(dir, "brain"), { recursive: true });
-			const p = resolveExposure(dir, { user_content_roots: ["brain/"] });
-			assert.deepEqual([...p.roots], ["brain"]);
-			assert.equal(p.source, "derived");
+			mkdirSync(join(dir, "reference"), { recursive: true });
+			mkdirSync(join(dir, "work"), { recursive: true });
+			// mcp_exposed_roots ships empty; nothing about that may open work/.
+			const p = resolveExposure(dir, { mcp_exposed_roots: [] });
+			assert.deepEqual([...p.roots].sort(), ["brain", "reference"]);
 		});
 	});
 

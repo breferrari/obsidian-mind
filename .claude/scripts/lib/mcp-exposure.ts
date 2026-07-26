@@ -31,7 +31,7 @@
 import { readFileSync, readdirSync, statSync, existsSync, realpathSync } from "node:fs";
 import { join, basename, resolve, sep } from "node:path";
 
-import { discoverExposedRoots } from "./memory-discover.ts";
+
 import { vaultRelKey } from "./mcp-qmd-client.ts";
 
 /** How deep to walk inside an exposed root. */
@@ -45,7 +45,7 @@ export interface ExposurePolicy {
 	/** Filenames withheld regardless of folder. */
 	readonly neverExpose: ReadonlySet<string>;
 	/** Where the root list came from, for `health` to report. */
-	readonly source: "manifest" | "derived" | "fallback";
+	readonly source: "manifest" | "fallback";
 	/** The memory root, excluded from every read surface unconditionally. */
 	readonly memoryRoot: string;
 }
@@ -67,10 +67,30 @@ export interface ResourceDef {
 /**
  * A deliberately NARROW default.
  *
- * The prototype defaulted to one specific vault's four folders. A vault that has
- * thought about exposure declares it; a vault that has not should not be
- * surprised by what its coding sessions can read. Widening is a decision someone
- * makes on purpose.
+ * `brain/` is the vault's durable operating knowledge and `reference/` is its
+ * architecture and codebase notes — exactly what a coding session in another
+ * repo benefits from, and the least likely to be a problem if it lands in a
+ * commit message. Everything else is opt-in.
+ *
+ * WHY NOT DERIVE FROM `user_content_roots`
+ *
+ * An earlier version did, reasoning that the template already maintains that
+ * list so there is no second key to keep correct. That is true and it is still
+ * the wrong signal, because the two keys answer DIFFERENT QUESTIONS:
+ *
+ *   user_content_roots  — what is the user's own content? (preserve on upgrade)
+ *   mcp_exposed_roots   — what may leave the vault?       (egress)
+ *
+ * Measured against this template's shipped manifest, deriving gave
+ * `work, org, perf, brain, reference` — meaning third parties' personal notes,
+ * review and compensation evidence, and 1:1 records were all readable by any
+ * repo the user wired the server into. Nothing about adding a folder to
+ * `user_content_roots`, which a user does for backup reasons, should widen what
+ * a foreign session can read.
+ *
+ * So exposure now falls back to this list and nothing else. A vault that wants
+ * more says so explicitly, which is a decision someone makes on purpose rather
+ * than a side effect of an unrelated config change.
  */
 const DEFAULT_EXPOSED_ROOTS: readonly string[] = ["brain", "reference"];
 
@@ -80,13 +100,6 @@ function cleanRoots(value: unknown): string[] {
 	return value.filter((s): s is string => typeof s === "string" && /^[\w.-]+$/.test(s) && s !== "..");
 }
 
-/**
- * Resolve the exposure policy for a vault.
- *
- * Precedence: an explicit `mcp_exposed_roots` declaration, then the manifest's
- * `user_content_roots` (which the template already maintains for other reasons,
- * so there is no second list to keep correct), then the narrow default.
- */
 /**
  * Memories are NEVER part of the exposure surface.
  *
@@ -128,22 +141,21 @@ export function resolveExposure(
 		return { roots: withoutMemoryRoot(declared, memoryRoot), neverExpose: never, source: "manifest", memoryRoot };
 	}
 
-	try {
-		const found = discoverExposedRoots(vaultRoot, manifest ?? {}, [...DEFAULT_EXPOSED_ROOTS]);
-		return {
-			roots: withoutMemoryRoot(found.roots, memoryRoot),
-			neverExpose: never,
-			source: found.source === "manifest" ? "derived" : "fallback",
-			memoryRoot,
-		};
-	} catch {
-		return {
-			roots: withoutMemoryRoot([...DEFAULT_EXPOSED_ROOTS], memoryRoot),
-			neverExpose: never,
-			source: "fallback",
-			memoryRoot,
-		};
-	}
+	// Nothing declared: the narrow default, filtered to what actually exists so
+	// the resource list reflects the vault rather than the template's guess.
+	const present = DEFAULT_EXPOSED_ROOTS.filter((r) => {
+		try {
+			return statSync(join(vaultRoot, r)).isDirectory();
+		} catch {
+			return false;
+		}
+	});
+	return {
+		roots: withoutMemoryRoot(present.length ? present : [...DEFAULT_EXPOSED_ROOTS], memoryRoot),
+		neverExpose: never,
+		source: "fallback",
+		memoryRoot,
+	};
 }
 
 /**

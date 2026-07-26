@@ -322,10 +322,13 @@ Configured in `vault-manifest.json`:
 
 | key | default | meaning |
 |-----|---------|---------|
-| `mcp_exposed_roots` | *(empty → derived from `user_content_roots`)* | folders whose notes may be read |
+| `mcp_exposed_roots` | *(empty → `brain`, `reference`)* | folders whose notes may be read |
 | `mcp_never_expose` | *(empty)* | filenames withheld regardless of folder |
 | `memory_root` | `memories` | where cross-repo memories live |
 | `mcp_inbox` | `inbox` | fallback destination for `record_work` |
+
+> [!warning] Exposure does NOT follow `user_content_roots`, on purpose.
+> The two keys answer different questions: `user_content_roots` is *what is the user's content* (preserve it on upgrade), `mcp_exposed_roots` is *what may leave the vault*. An earlier version derived one from the other and, measured against this template's own manifest, that exposed `work/`, `org/` and `perf/` — third parties' personal notes, review and compensation evidence, and 1:1 records — to every repo the server was wired into. **Adding a folder for backup reasons must never widen what a foreign session can read.** Widening is explicit or it does not happen.
 
 **`memories/` is never exposed**, whatever the config says: memories carry their own declared scope, and serving them as ordinary notes would bypass it entirely. Every read is written to `.claude/om-mcp-audit.jsonl` (gitignored) with the calling repo, so "what did that session actually see" is answerable afterwards.
 
