@@ -74,48 +74,58 @@ describe("resolving the policy", () => {
 		});
 	});
 
-	test("a root that could climb out of the vault is refused", () => {
+	test("a traversal root is refused; a path prefix is kept", () => {
 		withVault((dir) => {
-			const p = resolveExposure(dir, { mcp_exposed_roots: ["..", "a/b", "/etc", "brain"] });
+			const p = resolveExposure(dir, { mcp_exposed_roots: ["..", "../escape", "work/active", "brain"] });
+			assert.ok(!p.roots.some((r) => r.includes("..")), `${p.roots}`);
+			// Path prefixes are the granularity the vault speaks in — the manifest
+			// declares `work/active/`, not `work/`.
+			assert.ok(p.roots.includes("work/active"));
+			assert.ok(p.roots.includes("brain"));
+		});
+	});
+
+	test("a glob contributes its literal prefix only", () => {
+		withVault((dir) => {
+			const p = resolveExposure(dir, { mcp_exposed_roots: ["perf/h*-*", "*/anything", "brain"] });
+			assert.ok(p.roots.includes("perf"), `${p.roots}`);
+			assert.ok(!p.roots.some((r) => r.includes("*")));
+			assert.ok(!p.roots.includes(""), "a leading glob must contribute nothing");
+		});
+	});
+
+	test("undeclared exposure derives from the vault's own user_content_roots", () => {
+		// The user's notes, read by the user's own session. Declared at the
+		// granularity the manifest uses, so work/active is served without
+		// dragging in work/1-1.
+		withVault((dir) => {
+			for (const d of ["brain", "reference", "work/active", "work/1-1", "perf/brag"]) {
+				mkdirSync(join(dir, d), { recursive: true });
+			}
+			const p = resolveExposure(dir, {
+				user_content_roots: ["work/active/", "perf/brag/", "brain/*.md", "reference/"],
+			});
+			assert.equal(p.source, "derived");
+			assert.ok(p.roots.includes("work/active"), `${p.roots}`);
+			assert.ok(p.roots.includes("brain"));
+			assert.ok(!p.roots.includes("work/1-1"), "only what the vault declared as user content");
+		});
+	});
+
+	test("a declared root that does not exist on disk is dropped", () => {
+		withVault((dir) => {
+			mkdirSync(join(dir, "brain"), { recursive: true });
+			const p = resolveExposure(dir, { user_content_roots: ["brain/", "nowhere/"] });
 			assert.deepEqual([...p.roots], ["brain"]);
 		});
 	});
 
-	test("user_content_roots does NOT widen exposure — the two keys answer different questions", () => {
-		// The regression this locks down. An earlier version derived exposure from
-		// user_content_roots, reasoning that the template already maintains it.
-		// Measured against the shipped manifest that gave work, org, perf, brain,
-		// reference — third parties' personal notes, review and compensation
-		// evidence, and 1:1 records readable by any repo the server was wired into.
-		//
-		//   user_content_roots — what is the user's content?  (preserve on upgrade)
-		//   mcp_exposed_roots  — what may leave the vault?    (egress)
-		//
-		// Adding a folder for backup reasons must never widen what a foreign
-		// session can read.
-		withVault((dir) => {
-			for (const d of ["brain", "reference", "work", "org", "perf"]) {
-				mkdirSync(join(dir, d), { recursive: true });
-			}
-			const p = resolveExposure(dir, {
-				user_content_roots: ["work/active/", "org/people/", "perf/brag/", "brain/*.md", "reference/"],
-			});
-			assert.deepEqual([...p.roots].sort(), ["brain", "reference"]);
-			assert.equal(p.source, "fallback");
-			for (const sensitive of ["work", "org", "perf"]) {
-				assert.ok(!p.roots.includes(sensitive), `${sensitive}/ must not be exposed by a backup setting`);
-			}
-		});
-	});
-
-	test("the shipped default resolves to the narrow pair on a real clean install", () => {
+	test("a vault declaring neither key falls back", () => {
 		withVault((dir) => {
 			mkdirSync(join(dir, "brain"), { recursive: true });
-			mkdirSync(join(dir, "reference"), { recursive: true });
-			mkdirSync(join(dir, "work"), { recursive: true });
-			// mcp_exposed_roots ships empty; nothing about that may open work/.
-			const p = resolveExposure(dir, { mcp_exposed_roots: [] });
-			assert.deepEqual([...p.roots].sort(), ["brain", "reference"]);
+			const p = resolveExposure(dir, {});
+			assert.equal(p.source, "fallback");
+			assert.deepEqual([...p.roots], ["brain"]);
 		});
 	});
 

@@ -1,18 +1,11 @@
 /**
- * Who is calling, and what the answer is allowed to say.
+ * Caller identity, and sanitising what crosses back to it.
  *
- * IDENTITY IS DERIVED, NEVER ASSERTED
- *
- * The caller's identity comes from the MCP `roots/list` handshake — the client
- * tells the server which directories the session is working in — and never from
- * a tool argument. That is the property the whole memory layer rests on: a
- * session cannot widen its own reach by claiming to be a different project,
- * because there is no argument through which to claim it.
- *
- * The cost of that choice is a real failure mode worth naming: a client that
- * does not complete the handshake is ANONYMOUS, and an anonymous caller sees
- * only `general`-scoped material. That is indistinguishable from an empty
- * vault, which is why `health` reports identity explicitly.
+ * Identity comes from the MCP `roots/list` handshake — never from a tool
+ * argument, so a session cannot claim to be a project it is not. A client that
+ * does not complete the handshake is anonymous and sees only `general`-scoped
+ * memories; `health` reports that explicitly, since it otherwise looks like an
+ * empty vault.
  */
 
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -26,13 +19,8 @@ export interface Root {
 
 /**
  * Normalise a path for comparison: separators, trailing slash, case, and the
- * leading slash a drive-letter path picks up when a Windows-shaped `file://`
- * URI is parsed somewhere without a drive concept.
- *
- * That last one is not hypothetical. `fileURLToPath("file:///C:/x")` returns
- * `C:\x` on Windows and `/C:/x` on POSIX, so the same root URI compares
- * unequal to the same vault depending on which platform did the parsing.
- * Comparison must not depend on that.
+ * leading slash a drive-letter path carries on platforms without drives
+ * (`fileURLToPath("file:///C:/x")` is `C:\x` on Windows, `/C:/x` elsewhere).
  */
 export function normalizePath(x: unknown): string {
 	return String(x ?? "")
@@ -43,34 +31,17 @@ export function normalizePath(x: unknown): string {
 		.toLowerCase();
 }
 
-/**
- * Turn a `file://` root URI into a plain path.
- *
- * Handles the two- and three-slash forms and percent-encoding, both of which
- * appear in the wild depending on the client and the platform.
- */
+/** Turn a `file://` root URI into a plain path. */
 export function rootToPath(uri: unknown): string {
 	const raw = String(uri ?? "");
 
-	// The platform primitive first. It handles drive letters, POSIX roots, UNC
-	// paths and percent-decoding correctly, which a regex here did not: an
-	// earlier hand-rolled version ate the third slash unconditionally — right
-	// for `file:///C:/x`, wrong for `file:///home/x` where that slash IS the
-	// filesystem root. Every POSIX root became relative, so isVaultItself()
-	// could never match and the guard against the vault writing to its own
-	// memory layer FAILED OPEN on Linux and macOS.
-	//
-	// `main-guard.ts` already documented this as the house rule. Reaching for a
-	// regex instead is how the same class of defect keeps recurring here.
 	if (/^file:\/\//i.test(raw)) {
 		try {
 			return fileURLToPath(raw);
 		} catch {
-			// Malformed but recognisable shapes still reach us from real clients —
-			// notably the two-slash `file://C:/x` form, which is not a legal file
-			// URL but does get sent. Degrade to tolerant parsing rather than
-			// treating the caller as anonymous, which would silently narrow its
-			// scope to `general` and look like an empty vault.
+			// Fall through: clients also send the two-slash `file://C:/x` form,
+			// which is not a legal file URL. Parsing it tolerantly beats treating
+			// the caller as anonymous.
 		}
 	}
 
@@ -84,12 +55,9 @@ export function rootToPath(uri: unknown): string {
 }
 
 /**
- * The calling repo's name, used as its project identity.
- *
- * The last path segment of the first root. This is a CONVENTION, not a
- * guarantee — two repos sharing a folder name collide, and that limitation is
- * documented rather than papered over, because the alternative (asking the
- * caller who it is) reintroduces exactly the assertion this design removes.
+ * The calling repo's name, used as its project identity: the last segment of
+ * the first root. A convention rather than a guarantee — two repos sharing a
+ * folder name collide.
  */
 export function callerProject(roots: readonly Root[]): string | null {
 	const first = roots[0];
@@ -103,17 +71,9 @@ export function callerProject(roots: readonly Root[]): string | null {
 }
 
 /**
- * Is the caller the vault itself?
- *
- * Registering this server in the vault's own `.mcp.json` is a natural thing to
- * try, and it must not silently produce nonsense. A session inside the vault
- * already reads every note directly; a memory written from there would be
- * scoped to the vault-as-a-project and reach only the sessions that never
- * needed it. So writes are refused with an explanation rather than accepted
- * into a dead end.
- *
- * Compared across ALL roots, not just the first: a session can legitimately
- * open the vault as a secondary directory.
+ * Is the caller the vault itself? Checked across all roots, since a session can
+ * open the vault as a secondary directory. Used to refuse memory writes from
+ * inside the vault, which would reach only sessions that already read it.
  */
 export function isVaultItself(vaultRoot: string, roots: readonly Root[]): boolean {
 	if (!roots.length) return false;
@@ -122,24 +82,17 @@ export function isVaultItself(vaultRoot: string, roots: readonly Root[]): boolea
 }
 
 /**
- * Strip local absolute paths out of anything crossing back to the caller.
+ * Replace local absolute paths with `<path>`.
  *
- * Error text lands in the CALLING session, which may paste it into a commit
- * message, a PR body or an issue. Local absolute paths are precisely the
- * artifact class this project's leak guard exists to keep out of repositories,
- * and raw filesystem errors are full of them:
- *
- *   ENOENT: no such file or directory, lstat 'C:\Users\someone\vault\CLAUDE.md'
- *
- * Stripped at the boundary rather than at each throw site, because the one
- * that gets forgotten is the one that leaks.
+ * Error text reaches the calling session and may be pasted into a commit or an
+ * issue; raw filesystem errors carry full local paths. Applied at this single
+ * boundary rather than per throw site. Vault-relative paths are left alone —
+ * those are citations.
  */
 export function sanitize(message: unknown): string {
 	return String(message)
-		// A drive letter is ONE letter, so it must not be preceded by another —
-		// without the lookbehind, "vault://note/x" matches from its "t://note/x"
-		// and every URI in an error message is destroyed. Found by a wire probe,
-		// not by any of the unit tests, which only ever fed it real fs errors.
+		// The lookbehind keeps a drive letter to ONE letter, so `vault://note/x`
+		// is not read as a `t:` drive path.
 		.replace(/(?<![A-Za-z])[A-Za-z]:[\\/][^\s'"`)]+/g, "<path>")
 		.replace(/\/(?:home|Users|users|root)\/[^\s'"`)]+/g, "<path>")
 		.replace(/\\\\[^\s'"`)]+/g, "<path>");
@@ -153,12 +106,8 @@ export interface AuditEntry {
 }
 
 /**
- * Append-only audit log.
- *
- * Every read is recorded with the calling repo, because "a coding session in
- * repo X can read the vault" is only a defensible position if you can
- * afterwards say exactly what it read. Failure here is swallowed on purpose:
- * an audit log that can break the server is a liability, not a control.
+ * Append-only log of what each caller read. Write failures are swallowed: the
+ * log must never be able to break the server.
  */
 export function createAuditor(
 	logPath: string,
@@ -172,10 +121,8 @@ export function createAuditor(
 				mkdirSync(dirname(logPath), { recursive: true });
 				ensured = true;
 			}
-			// Detail spreads FIRST so the authoritative fields overwrite it, never
-			// the other way round. A tool argument happening to be named `caller`
-			// must not be able to forge the identity recorded against its own call
-			// — an audit log a caller can write its own name into is worthless.
+			// Detail spreads first so the authoritative fields win: a tool argument
+			// named `caller` must not be able to forge the recorded identity.
 			const entry: AuditEntry = {
 				...detail,
 				action,

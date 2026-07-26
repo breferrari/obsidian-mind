@@ -314,23 +314,31 @@ The vault normally only helps while you are sitting in it. The **`om` MCP server
 
 Plus notes as readable **resources**, and `recall_topic` / `prior_art` as **prompts** you invoke yourself from the `/` menu.
 
-### The fence
+### Which memories reach which project
 
-The concern is **egress** — vault material ending up in a commit, a PR body, or a public issue — not hiding files from you. A note is served only if it clears all three: its top-level folder is exposed, its filename is not in `mcp_never_expose`, and it is not tagged `private`.
+This is the part worth understanding, and it is what the layer is for. Every memory declares its reach when written:
 
-Configured in `vault-manifest.json`:
+- `scope: project`, `projects: [a, b]` — reaches those repos and no others
+- `scope: platform`, `platforms: [ios]` — reaches any repo on that platform
+- `scope: general` — reaches everywhere
+
+A reader never widens what the writer declared, so a sibling app on the same platform does not inherit another app's project-scoped constraints. `recall` with `explain: true` reports why each memory was shown and how many were withheld.
+
+### Which notes the server serves
+
+Your vault, your notes, your session. The default is the vault's own `user_content_roots`, at the granularity it declares them (`work/active/`, not all of `work/`). Set `mcp_exposed_roots` only if this vault holds material that is **not yours to share** — employer-confidential notes, a client's data.
 
 | key | default | meaning |
 |-----|---------|---------|
-| `mcp_exposed_roots` | *(empty → `brain`, `reference`)* | folders whose notes may be read |
+| `mcp_exposed_roots` | *(empty → `user_content_roots`)* | folders whose notes may be read |
 | `mcp_never_expose` | *(empty)* | filenames withheld regardless of folder |
 | `memory_root` | `memories` | where cross-repo memories live |
 | `mcp_inbox` | `inbox` | fallback destination for `record_work` |
 
-> [!warning] Exposure does NOT follow `user_content_roots`, on purpose.
-> The two keys answer different questions: `user_content_roots` is *what is the user's content* (preserve it on upgrade), `mcp_exposed_roots` is *what may leave the vault*. An earlier version derived one from the other and, measured against this template's own manifest, that exposed `work/`, `org/` and `perf/` — third parties' personal notes, review and compensation evidence, and 1:1 records — to every repo the server was wired into. **Adding a folder for backup reasons must never widen what a foreign session can read.** Widening is explicit or it does not happen.
+`memories/` is never served as an ordinary note whatever the config says — memories carry their own scope, and the note surface would bypass it. A note tagged `private` in frontmatter is never served either.
 
-**`memories/` is never exposed**, whatever the config says: memories carry their own declared scope, and serving them as ordinary notes would bypass it entirely. Every read is written to `.claude/om-mcp-audit.jsonl` (gitignored) with the calling repo, so "what did that session actually see" is answerable afterwards.
+> [!note] Keeping vault material out of repos is the contract's job, not this list's.
+> A session can read the vault directly, so narrowing what the server serves prevents nothing on its own. What works is the prohibition injected into the calling session, plus `.claude/om-mcp-audit.jsonl` (gitignored), which records every read with the calling repo.
 
 Run `health` when something that should be in the vault cannot be found — every failure in this layer presents identically as "no results", and that tool is what tells them apart.
 

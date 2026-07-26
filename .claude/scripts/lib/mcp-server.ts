@@ -150,6 +150,14 @@ export function createHandlers(deps: ServerDeps): Handlers {
 					.sort((a, b) => b.hits - a.hits);
 				if (scored.length) visible = scored.map((x) => x.m);
 			}
+
+			// Relevance decides the order WITHIN each group, but a superseded
+			// memory never outranks a live one. Reordering by relevance alone puts
+			// a corrected-away fact above the correction that replaced it, which is
+			// the one thing supersession exists to prevent.
+			const live = visible.filter((m) => m.facets.superseded_by.length === 0);
+			const retired = visible.filter((m) => m.facets.superseded_by.length > 0);
+			visible = [...live, ...retired];
 		}
 
 		const shown = visible.slice(0, Math.max(0, limit));

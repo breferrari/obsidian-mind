@@ -45,7 +45,7 @@ export interface ExposurePolicy {
 	/** Filenames withheld regardless of folder. */
 	readonly neverExpose: ReadonlySet<string>;
 	/** Where the root list came from, for `health` to report. */
-	readonly source: "manifest" | "fallback";
+	readonly source: "manifest" | "derived" | "fallback";
 	/** The memory root, excluded from every read surface unconditionally. */
 	readonly memoryRoot: string;
 }
@@ -64,72 +64,74 @@ export interface ResourceDef {
 	readonly mimeType: string;
 }
 
-/**
- * A deliberately NARROW default.
- *
- * `brain/` is the vault's durable operating knowledge and `reference/` is its
- * architecture and codebase notes — exactly what a coding session in another
- * repo benefits from, and the least likely to be a problem if it lands in a
- * commit message. Everything else is opt-in.
- *
- * WHY NOT DERIVE FROM `user_content_roots`
- *
- * An earlier version did, reasoning that the template already maintains that
- * list so there is no second key to keep correct. That is true and it is still
- * the wrong signal, because the two keys answer DIFFERENT QUESTIONS:
- *
- *   user_content_roots  — what is the user's own content? (preserve on upgrade)
- *   mcp_exposed_roots   — what may leave the vault?       (egress)
- *
- * Measured against this template's shipped manifest, deriving gave
- * `work, org, perf, brain, reference` — meaning third parties' personal notes,
- * review and compensation evidence, and 1:1 records were all readable by any
- * repo the user wired the server into. Nothing about adding a folder to
- * `user_content_roots`, which a user does for backup reasons, should widen what
- * a foreign session can read.
- *
- * So exposure now falls back to this list and nothing else. A vault that wants
- * more says so explicitly, which is a decision someone makes on purpose rather
- * than a side effect of an unrelated config change.
- */
-const DEFAULT_EXPOSED_ROOTS: readonly string[] = ["brain", "reference"];
+/** Used only when the manifest declares neither exposure key. */
+const FALLBACK_ROOTS: readonly string[] = ["brain", "reference"];
 
-/** Roots are plain folder names — anything that could climb out is refused. */
+/**
+ * Normalise a declared root. Path PREFIXES are allowed, not just top-level
+ * names, because that is the granularity the vault already speaks in:
+ * `user_content_roots` says `work/active/`, not `work/`. Collapsing to the top
+ * segment would expose `work/1-1/` because `work/active/` was declared, which
+ * is both wrong and not what the user wrote down.
+ *
+ * Traversal is refused; a trailing slash and a leading `./` are tolerated
+ * because the manifest is written by humans.
+ */
 function cleanRoots(value: unknown): string[] {
 	if (!Array.isArray(value)) return [];
-	return value.filter((s): s is string => typeof s === "string" && /^[\w.-]+$/.test(s) && s !== "..");
+	const out: string[] = [];
+	for (const raw of value) {
+		if (typeof raw !== "string") continue;
+		const s = raw.trim().replace(/^\.\//, "").replace(/^[\\/]+|[\\/]+$/g, "");
+		if (!s) continue;
+		const parts = s.split(/[\\/]/);
+		// A glob contributes its literal prefix; `perf/h*-*/` means `perf`. A
+		// leading glob contributes nothing rather than everything.
+		const literal: string[] = [];
+		for (const p of parts) {
+			if (!p || p === "." || p === ".." || p.includes("*")) break;
+			literal.push(p);
+		}
+		if (literal.length) out.push(literal.join("/"));
+	}
+	return [...new Set(out)];
 }
 
 /**
- * Memories are NEVER part of the exposure surface.
- *
- * They have their own access rule — declared scope, evaluated per caller — and
- * serving them as ordinary notes is a second path around that fence, which is
- * the defect this whole module exists to prevent.
- *
- * This is not hypothetical. `memories/` genuinely belongs in the manifest's
- * `user_content_roots`, because that key is the boundary `/om-vault-upgrade`
- * copies across versions and a memory store left out of it is silently dropped
- * on upgrade. Exposure DERIVES from that same key. So doing the correct thing
- * for upgrades exposes every memory in the vault, scoped to any project, to
- * every caller — verified before this guard existed.
- *
- * Hence unconditional: not a default, not overridable by config. A vault that
- * explicitly lists its memory root under `mcp_exposed_roots` still does not get
- * it, because there is no version of that request which is safe to honour.
+ * Memories are never served as ordinary notes, whatever the config says. They
+ * carry their own declared scope, evaluated per caller; reaching them through
+ * the note surface would bypass it.
  */
 function withoutMemoryRoot(roots: readonly string[], memoryRoot: string): string[] {
 	const mem = memoryRoot.toLowerCase();
-	return roots.filter((r) => r.toLowerCase() !== mem);
+	return roots.filter((r) => r.toLowerCase() !== mem && !r.toLowerCase().startsWith(`${mem}/`));
 }
 
+/** Keep only roots that exist on disk, so the listing reflects the vault. */
+function present(vaultRoot: string, roots: readonly string[]): string[] {
+	return roots.filter((r) => {
+		try {
+			return statSync(join(vaultRoot, r)).isDirectory();
+		} catch {
+			return false;
+		}
+	});
+}
+
+/**
+ * Which folders this vault serves.
+ *
+ * `mcp_exposed_roots` when declared, otherwise the vault's own
+ * `user_content_roots` — the user's notes, read by the user's own session. A
+ * vault holding material that is not the user's to share (employer-confidential
+ * notes, client data) narrows it explicitly.
+ */
 export function resolveExposure(
 	vaultRoot: string,
 	manifest: Record<string, unknown> | null | undefined,
 	memoryRoot = "memories",
 ): ExposurePolicy {
-	// `mcp_never_expose` holds FILENAMES, which legitimately contain spaces and
-	// dots, so the root-name rule is too strict for it. Taken as declared.
+	// Filenames, not folder names — spaces and dots are legitimate here.
 	const never = new Set(
 		Array.isArray(manifest?.mcp_never_expose)
 			? manifest.mcp_never_expose.filter((s): s is string => typeof s === "string")
@@ -141,17 +143,14 @@ export function resolveExposure(
 		return { roots: withoutMemoryRoot(declared, memoryRoot), neverExpose: never, source: "manifest", memoryRoot };
 	}
 
-	// Nothing declared: the narrow default, filtered to what actually exists so
-	// the resource list reflects the vault rather than the template's guess.
-	const present = DEFAULT_EXPOSED_ROOTS.filter((r) => {
-		try {
-			return statSync(join(vaultRoot, r)).isDirectory();
-		} catch {
-			return false;
-		}
-	});
+	const derived = present(vaultRoot, cleanRoots(manifest?.user_content_roots));
+	if (derived.length) {
+		return { roots: withoutMemoryRoot(derived, memoryRoot), neverExpose: never, source: "derived", memoryRoot };
+	}
+
+	const fallback = present(vaultRoot, FALLBACK_ROOTS);
 	return {
-		roots: withoutMemoryRoot(present.length ? present : [...DEFAULT_EXPOSED_ROOTS], memoryRoot),
+		roots: withoutMemoryRoot(fallback.length ? fallback : [...FALLBACK_ROOTS], memoryRoot),
 		neverExpose: never,
 		source: "fallback",
 		memoryRoot,
@@ -187,14 +186,16 @@ export function firstDescription(path: string, fallback = "Vault note"): string 
 
 /** Is `rel` inside one of the policy's exposed roots? */
 export function isExposedPath(policy: ExposurePolicy, relPath: string): boolean {
-	const first = relPath.replace(/\\/g, "/").split("/")[0];
-	if (!first) return false;
-	// Re-checked here as well as in resolveExposure. The policy could be built by
-	// hand, and there is no caller for whom "read a memory as a plain note" is a
-	// legitimate request — memories are reached through recall, which applies the
-	// visibility rule, or not at all.
-	if (policy.memoryRoot && first.toLowerCase() === policy.memoryRoot.toLowerCase()) return false;
-	return policy.roots.some((r) => r.toLowerCase() === first.toLowerCase());
+	const rel = relPath.replace(/\\/g, "/").toLowerCase();
+	if (!rel) return false;
+	const mem = policy.memoryRoot?.toLowerCase();
+	if (mem && (rel === mem || rel.startsWith(`${mem}/`))) return false;
+	// Prefix match on whole segments, so `work/active` does not admit
+	// `work/active-secrets` and `brain` admits `brain/sub/note.md`.
+	return policy.roots.some((r) => {
+		const root = r.toLowerCase();
+		return rel === root || rel.startsWith(`${root}/`);
+	});
 }
 
 /**

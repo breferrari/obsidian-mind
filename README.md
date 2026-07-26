@@ -248,12 +248,12 @@ That goes in the **consuming project's** `.mcp.json`. Then add a short section t
 
 **Cross-repo memory with an epistemic contract.** A lesson learned in one repo reaches the repos it was scoped to and no others. Reach is *declared at write time*, never guessed at read time, so a sibling project does not inherit another's constraints. Everything recorded carries `confidence: verified | inferred | unverified`, dated volatile facts, and provenance derived server-side — a session cannot claim to be a project it is not. Corrections supersede rather than overwrite, so the store gets *more* trustworthy as it grows instead of accumulating contradictions.
 
-**The fence.** The concern is egress — vault material landing in a commit, a PR body, or a public issue — not hiding files from you. A note is served only if its folder is exposed, its filename is not in `mcp_never_expose`, and it is not tagged `private`. Configure both in `vault-manifest.json`.
+**Which notes it serves.** Your vault, your notes, your session — the default is simply what your vault already declares as your content (`user_content_roots`), at the granularity you wrote it (`work/active/`, not all of `work/`). Set `mcp_exposed_roots` in `vault-manifest.json` only if this vault holds material that is **not yours to share** — employer-confidential notes, a client's data. A note tagged `private` is never served, and memories are never served as ordinary notes, since they carry their own scope.
 
-**The default is `brain/` and `reference/` — nothing else.** Your work notes, people notes, 1:1s and review evidence stay behind the fence until you say otherwise, and exposure deliberately does *not* follow `user_content_roots`: that key means "this is my content, preserve it on upgrade", which is a different question from "this may leave the vault". Widening is explicit or it does not happen. Memories are never served as ordinary notes whatever the config says, and every read is logged with the calling repo.
+Every read is logged with the calling repo, so "what did that session actually see" is answerable afterwards.
 
-> [!WARNING]
-> **Never register the raw QMD server in a project repo.** One line in a `.mcp.json` gives that session unfenced semantic search over your entire vault — every client note, everything private. The `om` server exists to sit in front of the index and decide what leaves.
+> [!NOTE]
+> Keeping vault material out of a public PR is the **contract's** job, not the exposure list's — a session can read your vault directly regardless. The prohibition injected into the calling session is the part that measurably holds.
 
 ---
 
