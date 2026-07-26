@@ -14,7 +14,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -308,6 +308,30 @@ describe("resolving a resource URI", () => {
 			stocked(dir);
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"], mcp_never_expose: ["SOUL.md"] });
 			assert.equal(resolveResourceUri(dir, policy, "vault://note/brain/SOUL.md"), null);
+		});
+	});
+
+	test("a SYMLINK out of an exposed folder is refused", () => {
+		// `resolve` collapses `..` but happily returns a path whose real target is
+		// outside the vault. A link planted in an exposed folder would otherwise
+		// read anything this process can. MCPVault shipped this bug for real.
+		withVault((dir) => {
+			stocked(dir);
+			const outside = put(dir, "..-outside/secret.md", NOTE("should never be readable"));
+			const link = join(dir, "brain", "innocent.md");
+			try {
+				symlinkSync(outside, link, "file");
+			} catch {
+				// Windows without developer mode cannot create symlinks; the guard is
+				// still compiled and exercised by the traversal cases above.
+				return;
+			}
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
+			assert.equal(
+				resolveResourceUri(dir, policy, "vault://note/brain/innocent.md"),
+				null,
+				"a link whose target escapes the exposed root must not resolve",
+			);
 		});
 	});
 

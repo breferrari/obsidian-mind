@@ -28,8 +28,8 @@
  * were supposed to obey. Both were the same mistake twice.
  */
 
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, basename } from "node:path";
+import { readFileSync, readdirSync, statSync, existsSync, realpathSync } from "node:fs";
+import { join, basename, resolve, sep } from "node:path";
 
 import { discoverExposedRoots } from "./memory-discover.ts";
 import { vaultRelKey } from "./mcp-qmd-client.ts";
@@ -260,15 +260,26 @@ export function resolveResourceUri(
 
 	// Traversal and absolute paths are refused before touching the filesystem.
 	if (rel.includes("..") || rel.startsWith("/") || /^[A-Za-z]:/.test(rel)) return null;
+	if (!rel.toLowerCase().endsWith(".md")) return null;
 	if (!isExposedPath(policy, rel)) return null;
 	if (policy.neverExpose.has(basename(rel))) return null;
 
-	const full = join(vaultRoot, rel);
-	// Confirm the resolved path really is inside the vault: `join` normalises,
-	// so this catches anything the string checks above missed.
-	if (!vaultRelKeyRaw(vaultRoot, full.replace(/\\/g, "/")).length) return null;
-	if (vaultRelKeyRaw(vaultRoot, full.replace(/\\/g, "/")).startsWith("..")) return null;
-	if (!existsSync(full)) return null;
+	// Containment must survive SYMLINKS, not just `..`. `resolve` collapses dot
+	// segments but happily returns a path whose real target is outside the vault,
+	// so a symlink planted inside an exposed folder would read anything this
+	// process can read. MCPVault shipped exactly this bug and patched it in
+	// v0.9.1 — a real project already paid for the lesson.
+	const segment = rel.replace(/\\/g, "/").split("/")[0] ?? "";
+	let rootReal: string;
+	let full: string;
+	try {
+		rootReal = realpathSync(resolve(join(vaultRoot, segment)));
+		full = realpathSync(resolve(join(vaultRoot, rel)));
+	} catch {
+		return null; // missing, or a broken link
+	}
+	if (full !== rootReal && !full.startsWith(rootReal + sep)) return null;
+	if (policy.neverExpose.has(basename(full))) return null;
 	if (isPrivate(full)) return null;
 	return full;
 }
