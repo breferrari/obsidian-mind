@@ -75,6 +75,36 @@ export function vaultRelKey(vaultRoot: string, fullPath: string): string {
 	return p.startsWith(v) ? p.slice(v.length).replace(/^\/+/, "") : p;
 }
 
+/** A word that marks a query as a question rather than a set of keywords. */
+const QUESTION_SHAPED = /\b(why|how|what|when|where|which|who|should|can|does|did|is|are|was)\b|\?/i;
+
+export interface SubQuery {
+	readonly type: "lex" | "vec" | "hyde";
+	readonly query: string;
+}
+
+/**
+ * Build the typed sub-queries for one search.
+ *
+ * `lex` and `vec` always go out together: keywords find the exact term, vectors
+ * find the note that answers the question without using the word.
+ *
+ * `hyde` is added only for question-shaped queries. It writes a hypothetical
+ * answer and matches against that, which is what helps when someone asks "why
+ * did we decide X" and the note is titled something else entirely. It is not
+ * free — it runs a local generation model — so a two-word keyword lookup, where
+ * lexical matching is already the right tool, does not pay for it.
+ */
+export function subQueries(query: string): SubQuery[] {
+	const q = String(query).trim();
+	const subs: SubQuery[] = [
+		{ type: "lex", query: q },
+		{ type: "vec", query: q },
+	];
+	if (q.split(/\s+/).length >= 4 && QUESTION_SHAPED.test(q)) subs.push({ type: "hyde", query: q });
+	return subs;
+}
+
 /** qmd paths are collection-prefixed: `myvault/brain/Foo.md` → `brain/foo.md`. */
 export function qmdRelKey(qmdPath: unknown): string {
 	const p = pathKey(qmdPath);
@@ -265,11 +295,12 @@ export async function qmdSearch(
 		const out = (await client.call("tools/call", {
 			name: "query",
 			arguments: {
-				searches: [
-					{ type: "lex", query },
-					{ type: "vec", query },
-				],
+				searches: subQueries(query),
 				intent: query,
+				// Over-fetch: the fence is applied to the RESULT, so asking for
+				// exactly `limit` means a vault with much unexposed content returns
+				// far fewer than requested with no sign that more existed.
+				limit: Math.max(limit * 4, 20),
 				minScore: 0.4,
 			},
 		})) as { structuredContent?: { results?: unknown } } | null;

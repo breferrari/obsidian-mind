@@ -17,7 +17,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { listMemoryFiles, parseFrontmatter, facetsOf, type Facets } from "./memory-recall.ts";
-import { qmdRelKey, vaultRelKey, type QmdClient } from "./mcp-qmd-client.ts";
+import { qmdRelKey, vaultRelKey, subQueries, type QmdClient } from "./mcp-qmd-client.ts";
 import type { VisibleFile } from "./mcp-exposure.ts";
 
 const HEAD_BYTES = 1200;
@@ -200,10 +200,7 @@ export async function semanticMemoryOrder<T extends { full: string }>(
 		const out = (await client.call("tools/call", {
 			name: "query",
 			arguments: {
-				searches: [
-					{ type: "lex", query },
-					{ type: "vec", query },
-				],
+				searches: subQueries(query),
 				intent: `durable lessons relevant to: ${query}`,
 				limit: Math.max(limit * 3, 15),
 				minScore: 0.3,

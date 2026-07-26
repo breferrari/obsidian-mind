@@ -20,6 +20,7 @@ import {
 	vaultRelKey,
 	qmdRelKey,
 	scopeResults,
+	subQueries,
 	type QmdHit,
 } from "../lib/mcp-qmd-client.ts";
 
@@ -65,6 +66,47 @@ describe("path identity", () => {
 
 	test("a qmd path with no prefix is left alone", () => {
 		assert.equal(qmdRelKey("gotchas.md"), "gotchas.md");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Sub-query shaping
+// ---------------------------------------------------------------------------
+
+describe("building sub-queries", () => {
+	test("lexical and vector always go out together", () => {
+		const types = subQueries("caching").map((s) => s.type);
+		assert.ok(types.includes("lex"));
+		assert.ok(types.includes("vec"));
+	});
+
+	test("a question-shaped query also gets hyde", () => {
+		// hyde writes a hypothetical answer and matches against that, which is
+		// what finds the note whose title shares no words with the question.
+		for (const q of [
+			"why did we choose postgres over mysql",
+			"how does the retry envelope behave",
+			"what happens when the lease expires?",
+		]) {
+			assert.ok(subQueries(q).some((s) => s.type === "hyde"), q);
+		}
+	});
+
+	test("a keyword lookup does NOT pay for hyde", () => {
+		// It runs a local generation model. Lexical matching is already the right
+		// tool for a two-word lookup, so the cost buys nothing.
+		for (const q of ["caching", "deploy runbook", "retry envelope", "postgres"]) {
+			assert.ok(!subQueries(q).some((s) => s.type === "hyde"), q);
+		}
+	});
+
+	test("a long non-question stays lex + vec", () => {
+		const q = "connection pool timeout during the nightly batch reconciliation job";
+		assert.deepEqual(subQueries(q).map((s) => s.type), ["lex", "vec"]);
+	});
+
+	test("every sub-query carries the trimmed text", () => {
+		for (const s of subQueries("  why did we do this  ")) assert.equal(s.query, "why did we do this");
 	});
 });
 
