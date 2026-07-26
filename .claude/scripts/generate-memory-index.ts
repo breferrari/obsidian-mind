@@ -18,7 +18,7 @@ import {
 	extractFrontmatterField,
 	isMarkdownFilename,
 } from "./lib/session-start.ts";
-import { generateMemoryIndex, type BrainNote } from "./lib/memory-index.ts";
+import { generateMemoryIndex, type BrainNote } from "./lib/automemory-index.ts";
 
 /**
  * Collect brain/ notes (name + description) for index generation. Exported

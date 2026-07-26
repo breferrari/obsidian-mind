@@ -1,6 +1,13 @@
 /**
  * MEMORY.md generation (#125) — the auto-memory index as a DERIVED view.
  *
+ * NOT the vault memory layer. This module builds Claude Code's local
+ * `MEMORY.md` pointer index; `memory-write.ts` / `memory-recall.ts` are the
+ * cross-repo vault memory reached over MCP. Two unrelated things were both
+ * called "memory" until this file was renamed — the entry script keeps its
+ * original name because it is quoted verbatim in `om-wrap-up.md` and pinned in
+ * `vault-manifest.json`, and a rename there would break a documented command.
+ *
  * CLAUDE.md doctrine: `~/.claude/.../memory/MEMORY.md` is an auto-loaded
  * index ONLY — pointers to brain/ topic notes, never content. The doctrine
  * only holds if the index is derivable: the moment authored knowledge

@@ -58,7 +58,7 @@ import {
 	scanActiveHygiene,
 	walkMarkdown,
 } from "./lib/active-hygiene.ts";
-import { generateMemoryIndex } from "./lib/memory-index.ts";
+import { generateMemoryIndex } from "./lib/automemory-index.ts";
 import { collectBrainNotes } from "./generate-memory-index.ts";
 
 const ACTIVE_REL = "work/active";

@@ -10,7 +10,7 @@ import {
 	MEMORY_INDEX_HEADER,
 	generateMemoryIndex,
 	type BrainNote,
-} from "../lib/memory-index.ts";
+} from "../lib/automemory-index.ts";
 
 const NOTES: readonly BrainNote[] = [
 	{ name: "Patterns", description: "Recurring patterns and conventions" },
