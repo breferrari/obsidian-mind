@@ -36,8 +36,13 @@ const root = (uri: string): Root => ({ uri });
 
 describe("reading the caller's identity from roots", () => {
 	test("handles the two- and three-slash file URI forms", () => {
-		assert.equal(rootToPath("file:///C:/Dev/atlas"), "C:/Dev/atlas");
-		assert.equal(rootToPath("file://C:/Dev/atlas"), "C:/Dev/atlas");
+		// Asserted through normalizePath, not as an exact string: a drive-letter
+		// URI resolves to the NATIVE form, which is `C:\Dev\atlas` on Windows and
+		// `/C:/Dev/atlas` on POSIX. Pinning either one makes the suite pass on the
+		// machine it was written on and fail on the CI matrix — and comparison is
+		// what the callers actually do.
+		assert.equal(normalizePath(rootToPath("file:///C:/Dev/atlas")), normalizePath("C:/Dev/atlas"));
+		assert.equal(normalizePath(rootToPath("file://C:/Dev/atlas")), normalizePath("C:/Dev/atlas"));
 	});
 
 	test("a POSIX root KEEPS its leading slash — that slash is the filesystem root", () => {
@@ -51,8 +56,12 @@ describe("reading the caller's identity from roots", () => {
 	});
 
 	test("percent-encoding is decoded, and a malformed escape does not throw", () => {
-		assert.equal(rootToPath("file:///C:/Dev/my%20app"), "C:/Dev/my app");
-		assert.equal(rootToPath("file:///C:/Dev/100%"), "C:/Dev/100%");
+		assert.equal(normalizePath(rootToPath("file:///C:/Dev/my%20app")), normalizePath("C:/Dev/my app"));
+		assert.equal(normalizePath(rootToPath("file:///home/x/my%20app")), "/home/x/my app");
+		// A stray `%` is not a legal escape. It must degrade, not throw the
+		// caller's identity away — an exception here would make the session
+		// anonymous, which silently narrows its scope to `general`.
+		assert.equal(normalizePath(rootToPath("file:///C:/Dev/100%")), normalizePath("C:/Dev/100%"));
 	});
 
 	test("the project is the last segment, lowercased", () => {

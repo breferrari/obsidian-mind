@@ -17,6 +17,7 @@
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface Root {
 	readonly uri?: string;
@@ -39,15 +40,32 @@ export function normalizePath(x: unknown): string {
  * appear in the wild depending on the client and the platform.
  */
 export function rootToPath(uri: unknown): string {
-	// Strip only the scheme and authority. An earlier version also ate the third
-	// slash, which is correct for `file:///C:/x` and WRONG for `file:///home/x`:
-	// on POSIX that slash is the filesystem root, not a URI artifact. Losing it
-	// made every root a relative path, so isVaultItself() could never match a
-	// real vault and the "vault does not write to its own memory" guard FAILED
-	// OPEN on Linux and macOS.
-	const raw = String(uri ?? "").replace(/^file:\/\//, "");
-	// `/C:/Dev/x` → `C:/Dev/x`. Only a drive-letter path sheds its leading slash.
-	const path = /^\/[A-Za-z]:/.test(raw) ? raw.slice(1) : raw;
+	const raw = String(uri ?? "");
+
+	// The platform primitive first. It handles drive letters, POSIX roots, UNC
+	// paths and percent-decoding correctly, which a regex here did not: an
+	// earlier hand-rolled version ate the third slash unconditionally — right
+	// for `file:///C:/x`, wrong for `file:///home/x` where that slash IS the
+	// filesystem root. Every POSIX root became relative, so isVaultItself()
+	// could never match and the guard against the vault writing to its own
+	// memory layer FAILED OPEN on Linux and macOS.
+	//
+	// `main-guard.ts` already documented this as the house rule. Reaching for a
+	// regex instead is how the same class of defect keeps recurring here.
+	if (/^file:\/\//i.test(raw)) {
+		try {
+			return fileURLToPath(raw);
+		} catch {
+			// Malformed but recognisable shapes still reach us from real clients —
+			// notably the two-slash `file://C:/x` form, which is not a legal file
+			// URL but does get sent. Degrade to tolerant parsing rather than
+			// treating the caller as anonymous, which would silently narrow its
+			// scope to `general` and look like an empty vault.
+		}
+	}
+
+	const stripped = raw.replace(/^file:\/\//i, "");
+	const path = /^\/[A-Za-z]:/.test(stripped) ? stripped.slice(1) : stripped;
 	try {
 		return decodeURIComponent(path);
 	} catch {
