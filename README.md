@@ -146,8 +146,27 @@ qmd --index obsidian-mind update   # after bulk edits
 qmd --index obsidian-mind embed    # after many new notes
 ```
 
-> [!NOTE]
-> First-time `qmd embed` downloads a ~328MB embedding model. `qmd query` (with LLM reranking) also downloads a ~1.28GB model on first use — skip it with `qmd search` (BM25) or `qmd vsearch` (semantic only) if you want to avoid the larger download.
+#### How it works under the hood
+
+QMD runs **three small models locally**, so there is no API key to set up, no per-query cost, and it works offline:
+
+| model | size | job |
+|---|---|---|
+| `embeddinggemma-300M` | ~328MB | turns notes and queries into vectors |
+| `qmd-query-expansion-1.7B` | ~1.28GB | rewrites your query into better search terms |
+| `Qwen3-Reranker-0.6B` | ~640MB | reorders the shortlist by actual relevance |
+
+They download on first use and are cached. QMD offloads to the GPU when it finds one — CUDA on a discrete card, Metal on Apple Silicon — and falls back to CPU otherwise. Check what yours is doing with `qmd doctor`.
+
+The three CLI verbs map onto that stack, cheapest first: `qmd search` is BM25 keywords with **no model at all**, `qmd vsearch` is vector-only, and `qmd query` is the full hybrid. If you want to avoid the larger downloads, `search` alone is genuinely useful.
+
+#### What that means for the MCP server
+
+The `om` server sends a lexical *and* a vector sub-query, so retrieval finds the note that answers your question even when it shares no keywords with it. Practical consequences worth knowing:
+
+- **Reads are the expensive side, not writes.** A query embeds locally before it can search, so `recall` with a query takes a couple of seconds while `recall` without one is near-instant. `search` over notes is fast — it is the vector step that costs.
+- **Writing a memory does not wait for the model.** The index update is synchronous, so a new memory is immediately retrievable; generating its vector happens in the background, because that only affects where it *ranks*, not whether it is found.
+- **No index, no problem.** Without QMD the server falls back to lexical matching. Ordering gets worse; nothing disappears.
 
 > [!NOTE]
 > If QMD isn't installed, everything still works — the agent falls back to grep and the Obsidian CLI, and the MCP server entry is skipped with a harmless warning.

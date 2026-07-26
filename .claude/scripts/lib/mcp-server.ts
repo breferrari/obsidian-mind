@@ -13,7 +13,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 import type { VaultContext } from "./mcp-context.ts";
 import { INSTRUCTIONS, PROMPTS } from "./mcp-context.ts";
@@ -61,18 +61,16 @@ const text = (s: string): { content: { type: "text"; text: string }[] } => ({
 });
 
 /**
- * Re-index after a write, synchronously and bounded.
+ * Re-index after a write.
  *
- * The vault normally re-indexes from a PostToolUse hook, but an MCP write is
- * not a Claude Code tool call, so no hook fires. Verified: a captured memory sat
- * on disk and `search` could not find it.
+ * The vault normally re-indexes from a PostToolUse hook, but an MCP write is not
+ * a Claude Code tool call, so no hook fires — without this a note sits on disk
+ * and cannot be found, which is worse than no note because it looks like the
+ * system worked.
  *
- * That matters more than it looks. The entire point of capture is that the
- * vault can retrieve the memory afterwards, and a note that exists but is
- * unfindable is strictly WORSE than no note — because it looks like the system
- * worked. Synchronous on purpose: reporting "recorded" before the memory is
- * retrievable is a lie the caller cannot detect. Bounded so a broken index
- * degrades to a warning rather than hanging the tool.
+ * Split by what each step guarantees: `update` decides whether the note is
+ * retrievable at all and is synchronous and bounded; `embed` only decides where
+ * it ranks and is detached, because it runs a local model.
  */
 export function reindexSync(indexName: string | null): boolean {
 	const run = (sub: string): boolean => {
@@ -87,13 +85,25 @@ export function reindexSync(indexName: string | null): boolean {
 		}
 	};
 
-	// `update` indexes the text; `embed` generates the vector. Without the second
-	// step a new memory is invisible to semantic recall until something else
-	// embeds — findable by keyword, missing from the query path that matters.
-	// Incremental, so it costs little beyond the one new note.
+	// `update` indexes the text and is what makes the note retrievable at all, so
+	// it is synchronous: reporting "recorded" before that is a lie the caller
+	// cannot detect.
 	const indexed = run("update");
 	if (!indexed) return false;
-	run("embed");
+
+	// `embed` builds the vector and is DETACHED, because it affects only where a
+	// memory RANKS, never whether it is found — recall appends everything the
+	// index did not match in declared order, and a new memory sorts to the front
+	// of that group. Waiting on a local model run for ordering that corrects
+	// itself moments later buys nothing: measured, it was most of the write.
+	try {
+		const entry = resolveQmdEntry();
+		const args = indexName ? ["--index", indexName, "embed"] : ["embed"];
+		const { cmd, args: argv, shell } = buildQmdCommand(entry, args);
+		spawn(cmd, [...argv], { shell, detached: true, stdio: "ignore" }).unref();
+	} catch {
+		/* ranking quality is best-effort; retrieval already works without it */
+	}
 	return true;
 }
 
