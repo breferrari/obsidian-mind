@@ -116,10 +116,29 @@ export function expandNote(files: readonly VisibleFile[], seed: string): ExpandR
 		.replace(/\.md$/i, "")
 		.toLowerCase();
 
-	const hit =
-		files.find((f) => f.label.toLowerCase() === want) ??
-		files.find((f) => f.full.toLowerCase().replace(/\\/g, "/").endsWith(`/${want}.md`)) ??
-		resolveVisible(files, seed);
+	// Candidates are COLLECTED before one is chosen. Using `find` here took the
+	// first match, which silently returned the wrong note whenever two visible
+	// notes shared a basename — exactly what resolveVisible refuses to do, so
+	// the module's own rule was broken by its primary path.
+	const byLabel = files.filter((f) => f.label.toLowerCase() === want);
+	const byPath = files.filter((f) => f.full.toLowerCase().replace(/\\/g, "/").endsWith(`/${want}.md`));
+	const candidates = byLabel.length ? byLabel : byPath;
+
+	if (candidates.length > 1) {
+		// Naming the folders is safe — every candidate is already visible to this
+		// caller — and it is the only way they can disambiguate, since the seed
+		// they have is by definition not specific enough.
+		const where = candidates.map((f) => `${f.scope}/${f.label}`).join("; ");
+		return {
+			text: `"${seed}" matches ${candidates.length} visible notes: ${where}. Pass a path rather than a title to choose one.`,
+			note: null,
+			outbound: [],
+			inbound: [],
+			hiddenOutbound: 0,
+		};
+	}
+
+	const hit = candidates[0] ?? resolveVisible(files, seed);
 
 	if (!hit) {
 		// A near-miss list is only built from VISIBLE notes, so the suggestion

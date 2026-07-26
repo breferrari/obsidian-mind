@@ -39,11 +39,19 @@ export function normalizePath(x: unknown): string {
  * appear in the wild depending on the client and the platform.
  */
 export function rootToPath(uri: unknown): string {
-	const raw = String(uri ?? "").replace(/^file:\/\/\/?/, "");
+	// Strip only the scheme and authority. An earlier version also ate the third
+	// slash, which is correct for `file:///C:/x` and WRONG for `file:///home/x`:
+	// on POSIX that slash is the filesystem root, not a URI artifact. Losing it
+	// made every root a relative path, so isVaultItself() could never match a
+	// real vault and the "vault does not write to its own memory" guard FAILED
+	// OPEN on Linux and macOS.
+	const raw = String(uri ?? "").replace(/^file:\/\//, "");
+	// `/C:/Dev/x` → `C:/Dev/x`. Only a drive-letter path sheds its leading slash.
+	const path = /^\/[A-Za-z]:/.test(raw) ? raw.slice(1) : raw;
 	try {
-		return decodeURIComponent(raw);
+		return decodeURIComponent(path);
 	} catch {
-		return raw;
+		return path;
 	}
 }
 

@@ -38,7 +38,16 @@ describe("reading the caller's identity from roots", () => {
 	test("handles the two- and three-slash file URI forms", () => {
 		assert.equal(rootToPath("file:///C:/Dev/atlas"), "C:/Dev/atlas");
 		assert.equal(rootToPath("file://C:/Dev/atlas"), "C:/Dev/atlas");
-		assert.equal(rootToPath("file:///home/x/atlas"), "home/x/atlas");
+	});
+
+	test("a POSIX root KEEPS its leading slash — that slash is the filesystem root", () => {
+		// Regression, and the test that previously encoded the bug as expected.
+		// The old pattern ate the third slash unconditionally, which is right for
+		// `file:///C:/x` and wrong for `file:///home/x`. Every POSIX root became a
+		// relative path, so isVaultItself() could never match and the guard against
+		// the vault writing to its own memory layer failed OPEN on Linux and macOS.
+		assert.equal(rootToPath("file:///home/x/atlas"), "/home/x/atlas");
+		assert.equal(rootToPath("file:///Users/x/vault"), "/Users/x/vault");
 	});
 
 	test("percent-encoding is decoded, and a malformed escape does not throw", () => {
@@ -68,6 +77,16 @@ describe("reading the caller's identity from roots", () => {
 describe("recognising the vault itself", () => {
 	test("a session whose root IS the vault is recognised", () => {
 		assert.equal(isVaultItself("C:/Dev/myvault", [root("file:///C:/Dev/myvault")]), true);
+	});
+
+	test("recognised on POSIX too — the guard must not fail open off Windows", () => {
+		// This is the whole point of the guard: a memory recorded from inside the
+		// vault is scoped to the vault-as-a-project and reaches only sessions that
+		// already read every note directly. It was returning false on Linux and
+		// macOS, so the refusal never fired there.
+		assert.equal(isVaultItself("/home/x/myvault", [root("file:///home/x/myvault")]), true);
+		assert.equal(isVaultItself("/Users/x/myvault", [root("file:///Users/x/myvault/")]), true);
+		assert.equal(isVaultItself("/home/x/myvault", [root("file:///home/x/other")]), false);
 	});
 
 	test("separator style, trailing slash and case do not matter", () => {

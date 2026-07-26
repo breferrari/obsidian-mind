@@ -208,6 +208,30 @@ describe("expanding a note", () => {
 		});
 	});
 
+	test("an ambiguous seed reports the collision instead of guessing", () => {
+		// Regression: expandNote used `find`, so it returned the FIRST match and
+		// handed back the wrong note's neighbourhood with no signal — the exact
+		// behaviour resolveVisible refuses, broken by the module's primary path.
+		const files: VisibleFile[] = [
+			{ full: "/v/brain/Notes.md", label: "Notes", scope: "brain" },
+			{ full: "/v/reference/Notes.md", label: "Notes", scope: "reference" },
+		];
+		const r = expandNote(files, "Notes");
+		assert.equal(r.note, null, "must not pick one");
+		assert.match(r.text, /matches 2 visible notes/);
+		assert.match(r.text, /brain\/Notes/);
+		assert.match(r.text, /reference\/Notes/);
+		assert.match(r.text, /Pass a path/, "must say how to disambiguate");
+	});
+
+	test("a path disambiguates what a bare title cannot", () => {
+		const files: VisibleFile[] = [
+			{ full: "/v/brain/Notes.md", label: "Notes", scope: "brain" },
+			{ full: "/v/reference/Notes.md", label: "Notes", scope: "reference" },
+		];
+		assert.equal(expandNote(files, "reference/Notes.md").note?.scope, "reference");
+	});
+
 	test("an empty seed does not match an arbitrary note", () => {
 		withVault((_dir, files) => {
 			assert.equal(expandNote(files, "").note, null);

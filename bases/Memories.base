@@ -4,7 +4,7 @@ filters:
     - source == "mcp-capture"
 formulas:
   reach: if(scope == "general", "everywhere", if(scope == "platform", list(platforms).join(", "), list(projects).join(", ")))
-  age_days: (now() - date).days.round(0)
+  age_days: if(date, (today() - date(date)).days, "")
   corrected: if(list(superseded_by).isEmpty(), "", "superseded")
 properties:
   file.name:
