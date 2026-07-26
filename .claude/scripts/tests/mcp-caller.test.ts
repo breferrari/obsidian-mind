@@ -145,6 +145,26 @@ describe("sanitising text that crosses back to the caller", () => {
 		assert.equal((out.match(/<path>/g) ?? []).length, 2);
 	});
 
+	test("a URI survives — a drive letter is ONE letter, not any letter", () => {
+		// Regression: "vault://note/work/Secret.md" matched from its "t://note/..."
+		// and came back as "vaul<path>", destroying every URI in every error
+		// message. A wire probe caught it; none of the fs-error cases above could.
+		for (const uri of [
+			"vault://note/brain/Gotchas.md",
+			"file:///c/x",
+			"https://example.com/a/b",
+			"qmd://index/thing",
+		]) {
+			assert.equal(sanitize(`no such resource: ${uri}`), `no such resource: ${uri}`, uri);
+		}
+	});
+
+	test("a real drive path at a word boundary is still stripped", () => {
+		assert.match(sanitize("open C:\\vault\\a.md"), /<path>/);
+		assert.match(sanitize("(C:/vault/a.md)"), /<path>/);
+		assert.match(sanitize("'D:\\other\\b.md'"), /<path>/);
+	});
+
 	test("a non-string is coerced rather than throwing", () => {
 		assert.equal(sanitize(undefined), "undefined");
 		assert.equal(sanitize(new Error("boom").message), "boom");

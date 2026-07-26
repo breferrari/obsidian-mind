@@ -100,7 +100,11 @@ export function isVaultItself(vaultRoot: string, roots: readonly Root[]): boolea
  */
 export function sanitize(message: unknown): string {
 	return String(message)
-		.replace(/[A-Za-z]:[\\/][^\s'"`)]+/g, "<path>")
+		// A drive letter is ONE letter, so it must not be preceded by another —
+		// without the lookbehind, "vault://note/x" matches from its "t://note/x"
+		// and every URI in an error message is destroyed. Found by a wire probe,
+		// not by any of the unit tests, which only ever fed it real fs errors.
+		.replace(/(?<![A-Za-z])[A-Za-z]:[\\/][^\s'"`)]+/g, "<path>")
 		.replace(/\/(?:home|Users|users|root)\/[^\s'"`)]+/g, "<path>")
 		.replace(/\\\\[^\s'"`)]+/g, "<path>");
 }
