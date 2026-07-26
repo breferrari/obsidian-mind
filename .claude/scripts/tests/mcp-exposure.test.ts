@@ -468,6 +468,116 @@ describe("resolving a resource URI", () => {
 		});
 	});
 
+	test("containment is against the DECLARED ROOT, not the first path segment", () => {
+		// A vault serving `work/active/` and not `work/1-1/`. Both share the segment
+		// `work`, so containing against the segment accepts a link that escapes the
+		// root the caller actually reached the note through.
+		withVault((dir) => {
+			const target = put(dir, "work/1-1/Sarah.md", NOTE("not served"));
+			mkdirSync(join(dir, "work", "active"), { recursive: true });
+			const link = join(dir, "work", "active", "innocent.md");
+			try {
+				symlinkSync(target, link, "file");
+			} catch {
+				return;
+			}
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["work/active"] });
+			assert.equal(
+				resolveResourceUri(dir, policy, "vault://note/work/active/innocent.md"),
+				null,
+				"still inside work/, but outside work/active/ — must be refused",
+			);
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Symlinks during ENUMERATION, not only on read-back
+// ---------------------------------------------------------------------------
+
+describe("enumeration follows the same containment rule as read-back", () => {
+	/** Build a vault with `brain/innocent.md` linking wherever `target` points. */
+	function linked(dir: string, target: string): boolean {
+		stocked(dir);
+		try {
+			symlinkSync(target, join(dir, "brain", "innocent.md"), "file");
+			return true;
+		} catch {
+			return false; // Windows without developer mode
+		}
+	}
+
+	test("a .md symlink escaping the vault is not enumerated by ANY surface", () => {
+		// The gap this closes: `statSync` follows links, so the walk pulled in a
+		// file from anywhere on disk. `resolveResourceUri` refused that same path,
+		// which is precisely the two-read-paths-disagree failure — and the leak was
+		// real, since `listResources` publishes each note's description.
+		withVault((dir) => {
+			const outside = put(dir, "..-outside/secret.md", NOTE("OUT-OF-VAULT-MARKER"));
+			if (!linked(dir, outside)) return;
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
+
+			const files = visibleFiles(dir, policy);
+			assert.ok(!files.some((f) => f.label === "innocent"), "not enumerated");
+
+			const resources = listResources(dir, policy);
+			assert.ok(
+				!resources.some((r) => r.description.includes("OUT-OF-VAULT-MARKER")),
+				"the outside file's description must not reach the resource listing",
+			);
+
+			assert.ok(
+				![...allowedSearchPaths(dir, policy)].some((p) => p.includes("innocent")),
+				"and search must not accept a hit on it",
+			);
+		});
+	});
+
+	test("a symlink that stays INSIDE the exposed root is still served", () => {
+		// The fix must not cost ordinary use: a link within the root is a legitimate
+		// way to file the same note twice, and refusing it would be over-correction.
+		withVault((dir) => {
+			const inside = join(dir, "brain", "Gotchas.md");
+			if (!linked(dir, inside)) return;
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
+			assert.ok(
+				visibleFiles(dir, policy).some((f) => f.label === "innocent"),
+				"a contained link is a normal note",
+			);
+		});
+	});
+
+	test("a symlinked DIRECTORY escaping the root is not walked into", () => {
+		// The same hole one level up: the walk recurses through directories, so a
+		// linked folder would hand back every note underneath it.
+		withVault((dir) => {
+			stocked(dir);
+			put(dir, "..-elsewhere/Buried.md", NOTE("DIR-ESCAPE-MARKER"));
+			try {
+				symlinkSync(join(dir, "..-elsewhere"), join(dir, "brain", "sub"), "junction");
+			} catch {
+				return;
+			}
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
+			const files = visibleFiles(dir, policy);
+			assert.ok(!files.some((f) => f.label === "Buried"), "the linked tree must not be walked");
+			assert.ok(
+				!listResources(dir, policy).some((r) => r.description.includes("DIR-ESCAPE-MARKER")),
+				"and nothing under it may reach the listing",
+			);
+		});
+	});
+
+	test("a broken symlink is skipped rather than throwing the whole walk away", () => {
+		withVault((dir) => {
+			if (!linked(dir, join(dir, "brain", "Nothing Here.md"))) return;
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
+			const files = visibleFiles(dir, policy);
+			assert.ok(!files.some((f) => f.label === "innocent"), "a dangling link is not a note");
+			assert.ok(files.some((f) => f.label === "Gotchas"), "and the real notes still enumerate");
+		});
+	});
+
 	test("a nonexistent note and a foreign scheme are both null", () => {
 		withVault((dir) => {
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });

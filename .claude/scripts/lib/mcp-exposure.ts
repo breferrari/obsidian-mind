@@ -17,7 +17,7 @@
  * defect this module is shaped to prevent.
  */
 
-import { readFileSync, readdirSync, statSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, lstatSync, existsSync, realpathSync } from "node:fs";
 import { join, basename, resolve, sep } from "node:path";
 
 
@@ -183,6 +183,33 @@ export function firstDescription(path: string, fallback = "Vault note"): string 
 	}
 }
 
+/**
+ * Does `path` resolve to something inside `rootReal`?
+ *
+ * `realpath` follows symlinks all the way, so this is the check that decides
+ * whether a link stays inside the root it was reached through. A broken link
+ * throws and is refused: a path that cannot be resolved is not served.
+ */
+function containedIn(rootReal: string, path: string): boolean {
+	try {
+		const real = realpathSync(resolve(path));
+		return real === rootReal || real.startsWith(rootReal + sep);
+	} catch {
+		return false;
+	}
+}
+
+/** The declared root that admits `rel`, at the granularity the manifest wrote it. */
+function matchedRoot(policy: ExposurePolicy, rel: string): string | null {
+	const lower = rel.replace(/\\/g, "/").toLowerCase();
+	return (
+		policy.roots.find((r) => {
+			const root = r.toLowerCase();
+			return lower === root || lower.startsWith(`${root}/`);
+		}) ?? null
+	);
+}
+
 /** Is `rel` inside one of the policy's exposed roots? */
 export function isExposedPath(policy: ExposurePolicy, relPath: string): boolean {
 	const rel = relPath.replace(/\\/g, "/").toLowerCase();
@@ -203,11 +230,18 @@ export function isExposedPath(policy: ExposurePolicy, relPath: string): boolean 
  * This is the single source of truth. `search` filters its hits against it,
  * `expand` computes backlinks only over it, and the resource enumerators build
  * from it — so a note cannot be absent from one surface and present on another.
+ *
+ * Symlinks are resolved and contained DURING the walk, not only when a URI is
+ * read back. `statSync` follows a link silently, so enumerating with it meant a
+ * `.md` link inside an exposed root pulled in a file from anywhere on disk:
+ * `listResources` published its description, `allowedSearchPaths` accepted it,
+ * and `expand` read its body — while `resolveResourceUri` refused the very same
+ * path. Two read paths disagreeing is the one thing this module exists to stop.
  */
 export function visibleFiles(vaultRoot: string, policy: ExposurePolicy): VisibleFile[] {
 	const files: VisibleFile[] = [];
 
-	const walk = (dir: string, scope: string, depth: number): void => {
+	const walk = (dir: string, scope: string, rootReal: string, depth: number): void => {
 		if (depth > MAX_DEPTH || !existsSync(dir)) return;
 		let entries: string[];
 		try {
@@ -218,14 +252,23 @@ export function visibleFiles(vaultRoot: string, policy: ExposurePolicy): Visible
 		for (const f of entries) {
 			if (f.startsWith(".")) continue;
 			const full = join(dir, f);
-			let isDir = false;
+			let isDir: boolean;
 			try {
-				isDir = statSync(full).isDirectory();
+				// lstat describes the ENTRY; stat describes what it points at. The
+				// difference is the whole check: a link is contained before it is
+				// followed, and an ordinary entry costs no extra syscall.
+				const entry = lstatSync(full);
+				if (entry.isSymbolicLink()) {
+					if (!containedIn(rootReal, full)) continue;
+					isDir = statSync(full).isDirectory();
+				} else {
+					isDir = entry.isDirectory();
+				}
 			} catch {
 				continue;
 			}
 			if (isDir) {
-				walk(full, scope, depth + 1);
+				walk(full, scope, rootReal, depth + 1);
 				continue;
 			}
 			if (!f.endsWith(".md")) continue;
@@ -239,7 +282,14 @@ export function visibleFiles(vaultRoot: string, policy: ExposurePolicy): Visible
 		// Belt and braces: resolveExposure already strips it, but a hand-built
 		// policy must not be able to walk the memory store into the read surface.
 		if (policy.memoryRoot && root.toLowerCase() === policy.memoryRoot.toLowerCase()) continue;
-		walk(join(vaultRoot, root), root, 0);
+		const dir = join(vaultRoot, root);
+		let rootReal: string;
+		try {
+			rootReal = realpathSync(resolve(dir));
+		} catch {
+			continue; // the root does not exist, or is itself a broken link
+		}
+		walk(dir, root, rootReal, 0);
 	}
 	return files;
 }
@@ -325,11 +375,16 @@ export function resolveResourceUri(
 	// segments but happily returns a path whose real target is outside the vault,
 	// so a symlink inside an exposed folder would read anything this process can
 	// read. Both ends are resolved through `realpath` and compared.
-	const segment = rel.replace(/\\/g, "/").split("/")[0] ?? "";
+	//
+	// Against the DECLARED root, not the first path segment: roots are prefixes,
+	// so a vault serving `work/active/` and not `work/1-1/` must not accept a link
+	// under the former resolving into the latter — both share the segment `work`.
+	const root = matchedRoot(policy, rel);
+	if (!root) return null;
 	let rootReal: string;
 	let full: string;
 	try {
-		rootReal = realpathSync(resolve(join(vaultRoot, segment)));
+		rootReal = realpathSync(resolve(join(vaultRoot, root)));
 		full = realpathSync(resolve(join(vaultRoot, rel)));
 	} catch {
 		return null; // missing, or a broken link
