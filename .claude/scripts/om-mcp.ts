@@ -33,14 +33,30 @@ const ctx = createContext(vaultRoot, derivedVaultRoot(import.meta.url));
 const policy = resolveExposure(vaultRoot, ctx.manifest, ctx.memoryRoot);
 
 /**
- * One long-lived qmd child, started on first use.
+ * One long-lived qmd child, started on first use and REPLACED if it dies.
  *
  * Lazy because a vault with no qmd installed must still serve resources,
  * `expand`, `recall` and `health` — search is the only surface that degrades,
  * and it degrades to a message rather than to silence.
+ *
+ * Memoising it unconditionally was the bug: a single qmd crash left a dead
+ * client in place, whose pending map rejects every later call, so search stayed
+ * broken for the life of the server. The cooldown guards the opposite failure —
+ * when qmd is missing or permanently broken, respawning per call would fork a
+ * process for every search.
  */
 let qmdClient: QmdClient | null = null;
-const qmd = (): QmdClient => (qmdClient ??= createQmdClient(vaultRoot, ctx.qmdLauncher));
+let lastSpawn = 0;
+const RESPAWN_COOLDOWN_MS = 5_000;
+
+const qmd = (): QmdClient => {
+	if (qmdClient?.alive) return qmdClient;
+	const now = Date.now();
+	if (qmdClient && now - lastSpawn < RESPAWN_COOLDOWN_MS) return qmdClient;
+	lastSpawn = now;
+	qmdClient = createQmdClient(vaultRoot, ctx.qmdLauncher);
+	return qmdClient;
+};
 
 const send = (msg: unknown): void => {
 	process.stdout.write(JSON.stringify(msg) + "\n");

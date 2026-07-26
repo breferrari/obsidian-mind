@@ -48,6 +48,7 @@ function fakeQmd(files: string[] | null, fail = false): QmdClient {
 	return {
 		ready: Promise.resolve(),
 		dispose: () => {},
+		alive: true,
 		call: async () => {
 			if (fail) throw new Error("index down");
 			return files === null ? {} : { structuredContent: { results: files.map((f) => ({ file: f })) } };

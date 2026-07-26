@@ -189,6 +189,12 @@ export interface QmdClient {
 	call(method: string, params?: unknown): Promise<unknown>;
 	readonly ready: Promise<void>;
 	dispose(): void;
+	/**
+	 * False once the child has exited or failed to start. The caller must not
+	 * keep using a dead client: a memoised one would make a single qmd crash
+	 * disable search for the whole life of the server.
+	 */
+	readonly alive: boolean;
 }
 
 /**
@@ -207,6 +213,7 @@ export function createQmdClient(vaultRoot: string, launcherPath: string | null):
 	});
 
 	const pending = new Map<number, Pending>();
+	let alive = true;
 	let rpcId = 0;
 	let buf = "";
 
@@ -236,6 +243,7 @@ export function createQmdClient(vaultRoot: string, launcherPath: string | null):
 	// A launcher that dies (qmd not installed, bad path) must fail every waiting
 	// call rather than leaving them to time out one by one 45 seconds apart.
 	const failAll = (reason: string): void => {
+		alive = false;
 		for (const [id, p] of pending) {
 			pending.delete(id);
 			clearTimeout(p.timer);
@@ -247,6 +255,14 @@ export function createQmdClient(vaultRoot: string, launcherPath: string | null):
 
 	const call = (method: string, params?: unknown): Promise<unknown> =>
 		new Promise((resolve, reject) => {
+			// A call made AFTER the child died would otherwise sit in `pending`
+			// forever: failAll has already run, so nothing will ever reject it, and
+			// the timeout timer is unref'd. Callers that skip `await ready` — the
+			// semantic-ordering path does — would block until the 45s timeout.
+			if (!alive) {
+				reject(new Error(`qmd unavailable (${method})`));
+				return;
+			}
 			const id = ++rpcId;
 			const timer = setTimeout(() => {
 				if (pending.delete(id)) reject(new Error(`qmd timeout on ${method}`));
@@ -266,9 +282,19 @@ export function createQmdClient(vaultRoot: string, launcherPath: string | null):
 		child.stdin?.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
 	});
 
+	// `ready` rejects if the child dies during the handshake. Attaching a handler
+	// here keeps that from surfacing as an UNHANDLED rejection, which Node treats
+	// as fatal — so a qmd that failed to start would take the whole MCP server
+	// down with it, when the correct behaviour is search degrading on its own.
+	// Anyone who awaits `ready` still sees the rejection.
+	ready.catch(() => {});
+
 	return {
 		call,
 		ready,
+		get alive() {
+			return alive;
+		},
 		dispose: () => {
 			failAll("qmd client disposed");
 			child.kill();

@@ -14,6 +14,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { join } from "node:path";
 
 import {
 	pathKey,
@@ -21,6 +22,7 @@ import {
 	qmdRelKey,
 	scopeResults,
 	subQueries,
+	createQmdClient,
 	type QmdHit,
 } from "../lib/mcp-qmd-client.ts";
 
@@ -198,6 +200,37 @@ describe("scoping results", () => {
 		const r = scopeResults([hit("myvault/brain/Key Decisions.md")], allowed);
 		assert.equal(r.withheld, 0);
 		assert.match(r.text, /Key Decisions/);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Liveness
+// ---------------------------------------------------------------------------
+
+describe("client liveness", () => {
+	test("a client whose child exits reports itself dead", async () => {
+		// The caller memoises this client. Without a liveness signal, one qmd
+		// crash leaves a dead client in place whose pending map rejects every
+		// later call — search stays broken for the life of the server.
+		const c = createQmdClient(process.cwd(), join(process.cwd(), "definitely-not-a-launcher.mjs"));
+		assert.equal(c.alive, true, "alive until proven otherwise");
+		// Spawning a missing script fails asynchronously; wait for the signal.
+		await new Promise((r) => setTimeout(r, 400));
+		assert.equal(c.alive, false, "a failed launcher must mark the client dead");
+		c.dispose();
+	});
+
+	test("dispose marks it dead too", () => {
+		const c = createQmdClient(process.cwd(), join(process.cwd(), "also-missing.mjs"));
+		c.dispose();
+		assert.equal(c.alive, false);
+	});
+
+	test("a call against a dead client rejects rather than hanging", async () => {
+		const c = createQmdClient(process.cwd(), join(process.cwd(), "still-missing.mjs"));
+		await new Promise((r) => setTimeout(r, 400));
+		await assert.rejects(() => c.call("tools/call", {}), /qmd/i);
+		c.dispose();
 	});
 });
 
