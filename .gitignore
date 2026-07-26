@@ -36,3 +36,8 @@ node_modules/
 # Hook runtime state (local, self-pruning / debounce sentinel)
 .claude/scripts/.hint-state.json
 .claude/scripts/.qmd-refresh-sentinel
+
+# MCP server audit log — every vault read, with the calling repo and the query
+# text. Local forensics, never history: it churns on every session, and the
+# query strings are the user's own thinking.
+.claude/om-mcp-audit.jsonl

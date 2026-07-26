@@ -14,7 +14,8 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
 	normalizePath,
@@ -217,6 +218,20 @@ describe("the audit log", () => {
 
 	test("the log lands inside the vault, where the repo can ignore it", () => {
 		assert.equal(auditPath("C:/v"), join("C:/v", ".claude", "om-mcp-audit.jsonl"));
+	});
+
+	test("the log is actually gitignored, and the two places agree", () => {
+		// Two sources of truth for one path: auditPath() decides where the file
+		// goes, .gitignore decides whether it is tracked. Changing one silently
+		// stops the other from matching, and the symptom is a churning log file —
+		// full of the user's own query strings — appearing in every commit.
+		const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+		const rel = auditPath("").replace(/^[\\/]+/, "").split(/[\\/]/).join("/");
+		const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
+		assert.ok(
+			gitignore.split(/\r?\n/).some((line) => line.trim() === rel),
+			`.gitignore must contain "${rel}" — auditPath() and .gitignore have drifted`,
+		);
 	});
 
 	test("detail keys cannot overwrite the action or the caller", () => {
