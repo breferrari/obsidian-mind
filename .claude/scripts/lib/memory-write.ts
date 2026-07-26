@@ -18,8 +18,9 @@
  * help someone working in a different repo?*
  */
 
-import { mkdirSync, writeFileSync, readFileSync, copyFileSync, unlinkSync, constants } from "node:fs";
-import { join, dirname } from "node:path";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { join, dirname, basename } from "node:path";
+import { claimFile } from "./atomic-write.ts";
 
 /** Vault-relative root for every memory. The whole write fence is this prefix. */
 export const MEMORY_ROOT = "memories";
@@ -553,9 +554,6 @@ export function renderMemory(value: MemoryValue, links: readonly string[] = []):
  * day with the same title would otherwise silently overwrite, and the loser is
  * unrecoverable. Suffix rather than clobber.
  */
-/** Per-process counter, so two in-flight writes cannot share a temp name. */
-let tmpSeq = 0;
-
 export function writeMemory(
 	vaultRoot: string,
 	value: MemoryValue,
@@ -567,42 +565,12 @@ export function writeMemory(
 	mkdirSync(dir, { recursive: true });
 	const body = renderMemory(value, links);
 
-	// ATOMIC CLAIM, not check-then-write.
-	//
-	// The obvious loop — `while (existsSync(x)) bump(x); writeFileSync(x)` — is a
-	// TOCTOU race, and this is not theoretical: the deployment shape is one
-	// server process PER CONSUMING REPO, all writing into one vault. Six
-	// processes recording the same lesson title at the same moment produced four
-	// files and six success messages. Two memories were lost silently, which is
-	// the worst possible outcome for a layer whose entire job is not losing them.
-	//
-	// `COPYFILE_EXCL` fails instead of clobbering, so the loser simply takes the
-	// next suffix. The temp file also means a crash mid-write cannot leave a
-	// half-note for the indexer to pick up.
-	// The temp name carries the pid AND a per-call counter: one process can have
-	// two writes to the same title in flight, and a shared temp name would let
-	// them overwrite each other before either claimed a final name.
-	const tmp = join(dir, `.om-${process.pid}-${++tmpSeq}.tmp`);
-	writeFileSync(tmp, body, "utf8");
-	try {
-		for (let n = 1; n <= 50; n++) {
-			const rel = n === 1 ? `${base}.md` : `${base} (${n}).md`;
-			const full = join(vaultRoot, rel);
-			try {
-				copyFileSync(tmp, full, constants.COPYFILE_EXCL);
-				return { rel, full };
-			} catch (e) {
-				if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
-			}
-		}
-		throw new Error("too many same-titled memories on one day");
-	} finally {
-		try {
-			unlinkSync(tmp);
-		} catch {
-			/* temp cleanup is best-effort */
-		}
-	}
+	// Claimed atomically rather than checked-then-written; see `atomic-write.ts`
+	// for why, and for what the naive version cost.
+	const claimed = claimFile(dir, body, (n) => `${basename(base)}${n === 1 ? "" : ` (${n})`}.md`, {
+		exhaustedMessage: "too many same-titled memories on one day",
+	});
+	return { rel: `${dirname(base)}/${claimed.name}`.replace(/\\/g, "/"), full: claimed.full };
 }
 
 /** Read back what was written — used by tests and the post-write self-check. */

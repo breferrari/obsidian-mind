@@ -21,6 +21,7 @@
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { normalizePath } from "./mcp-caller.ts";
 import { join, relative, sep } from "node:path";
 
 /** Directories never worth walking, in any vault. */
@@ -352,13 +353,7 @@ export function readIndexPath(
 
 /** Case- and separator-insensitive path comparison, for Windows and POSIX alike. */
 export function samePath(a: unknown, b: unknown): boolean {
-	const norm = (x: unknown): string =>
-		String(x ?? "")
-			.split("\\")
-			.join("/")
-			.replace(/\/+$/, "")
-			.toLowerCase();
-	return norm(a) === norm(b);
+	return normalizePath(a) === normalizePath(b);
 }
 
 /**

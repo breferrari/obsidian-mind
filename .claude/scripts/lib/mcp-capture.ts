@@ -19,19 +19,11 @@
  * server into writing to a fenced folder.
  */
 
-import {
-	existsSync,
-	readdirSync,
-	mkdirSync,
-	writeFileSync,
-	copyFileSync,
-	unlinkSync,
-	realpathSync,
-	constants,
-} from "node:fs";
+import { existsSync, readdirSync, mkdirSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 import type { ExposurePolicy } from "./mcp-exposure.ts";
+import { claimFile } from "./atomic-write.ts";
 
 const SLUG_MAX = 60;
 const MAX_COLLISIONS = 500;
@@ -291,37 +283,26 @@ export function captureNote(
 	if (!existsSync(dest.dir)) mkdirSync(dest.dir, { recursive: true });
 	const base = realpathSync(dest.dir);
 
-	const tmp = join(base, `.${process.pid}-${stem}.tmp`);
-	writeFileSync(tmp, body, "utf8");
-	try {
-		for (let n = 1; n < MAX_COLLISIONS; n++) {
-			const name = n === 1 ? `${stem}.md` : `${stem}-${n}.md`;
-			const target = resolve(join(base, name));
-			// Containment: slugify strips separators, but verify rather than trust.
-			if (!target.startsWith(base + sep)) throw new Error("refused: path escapes the destination");
-			try {
-				copyFileSync(tmp, target, constants.COPYFILE_EXCL);
-				// Index it NOW. An MCP write bypasses the PostToolUse hook that
-				// normally triggers re-indexing, so without this the note is on disk
-				// but invisible to search — written and unfindable.
-				const indexed = opts.reindex ? opts.reindex() : undefined;
-				return {
-					path: `${dest.rel}/${name}`,
-					bytes: body.length,
-					written: true,
-					routed: dest.routed,
-					...(indexed === undefined ? {} : { indexed }),
-				};
-			} catch (e) {
-				if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
-			}
-		}
-		throw new Error("too many colliding captures for that title");
-	} finally {
-		try {
-			unlinkSync(tmp);
-		} catch {
-			/* temp cleanup is best-effort */
-		}
-	}
+	// Claimed atomically rather than checked-then-written; see `atomic-write.ts`
+	// for why, and for what the naive version cost.
+	const claimed = claimFile(base, body, (n) => (n === 1 ? `${stem}.md` : `${stem}-${n}.md`), {
+		maxAttempts: MAX_COLLISIONS,
+		// Containment: slugify strips separators, but verify rather than trust.
+		verify: (full) => {
+			if (!resolve(full).startsWith(base + sep)) throw new Error("refused: path escapes the destination");
+		},
+		exhaustedMessage: "too many colliding captures for that title",
+	});
+
+	// Index it NOW. An MCP write bypasses the PostToolUse hook that normally
+	// triggers re-indexing, so without this the note is on disk but invisible to
+	// search — written and unfindable.
+	const indexed = opts.reindex ? opts.reindex() : undefined;
+	return {
+		path: `${dest.rel}/${claimed.name}`,
+		bytes: body.length,
+		written: true,
+		routed: dest.routed,
+		...(indexed === undefined ? {} : { indexed }),
+	};
 }

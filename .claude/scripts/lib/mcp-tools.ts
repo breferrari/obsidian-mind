@@ -242,7 +242,3 @@ export const TOOLS: readonly ToolDef[] = [
 	},
 ];
 
-/** Look a tool up by name. */
-export function findTool(name: unknown): ToolDef | undefined {
-	return TOOLS.find((t) => t.name === name);
-}
