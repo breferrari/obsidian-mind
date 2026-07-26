@@ -222,6 +222,39 @@ obsidian-mind works with Claude Code, Codex CLI, and Gemini CLI. The vault conve
 
 ---
 
+## 🧠 Reach Your Vault From Any Repo
+
+Your vault normally only helps while you are sitting in it. The **`om` MCP server** changes that: a coding session in *any other repository* can search your notes, read them, follow the graph, and record what it learned back into the vault.
+
+```json
+{
+  "mcpServers": {
+    "om": {
+      "command": "node",
+      "args": ["/path/to/your-vault/.claude/scripts/om-mcp.mjs"]
+    }
+  }
+}
+```
+
+That goes in the **consuming project's** `.mcp.json`. Then add a short section to that project's own `CLAUDE.md` pointing at the vault.
+
+> [!IMPORTANT]
+> **Both steps are required, and the second is not paperwork.** Measured: with the server wired and no repo-side instruction, a session made **zero** vault calls and implemented a design the vault had recorded as explicitly rejected. With the instruction present, it refused and cited the note.
+>
+> A **prohibition** in the MCP `instructions` field propagates into the calling session reliably. A positive *"go consult the vault"* is advisory and gets skipped whenever a nearer source exists. The server can stop a session doing something; only the project's own law makes one go looking.
+
+**What the session gets:** `search` (semantic + keyword), `expand` (a note's links and backlinks), `recall` (durable lessons scoped to that repo), `remember` (record a lesson), `record_work` (file what happened), and `health` (is the wiring intact?). Plus your notes as readable resources.
+
+**Cross-repo memory with an epistemic contract.** A lesson learned in one repo reaches the repos it was scoped to and no others. Reach is *declared at write time*, never guessed at read time, so a sibling project does not inherit another's constraints. Everything recorded carries `confidence: verified | inferred | unverified`, dated volatile facts, and provenance derived server-side — a session cannot claim to be a project it is not. Corrections supersede rather than overwrite, so the store gets *more* trustworthy as it grows instead of accumulating contradictions.
+
+**The fence.** The concern is egress — vault material landing in a commit, a PR body, or a public issue — not hiding files from you. A note is served only if its folder is exposed, its filename is not in `mcp_never_expose`, and it is not tagged `private`. Configure both in `vault-manifest.json`; the default is deliberately narrow. Memories are never served as ordinary notes, whatever the config says. Every read is logged with the calling repo.
+
+> [!WARNING]
+> **Never register the raw QMD server in a project repo.** One line in a `.mcp.json` gives that session unfenced semantic search over your entire vault — every client note, everything private. The `om` server exists to sit in front of the index and decide what leaves.
+
+---
+
 ## 📅 Daily Workflow
 
 **Morning**: Run `/om-standup`. Your agent loads your North Star, active projects, open tasks, and recent changes. You get a structured summary and suggested priorities.

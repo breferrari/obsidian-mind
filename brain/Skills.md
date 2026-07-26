@@ -118,6 +118,27 @@ If QMD is installed (`npm install -g @tobilu/qmd`), the vault has semantic searc
 
 SessionStart hook runs `qmd --index <name> update` automatically, reading the index name from the manifest. First-time setup on a fresh clone: `node --experimental-strip-types .scripts/qmd-bootstrap.ts`. See `.claude/skills/qmd/SKILL.md` for full reference, and [[Memories]] for the topics QMD is most often asked to find across the vault.
 
+## The `om` MCP Server (reaching this vault from another repo)
+
+`.claude/scripts/om-mcp.mjs` exposes this vault over MCP so a session in **another repository** can use it. Registered in the *consuming* project's `.mcp.json`, never in this vault's own — the server refuses a memory write from a session running inside the vault, because such a memory would be scoped to the vault-as-a-project and reach only sessions that already read every note directly.
+
+| tool | purpose |
+|------|---------|
+| `search` | semantic + keyword over exposed notes, fenced |
+| `expand` | a note's links out and backlinks |
+| `recall` | durable lessons scoped to the calling repo, most specific first; `explain: true` reports what was withheld and why |
+| `remember` | record a lesson that generalises beyond this repo |
+| `record_work` | record what happened here, filed where it belongs |
+| `health` | where memories live, which roots are exposed, is the index reachable |
+
+Two prompts you invoke yourself from the `/` menu: `recall_topic`, `prior_art`. They must be **selected** from the menu — typing the displayed label errors.
+
+**Debugging it:** call `health` first. Every failure in this layer presents identically as "no results" — a renamed memory folder, a moved launcher, an index registered to a different vault, a session with no identity — and `health` is what tells them apart. A caller reported as `ANONYMOUS` means the client never completed the roots handshake, so only `general`-scope memories are visible.
+
+**Two guards worth knowing:** memories are never served as ordinary notes (they carry their own declared scope), and a memory that would reach nobody is refused rather than silently widened to `general`.
+
+Full setup, the fence, and the required repo-side snippet: `CLAUDE.md` § *Reaching the Vault From Another Repo*.
+
 ## Workflow: Weekly Review
 
 1. **`/om-weekly`** — synthesize the week's activity, check alignment, find patterns

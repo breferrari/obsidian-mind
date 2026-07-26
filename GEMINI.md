@@ -34,6 +34,14 @@ The vault's memory lives in `brain/` — `Memories.md`, `Patterns.md`, `Key Deci
 
 The `~/.claude/` auto-loaded memory index is Claude Code-specific — skip that section in `CLAUDE.md`. The vault-side `brain/` notes are the source of truth.
 
+## Reaching this vault from another repo
+
+The `om` MCP server (`.claude/scripts/om-mcp.mjs`) exposes this vault over MCP, so a session running in a **different repository** can search it, read notes, follow the graph, and record durable lessons back into it. It speaks plain MCP over stdio, so any MCP-capable agent can register it — nothing about it is Claude Code-specific.
+
+Register it in the *consuming* project's MCP config, pointing at this vault's absolute path, then add a short section to that project's own agent doc telling it the vault exists. **Both steps are required**: measured, a session with the server wired but no repo-side instruction made zero vault calls, because a prohibition propagates into a session reliably while a positive "go look" does not.
+
+Never register the raw `qmd` server in a consuming repo — that grants unfenced search over the whole vault. `om` exists to sit in front of the index and decide what leaves. Full details in `CLAUDE.md`.
+
 ## Subagents
 
 9 subagents in `.claude/agents/` handle isolated tasks (brag spotting, vault auditing, cross-linking, etc.). The prompt content is agent-agnostic markdown.
