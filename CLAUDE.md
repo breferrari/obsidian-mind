@@ -298,8 +298,8 @@ The vault normally only helps while you are sitting in it. The **`om` MCP server
 >
 > The reason is an asymmetry in how MCP `instructions` propagate: a **prohibition** holds reliably, while a positive *"go consult the vault"* is advisory and gets skipped whenever a nearer source exists. The server can stop a session doing something; only the project's own law makes one go looking.
 
-> [!danger] Never register the raw `qmd` server in a consuming repo.
-> One line in a project's `.mcp.json` would give that session **unfenced semantic search over the entire vault**, bypassing every scoping rule. The `om` server exists precisely to sit in front of the index and decide what leaves.
+> [!warning] Do not register the raw `qmd` server in a consuming repo.
+> It searches every note directly, with no notion of which memories were written for which project — so the repo matches against lessons meant for unrelated ones. Applying each memory's declared scope on top of the index is exactly what `om` adds, and going around it returns the **wrong** things, not merely more of them.
 
 ### What it exposes
 
