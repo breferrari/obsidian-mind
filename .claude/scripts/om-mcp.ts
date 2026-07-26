@@ -21,7 +21,7 @@
 
 import { createInterface } from "node:readline";
 
-import { createContext, resolveVaultRoot } from "./lib/mcp-context.ts";
+import { createContext, resolveVaultRoot, derivedVaultRoot } from "./lib/mcp-context.ts";
 import { resolveExposure } from "./lib/mcp-exposure.ts";
 import { McpSession, type Handlers } from "./lib/mcp-protocol.ts";
 import { createQmdClient, type QmdClient } from "./lib/mcp-qmd-client.ts";
@@ -29,7 +29,7 @@ import { createAuditor, auditPath, callerProject } from "./lib/mcp-caller.ts";
 import { createHandlers } from "./lib/mcp-server.ts";
 
 const vaultRoot = resolveVaultRoot(import.meta.url);
-const ctx = createContext(vaultRoot);
+const ctx = createContext(vaultRoot, derivedVaultRoot(import.meta.url));
 const policy = resolveExposure(vaultRoot, ctx.manifest, ctx.memoryRoot);
 
 /**

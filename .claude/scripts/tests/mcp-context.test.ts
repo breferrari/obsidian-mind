@@ -63,9 +63,23 @@ describe("resolving the vault root", () => {
 		assert.equal(resolveVaultRoot(url, { OM_VAULT_PATH: "/elsewhere/other" }), resolve("/elsewhere/other"));
 	});
 
-	test("the legacy override name still works", () => {
+	test("a bare VAULT_PATH is IGNORED — the name is too generic to claim", () => {
+		// Regression, found by a real session: `VAULT_PATH` was set on the machine
+		// for an unrelated reason, and the server silently served that vault
+		// instead of the one its launcher lives in — reporting the wrong vault's
+		// config, index and memory count as though they were correct.
 		const url = pathToFileURL(join("/a", "b", ".claude", "scripts", "om-mcp.ts")).href;
-		assert.equal(resolveVaultRoot(url, { VAULT_PATH: "/legacy" }), resolve("/legacy"));
+		assert.equal(resolveVaultRoot(url, { VAULT_PATH: "/somewhere-else" }), resolve("/a/b"));
+		assert.equal(resolveVaultRoot(url, { OM_VAULT_PATH: "/deliberate" }), resolve("/deliberate"));
+	});
+
+	test("health can tell when an override disagrees with the launcher location", () => {
+		withVault((dir) => {
+			const ctx = createContext(dir, "/somewhere/else");
+			assert.equal(ctx.overriddenFrom, resolve("/somewhere/else"));
+			// No disagreement means nothing to report.
+			assert.equal(createContext(dir, dir).overriddenFrom, null);
+		});
 	});
 
 	test("a blank override is ignored rather than resolving to the cwd", () => {

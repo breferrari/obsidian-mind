@@ -200,7 +200,12 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				m.facets.superseded_by.length ? `SUPERSEDED by ${m.facets.superseded_by.join("; ")}` : null,
 				m.why ? `why: ${m.why}` : null,
 			].filter(Boolean);
-			return `## ${m.title ?? "(untitled)"}\n${m.rel}\n(${facets.join(" · ")})\n\n${m.body}`;
+			// Body headings are demoted so the only `##` lines in the response are
+			// entry titles. A memory body legitimately contains its own `## How
+			// this is known`, and rendered at the same level it reads as a separate
+			// memory titled that — the reader cannot tell where one entry ends.
+			const body = m.body.replace(/^(#{1,4})\s/gm, (_, h: string) => `${"#".repeat(Math.min(h.length + 3, 6))} `);
+			return `## ${m.title ?? "(untitled)"}\n${m.rel}\n(${facets.join(" · ")})\n\n${body}`;
 		});
 
 		if (explain && result.withheld.length) {
@@ -346,6 +351,13 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		});
 
 		return [
+			`Vault: ${ctx.vaultRoot}`,
+			...(ctx.overriddenFrom
+				? [
+						`  ⚠ OM_VAULT_PATH points here instead of ${ctx.overriddenFrom}, where this server's launcher lives.`,
+						"    If that is not deliberate, unset it — everything below describes the OTHER vault.",
+					]
+				: []),
 			`Caller: ${who.project ?? "ANONYMOUS (no MCP roots — only general-scope memories are visible)"}`,
 			`Platforms: ${who.platforms.length ? who.platforms.join(", ") : "(none declared)"}`,
 			`Memory root: ${h.memory.root}/ (${h.memory.memories} memor${h.memory.memories === 1 ? "y" : "ies"}, ${h.memory.source})`,

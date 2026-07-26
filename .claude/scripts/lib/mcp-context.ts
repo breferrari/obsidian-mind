@@ -35,6 +35,8 @@ export interface VaultContext {
 	readonly memoryRoot: string;
 	/** Path to this install's qmd MCP launcher, or null when qmd is absent. */
 	readonly qmdLauncher: string | null;
+	/** Set when OM_VAULT_PATH pointed somewhere other than the launcher location. */
+	readonly overriddenFrom: string | null;
 }
 
 /**
@@ -47,8 +49,20 @@ export interface VaultContext {
  * this server may point at a vault that is nowhere near it on disk.
  */
 export function resolveVaultRoot(metaUrl: string, env: NodeJS.ProcessEnv = process.env): string {
-	const override = env.OM_VAULT_PATH ?? env.VAULT_PATH;
+	// `OM_VAULT_PATH` only. A bare `VAULT_PATH` was also honoured, and that name
+	// is too generic to claim: it is set for unrelated reasons on real machines,
+	// and the result was a server silently serving a DIFFERENT vault than the
+	// launcher it was started from — reporting that vault's config as if correct.
+	const override = env.OM_VAULT_PATH;
 	if (override && override.trim()) return resolve(override.trim());
+	return resolve(dirname(fileURLToPath(metaUrl)), "..", "..");
+}
+
+/**
+ * The vault the launcher's own location implies, ignoring any override. Used by
+ * `health` to say when the two disagree.
+ */
+export function derivedVaultRoot(metaUrl: string): string {
 	return resolve(dirname(fileURLToPath(metaUrl)), "..", "..");
 }
 
@@ -90,7 +104,7 @@ export function safeMemoryRoot(declared: unknown, fallback: string = MEMORY_ROOT
  * refuses to boot because `health` could not be computed is strictly worse than
  * one that boots and reports the problem.
  */
-export function createContext(vaultRoot: string): VaultContext {
+export function createContext(vaultRoot: string, derivedFrom?: string): VaultContext {
 	const manifest = readManifest(vaultRoot);
 
 	// Route through the canonical resolver. Four other callers already share it
@@ -127,7 +141,9 @@ export function createContext(vaultRoot: string): VaultContext {
 		qmdLauncher = null;
 	}
 
-	return { vaultRoot, manifest, qmdIndex, memory, memoryRoot: memory.root, qmdLauncher };
+	const overriddenFrom =
+		derivedFrom && resolve(derivedFrom) !== resolve(vaultRoot) ? resolve(derivedFrom) : null;
+	return { vaultRoot, manifest, qmdIndex, memory, memoryRoot: memory.root, qmdLauncher, overriddenFrom };
 }
 
 /**
