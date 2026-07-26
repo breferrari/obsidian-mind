@@ -23,7 +23,7 @@ The hook scripts in `.claude/scripts/` are agent-agnostic TypeScript and shell, 
 
 ## Commands
 
-18 commands in `.claude/commands/` — agent-agnostic markdown with YAML frontmatter.
+Commands live in `.claude/commands/` — agent-agnostic markdown with YAML frontmatter. `brain/Skills.md` is the catalog.
 
 - **Claude Code / Gemini CLI**: invoke as `/om-standup`, `/om-dump`, etc.
 - **Codex CLI**: type the command name as a regular prompt without the `/` prefix (e.g. `om-standup`). Codex will find and execute the command file.

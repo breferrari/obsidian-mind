@@ -145,7 +145,7 @@ describe("the om server on the wire", () => {
 		}
 	});
 
-	test("resources are fenced — work/ never appears", async () => {
+	test("the resource listing honours the policy — work/ never appears", async () => {
 		const r = await call("resources/list");
 		const uris = ((r.result?.resources ?? []) as { uri: string }[]).map((x) => x.uri);
 		assert.equal(uris.length, 3);
@@ -159,7 +159,7 @@ describe("the om server on the wire", () => {
 		assert.match(String(contents[0]?.text), /# Gotchas/);
 	});
 
-	test("a fenced note is refused, and the error keeps the URI intact", async () => {
+	test("an unserved note is refused, and the error keeps the URI intact", async () => {
 		const r = await call("resources/read", { uri: "vault://note/work/Secret.md" });
 		assert.ok(r.error, "must refuse");
 		// Regression: the sanitiser matched "t://note/..." as a drive path and
@@ -220,7 +220,7 @@ describe("the om server on the wire", () => {
 		assert.match(String(messages[0]?.content?.text), /should we cache this/);
 	});
 
-	test("record_work files a note and refuses a fenced destination", async () => {
+	test("record_work files a note and refuses an undeclared destination", async () => {
 		const ok = await call("tools/call", {
 			name: "record_work",
 			arguments: {
@@ -239,7 +239,7 @@ describe("the om server on the wire", () => {
 		assert.match(filed, /- \[\[Gotchas\]\]/, "a resolvable reference becomes a link");
 		assert.match(filed, /_\(no note yet\)_/, "an unresolvable one must NOT become a broken link");
 
-		// The fence governs writes too, not only reads.
+		// The exposed roots bound writes too, not only reads.
 		const denied = await call("tools/call", {
 			name: "record_work",
 			arguments: { title: "sneak", summary: "should not land", folder: "work" },

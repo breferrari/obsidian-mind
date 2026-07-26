@@ -479,8 +479,12 @@ flowchart TB
     Der --> Strip
     Fall --> Strip
     Strip --> Walk["walk each root, max depth 4"]
-    Walk --> C{"filename in<br/>mcp_never_expose?"}
-    C -->|yes| Drop["not served"]
+    Walk --> S{"entry is a symlink?"}
+    S -->|no| C{"filename in<br/>mcp_never_expose?"}
+    S -->|yes| Cont{"target resolves<br/>inside the root?"}
+    Cont -->|"no, or broken"| Drop["not served"]
+    Cont -->|yes| C
+    C -->|yes| Drop
     C -->|no| E{"tagged private<br/>in frontmatter?"}
     E -->|"yes, or unreadable"| Drop
     E -->|no| Serve["served"]
@@ -492,12 +496,15 @@ The default is the vault's own `user_content_roots`, at the granularity the mani
 
 > **What this list is, and is not.** It decides which notes the server *serves*. It is not an egress control: a session started with `--add-dir` reads the whole vault regardless, so narrowing the read surface prevents nothing on its own. Keeping vault material out of a public PR is the job of the **prohibition in `instructions`** — the form measured to hold — plus the **audit log**. Reading this list as a security boundary leads to a narrow default, and a narrow default fences off the user's own project notes, which are the single most useful thing a coding session could read.
 
-Two things hold regardless of configuration:
+Three things hold regardless of configuration:
 
 - **`memories/` is never served as an ordinary note.** Memories carry their own declared reach, evaluated per caller; the note surface would bypass it. It is stripped from the root list unconditionally, and again during the walk.
+- **A symlink is contained before it is followed.** The walk `lstat`s each entry — which describes the entry rather than its target — and resolves any link against the root's realpath. Enumerating with `stat` instead means a `.md` link inside an exposed root pulls in a file from anywhere on disk.
 - **Every read is logged** to `.claude/om-mcp-audit.jsonl` (gitignored, rotated at 5 MB, one generation kept) with the calling repo — so "what did that session actually see" is answerable afterwards.
 
-Every read surface resolves through `visibleFiles`. `search` filters its hits against it, `expand` computes backlinks only over it, and the resource enumerators build from it. This is one implementation rather than three because the recurring defect in this layer is a *second* read path that walks the vault itself and quietly ignores the configured roots.
+Every read surface resolves through `visibleFiles`. `search` filters its hits against it, `expand` computes backlinks only over it, and the resource enumerators build from it. This is one implementation rather than three because the recurring defect in this layer is a *second* read path that reaches notes by its own route and applies a different rule.
+
+The symlink case is that defect in its most recent form, and worth keeping as the worked example: `resolveResourceUri` did realpath containment from the start, while the enumerator followed links silently. So the resource *listing* published an out-of-vault file's description and `expand` returned its body, while reading the very same URI was refused. Both ends now contain against the **matched declared root** — not the first path segment, since roots are prefixes and `work/active/` and `work/1-1/` share one.
 
 ### A `search` call, end to end
 
