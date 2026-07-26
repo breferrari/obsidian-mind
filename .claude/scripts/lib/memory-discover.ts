@@ -414,12 +414,9 @@ export function health(
 			`Captures are split across ${mem.split.map((s) => `${s.root}/ (${s.memories})`).join(" and ")} — retrieval only sees "${mem.root}/". Move the rest.`,
 		);
 	}
-	// Deliberately NOT a warning any more. Exposure no longer derives from
-	// `user_content_roots` — that key answers "what is the user's content"
-	// (preserve on upgrade), not "what may leave the vault" (egress), and
-	// conflating them exposed work/, org/ and perf/ by default. An undeclared
-	// `mcp_exposed_roots` now means the narrow built-in pair, which is the
-	// correct and safe state rather than a problem to report.
+	// An undeclared `mcp_exposed_roots` is not a warning: it means the server
+	// serves the vault's own `user_content_roots`, which is the default and the
+	// state most vaults should be in. Declaring the key narrows that.
 	if (qmd.source === "absent") {
 		warnings.push("qmd launcher not found — search and recall degrade to lexical matching.");
 	}

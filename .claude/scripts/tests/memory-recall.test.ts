@@ -16,8 +16,8 @@
  *
  * Every case asserts BOTH directions — what surfaced and what was withheld —
  * because a retrieval layer is only as good as the things it refuses to return.
- * A false positive leaks one project's context into another's session; a false
- * negative is a memory nobody ever benefits from.
+ * A false positive puts another project's context into this session, where it is
+ * acted on as if it applied; a false negative is a memory nobody benefits from.
  */
 
 import { test, describe, before, after } from "node:test";

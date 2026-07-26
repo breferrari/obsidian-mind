@@ -4,8 +4,8 @@
  * Three properties are load-bearing and each is asserted directly rather than
  * inferred from a happy path:
  *
- *   - a caller-supplied folder is VALIDATED, so a session cannot talk the
- *     server into writing into a fenced folder;
+ *   - a caller-supplied folder is VALIDATED against the exposed roots, so a
+ *     destination string cannot become an arbitrary write;
  *   - the final name is claimed ATOMICALLY, because the obvious
  *     check-then-rename loses a whole capture to a race with no error; and
  *   - a link is emitted only when it resolves, because a note that
@@ -108,8 +108,8 @@ describe("resolving the destination", () => {
 	});
 
 	test("a folder OUTSIDE the exposed roots is refused", () => {
-		// The fence is not only about reading: a caller must not be able to place
-		// a note into a folder the vault keeps private.
+		// The exposed roots bound writing as well as reading: a note lands in a
+		// folder the vault declared, or the call is refused.
 		withVault((dir) => {
 			assert.throws(() => resolveDestination(dir, POLICY, {}, "atlas", "work/career", "note"), /not an exposed root/);
 			assert.throws(() => resolveDestination(dir, POLICY, {}, "atlas", "people", "note"), /not an exposed root/);
@@ -128,8 +128,8 @@ describe("resolving the destination", () => {
 	test("a traversal that lands back INSIDE the vault is still refused", () => {
 		// The one that got through. `brain/../work` passes the first-segment root
 		// check and resolves to a path still inside the vault, so a containment
-		// test against the vault accepted it — and a capture landed in the fenced
-		// work/ folder. Containment has to be against the DECLARED ROOT.
+		// test against the vault accepted it — and the capture landed in work/,
+		// which nobody named. Containment has to be against the DECLARED ROOT.
 		withVault((dir) => {
 			for (const escape of ["brain/../work", "brain/../../vault/work", "brain/./../org", "projects/../perf"]) {
 				assert.throws(() => resolveDestination(dir, POLICY, {}, "atlas", escape, "note"), /refused/, escape);

@@ -1,10 +1,10 @@
 /**
  * Graph traversal.
  *
- * The tests that matter are the ones about what `expand` REFUSES to say. A
- * backlink query is a listing query wearing a different hat: "what links to X"
- * discloses the existence and the titles of the notes doing the linking, so a
- * graph walk over unfenced files hands back exactly what the fence withheld.
+ * The tests that matter are the ones about what `expand` leaves OUT. A backlink
+ * query is a listing query wearing a different hat: "what links to X" reports
+ * the titles of the notes doing the linking, so a graph walk over every file on
+ * disk would answer with notes the other surfaces do not serve.
  *
  * The other half is the resolution key. It exists because of a measured
  * failure — search returned index paths, the model fed them into a read that
@@ -35,12 +35,12 @@ function withVault(fn: (dir: string, files: VisibleFile[]) => void, roots = ["br
 	const dir = mkdtempSync(join(tmpdir(), "graph-"));
 	try {
 		// A small graph: Gotchas <-> Patterns, both linking to a note in work/,
-		// which is OUTSIDE the fence. work/ also links back to Gotchas.
-		put(dir, "brain/Gotchas.md", note("things that bit us", "See [[Patterns]] and [[TR Comp]]."));
+		// which the default roots do NOT serve. work/ also links back to Gotchas.
+		put(dir, "brain/Gotchas.md", note("things that bit us", "See [[Patterns]] and [[Roadmap]]."));
 		put(dir, "brain/Patterns.md", note("how we do things", "Related: [[Gotchas]]."));
 		put(dir, "brain/Key Decisions.md", note("choices", "Nothing links here."));
 		put(dir, "reference/Arch.md", note("architecture", "Builds on [[Patterns]]."));
-		put(dir, "work/TR Comp.md", note("confidential", "Contradicts [[Gotchas]]."));
+		put(dir, "work/Roadmap.md", note("what is planned", "Contradicts [[Gotchas]]."));
 		const policy = resolveExposure(dir, { mcp_exposed_roots: roots });
 		fn(dir, visibleFiles(dir, policy));
 	} finally {
@@ -91,7 +91,7 @@ describe("normalising a reference", () => {
 
 	test("an out-of-scope note does not resolve, however it is named", () => {
 		withVault((_dir, files) => {
-			for (const form of ["TR Comp", "work/TR Comp.md", "vault://note/work/TR Comp.md"]) {
+			for (const form of ["Roadmap", "work/Roadmap.md", "vault://note/work/Roadmap.md"]) {
 				assert.equal(resolveVisible(files, form), null, `refused ${form}`);
 			}
 		});
@@ -144,22 +144,22 @@ describe("expanding a note", () => {
 		});
 	});
 
-	test("an outbound link outside the fence is COUNTED but never NAMED", () => {
+	test("an outbound link outside the served set is COUNTED but never NAMED", () => {
 		withVault((_dir, files) => {
 			const r = expandNote(files, "Gotchas");
 			assert.equal(r.hiddenOutbound, 1, "the link to work/ must be counted");
-			assert.ok(!r.text.includes("TR Comp"), "and must not be named");
+			assert.ok(!r.text.includes("Roadmap"), "and must not be named");
 			assert.match(r.text, /1 outside your scope/);
 		});
 	});
 
-	test("a backlink from outside the fence is not disclosed at all", () => {
-		// work/TR Comp.md links to Gotchas. Reporting it would tell the caller a
-		// note it may not read exists, and what it is called.
+	test("a backlink from an unserved note is not reported at all", () => {
+		// work/Roadmap.md links to Gotchas, but `expand` cannot follow the edge
+		// back, so naming it would offer a neighbour the caller cannot open.
 		withVault((_dir, files) => {
 			const r = expandNote(files, "Gotchas");
-			assert.ok(!r.inbound.includes("TR Comp"));
-			assert.ok(!r.text.includes("TR Comp"));
+			assert.ok(!r.inbound.includes("Roadmap"));
+			assert.ok(!r.text.includes("Roadmap"));
 		});
 	});
 
@@ -172,13 +172,13 @@ describe("expanding a note", () => {
 		});
 	});
 
-	test("a seed naming a withheld note does not confirm it exists", () => {
+	test("a seed naming an unserved note resolves to nothing", () => {
 		withVault((_dir, files) => {
-			const r = expandNote(files, "TR Comp");
+			const r = expandNote(files, "Roadmap");
 			assert.equal(r.note, null);
-			// The near-miss list is built from visible files only, so it cannot
-			// echo the withheld title back as a suggestion.
-			assert.ok(!r.text.includes("Did you mean: TR Comp"));
+			// The near-miss list is built from served files only, so it cannot
+			// suggest a title `expand` would then refuse to open.
+			assert.ok(!r.text.includes("Did you mean: Roadmap"));
 		});
 	});
 
@@ -238,14 +238,14 @@ describe("expanding a note", () => {
 		});
 	});
 
-	test("widening the fence reveals what was previously only a count", () => {
-		// The same query, the same graph, a different policy: proof the hiding is
-		// the fence's doing and not a parsing failure.
+	test("widening the roots reveals what was previously only a count", () => {
+		// The same query, the same graph, a different policy: proof the omission
+		// is the policy's doing and not a parsing failure.
 		withVault(
 			(_dir, files) => {
 				const r = expandNote(files, "Gotchas");
 				assert.equal(r.hiddenOutbound, 0);
-				assert.ok(r.outbound.includes("TR Comp"));
+				assert.ok(r.outbound.includes("Roadmap"));
 			},
 			["brain", "reference", "work"],
 		);

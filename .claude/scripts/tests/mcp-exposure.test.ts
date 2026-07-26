@@ -1,15 +1,13 @@
 /**
- * The fence, across every surface.
+ * The exposure policy, across every surface.
  *
- * The recurring defect in this layer is a SECOND read path that skips the check
- * the first one applies. It has happened twice: search proxied the whole index
- * while resources were scoped, and separately the resource enumerators read
- * `brain/` and `projects/` straight off disk, ignoring the exposed-root list
- * they were configured with.
+ * The failure this suite is shaped around is a SECOND read path that skips the
+ * check the first one applies — a surface that walks the vault itself instead of
+ * resolving through `visibleFiles`, and so ignores the configured roots.
  *
- * So the sharpest tests here assert that the surfaces AGREE — that a note
- * withheld from one is withheld from all of them. A per-surface test suite
- * would have passed throughout both incidents.
+ * So the sharpest tests here assert that the surfaces AGREE: a note absent from
+ * one is absent from all of them. A per-surface suite passes even when they have
+ * drifted apart, which is exactly the state worth catching.
  */
 
 import { test, describe } from "node:test";
@@ -51,13 +49,13 @@ function withVault(fn: (dir: string) => void): void {
 	}
 }
 
-/** A vault with an exposed folder and a sensitive one. */
+/** A vault with a declared root, undeclared ones, and a note tagged private. */
 function stocked(dir: string): void {
 	put(dir, "brain/Gotchas.md", NOTE("things that bit us"));
 	put(dir, "brain/SOUL.md", NOTE("identity"));
 	put(dir, "brain/Private Thing.md", PRIVATE_TAG);
 	put(dir, "reference/Arch.md");
-	put(dir, "work/career/TR/Comp.md", NOTE("confidential"));
+	put(dir, "work/1-1/Sarah.md", NOTE("a 1:1 note"));
 	put(dir, "people/Someone.md");
 }
 
@@ -221,8 +219,8 @@ describe("descriptions", () => {
 // The surfaces must agree
 // ---------------------------------------------------------------------------
 
-describe("every surface applies the same fence", () => {
-	test("a sensitive folder is absent from files, search paths AND resources", () => {
+describe("every surface applies the same policy", () => {
+	test("an undeclared folder is absent from files, search paths AND resources", () => {
 		withVault((dir) => {
 			stocked(dir);
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain", "reference"] });
@@ -236,16 +234,16 @@ describe("every surface applies the same fence", () => {
 				["allowedSearchPaths", search],
 				["listResources", resources],
 			] as const) {
-				assert.ok(!entries.some((e) => e.toLowerCase().includes("work/")), `${surface} leaked work/`);
-				assert.ok(!entries.some((e) => e.toLowerCase().includes("people/")), `${surface} leaked people/`);
-				assert.ok(!entries.some((e) => e.toLowerCase().includes("private")), `${surface} leaked a private note`);
+				assert.ok(!entries.some((e) => e.toLowerCase().includes("work/")), `${surface} served work/`);
+				assert.ok(!entries.some((e) => e.toLowerCase().includes("people/")), `${surface} served people/`);
+				assert.ok(!entries.some((e) => e.toLowerCase().includes("private")), `${surface} served a private note`);
 			}
 		});
 	});
 
 	test("EXCLUDING brain from the roots actually excludes it from resources", () => {
 		// The real defect: the enumerator read brain/ off disk directly, so a vault
-		// that configured the fence without brain/ still handed brain notes out.
+		// that declared roots WITHOUT brain/ still listed brain notes.
 		withVault((dir) => {
 			stocked(dir);
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["reference"] });
@@ -410,7 +408,7 @@ describe("resolving a resource URI", () => {
 		withVault((dir) => {
 			stocked(dir);
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
-			assert.equal(resolveResourceUri(dir, policy, "vault://note/work/career/TR/Comp.md"), null);
+			assert.equal(resolveResourceUri(dir, policy, "vault://note/work/1-1/Sarah.md"), null);
 		});
 	});
 
@@ -420,8 +418,8 @@ describe("resolving a resource URI", () => {
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
 			for (const bad of [
 				"vault://note/../../../etc/passwd",
-				"vault://note/brain/../../work/career/TR/Comp.md",
-				"vault://note/%2e%2e/%2e%2e/work/career/TR/Comp.md",
+				"vault://note/brain/../../work/1-1/Sarah.md",
+				"vault://note/%2e%2e/%2e%2e/work/1-1/Sarah.md",
 				"vault://note//etc/passwd",
 				"vault://note/C:/Windows/system.ini",
 			]) {

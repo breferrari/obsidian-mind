@@ -124,7 +124,7 @@ SessionStart hook runs `qmd --index <name> update` automatically, reading the in
 
 | tool | purpose |
 |------|---------|
-| `search` | semantic + keyword over exposed notes, fenced |
+| `search` | semantic + keyword over the notes this vault serves |
 | `expand` | a note's links out and backlinks |
 | `recall` | durable lessons scoped to the calling repo, most specific first; `explain: true` reports what was withheld and why |
 | `remember` | record a lesson that generalises beyond this repo |
@@ -137,7 +137,7 @@ Two prompts you invoke yourself from the `/` menu: `recall_topic`, `prior_art`. 
 
 **Two guards worth knowing:** memories are never served as ordinary notes (they carry their own declared scope), and a memory that would reach nobody is refused rather than silently widened to `general`.
 
-Full setup, the fence, and the required repo-side snippet: `CLAUDE.md` § *Reaching the Vault From Another Repo*.
+Full setup, which notes the server serves, and the required repo-side snippet: `CLAUDE.md` § *Reaching the Vault From Another Repo*. How the whole layer works — the four MCP surfaces, the identity handshake, a `search` call end to end, memory-visibility evaluation, the write path: `ARCHITECTURE.md` § *Reaching the Vault From Another Repo*.
 
 ## Workflow: Weekly Review
 

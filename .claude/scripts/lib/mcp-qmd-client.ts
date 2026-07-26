@@ -2,26 +2,16 @@
  * Tier 1 — search, served by acting as an MCP CLIENT of the vault's own qmd
  * server.
  *
- * WHY A CLIENT RATHER THAN A LIBRARY
+ * The index covers the whole vault, including memories and any folder outside
+ * the exposed roots. Results are matched against the served set AFTER
+ * retrieval, so one place decides what comes back.
  *
- * The index sees the entire vault. This server decides what leaves. Putting a
- * process boundary between them means there is exactly one place where scoping
- * happens, and it is on the way OUT — after retrieval, never before it.
+ * That ordering is load-bearing. Filtering the QUERY would require every caller
+ * to construct a scoped query correctly; filtering the RESULT means no query a
+ * caller can write returns more than the policy serves.
  *
- * That ordering is not a style choice. Filtering the query would mean trusting
- * every future caller to construct a scoped query correctly; filtering the
- * result means a caller cannot construct an unscoped one at all.
- *
- * THE LEAK THIS MODULE EXISTS TO PREVENT
- *
- * Four revisions of the prototype scoped the RESOURCE surface via MCP roots and
- * left `search` proxying qmd over the whole index. A session in another repo
- * retrieved a note stamped CONFIDENTIAL. Nothing errored; the note simply came
- * back. The generalisable lesson, and the reason the pure half of this file is
- * tested on its own: **scoping one read path and not the other is not scoping.**
- *
- * The spawn and the filter are deliberately separated. The filter is where the
- * security property lives, so it must be provable without starting a process.
+ * The spawn and the filter are deliberately separated: the filter is pure, so
+ * its behaviour is provable without starting a process.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -38,14 +28,14 @@ export interface QmdHit {
 
 export interface ScopedResult {
 	readonly text: string;
-	/** How many hits the fence removed. Surfaced for the audit log. */
+	/** How many hits the policy removed. Surfaced for the audit log. */
 	readonly withheld: number;
 	/** How many qmd returned before filtering. */
 	readonly total: number;
 }
 
 // ---------------------------------------------------------------------------
-// Path identity — the comparison the fence depends on
+// Path identity — the comparison the filter depends on
 // ---------------------------------------------------------------------------
 
 /**
@@ -113,28 +103,28 @@ export function qmdRelKey(qmdPath: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// The fence — pure, and the reason this file is split
+// The filter — pure, and the reason this file is split
 // ---------------------------------------------------------------------------
 
 const SNIPPET_MAX = 700;
 const RESPONSE_MAX = 6000;
 
 /**
- * Filter and render qmd's results against the set of paths this caller may see.
+ * Filter and render qmd's results against the set of paths this vault serves.
  *
  * `allowed` is a set of vault-relative keys produced by `vaultRelKey`. A hit
  * whose key is not in it is dropped and counted — counted, because a silent
- * drop is indistinguishable from an empty index, and the caller deserves to
- * know the difference between "nothing matched" and "nothing you may see".
+ * drop is indistinguishable from an empty index, and the caller needs to tell
+ * "nothing matched" apart from "nothing in scope".
  */
 export function scopeResults(
 	structured: unknown,
 	allowed: ReadonlySet<string>,
 	limit = 5,
 ): ScopedResult {
-	// No structured results means no per-hit paths to filter on. Refusing is the
-	// only safe option: qmd's human-readable summary carries note paths too, so
-	// returning it unfiltered is exactly the leak this module closes.
+	// No structured results means no per-hit paths to filter on. qmd's
+	// human-readable summary carries note paths too, so returning that instead
+	// would hand back results nothing ever matched against the policy.
 	if (!Array.isArray(structured)) {
 		return { text: "(search unavailable: results could not be scope-checked)", withheld: 0, total: 0 };
 	}
@@ -323,7 +313,7 @@ export async function qmdSearch(
 			arguments: {
 				searches: subQueries(query),
 				intent: query,
-				// Over-fetch: the fence is applied to the RESULT, so asking for
+				// Over-fetch: the filter is applied to the RESULT, so asking for
 				// exactly `limit` means a vault with much unexposed content returns
 				// far fewer than requested with no sign that more existed.
 				limit: Math.max(limit * 4, 20),

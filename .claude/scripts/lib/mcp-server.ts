@@ -209,8 +209,9 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		});
 
 		if (explain && result.withheld.length) {
-			// Counts and reasons only. Naming a withheld memory would disclose
-			// exactly what the scope rule exists to hide.
+			// Counts and reasons only. Naming a withheld memory would put another
+			// project's material into this caller's context — the noise the scope
+			// rule exists to remove.
 			lines.push(
 				`\n---\n${result.withheld.length} memor${result.withheld.length === 1 ? "y" : "ies"} withheld. ` +
 					`Reasons: ${[...new Set(result.withheld.map((w) => w.why ?? "out of scope"))].join("; ")}`,
@@ -426,8 +427,8 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			const uri = String((params as { uri?: unknown } | undefined)?.uri ?? "");
 			const full = resolveResourceUri(ctx.vaultRoot, policy, uri);
 			if (!full) {
-				// Not-found rather than forbidden: the existence of a withheld note
-				// is itself something the fence is hiding.
+				// Not-found rather than forbidden: to this server, a URI outside
+				// the served set is simply not a resource it has.
 				audit("resource_denied", { uri });
 				return session.fail(id, `no such resource: ${uri}`, -32602);
 			}

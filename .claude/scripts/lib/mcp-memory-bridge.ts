@@ -177,11 +177,10 @@ export function callerPlatforms(vaultRoot: string, caller: string | null, memory
  * RETRIEVE SEMANTICALLY, THEN FILTER BY VISIBILITY — never the reverse.
  *
  * The index sees every memory in the vault, including ones scoped to other
- * projects. Ranking by relevance first and applying visibility to the RESULT
- * keeps the fence in exactly one place, so semantic recall can never surface
- * anything the visibility rule would not already have allowed. Handing the index
- * a pre-narrowed corpus would put a second, subtly different fence in the query
- * layer, and the two would drift apart — which is how the search leak happened.
+ * projects. Ranking by relevance first and applying the scope rule to the RESULT
+ * keeps one implementation of that rule, so semantic recall returns exactly the
+ * set plain recall would. Handing the index a pre-narrowed corpus would put a
+ * second, subtly different rule in the query layer, and the two would drift.
  *
  * Returns null when the index cannot answer, so the caller falls back to lexical
  * matching. That fallback is the point: qmd is OPTIONAL in this template, and an
@@ -218,9 +217,9 @@ export async function semanticMemoryOrder<T extends { full: string }>(
 			if (seen.has(key)) continue;
 			seen.add(key);
 			const m = byKey.get(key);
-			// Absent from `byKey` means the visibility rule already excluded it.
-			// Skipped silently: naming a withheld memory, even as a count, leaks
-			// what the scope rule exists to hide.
+			// Absent from `byKey` means the scope rule already excluded it — it was
+			// written for a different project. Skipped silently, because it is not
+			// a result this caller asked about.
 			if (m) {
 				ordered.push(m);
 				placed.add(m);

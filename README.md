@@ -216,7 +216,7 @@ obsidian-mind does **not** dump your entire vault into context. It uses tiered l
 
 | Tier | What | When | Cost |
 |------|------|------|------|
-| **Always** | `CLAUDE.md` + SessionStart context (North Star excerpt, git summary, tasks, vault file listing) | Session start | ~2K tokens |
+| **Always** | `CLAUDE.md` + SessionStart context (North Star excerpt, git summary, tasks, vault file listing) | Session start | capped by the manifest budget; the meter reports the real size every session |
 | **On-demand** | QMD semantic search results | When the agent needs specific context | Targeted |
 | **Triggered** | Classification routing hints | Every message | ~100 tokens |
 | **Triggered** | PostToolUse validation | After `.md` writes | ~200 tokens |
@@ -226,7 +226,7 @@ SessionStart loads **lightweight context** — small excerpts from key files, fi
 
 ### 🌐 Using with Other Agents
 
-obsidian-mind works with Claude Code, Codex CLI, and Gemini CLI. The vault conventions in `CLAUDE.md`, the hook scripts in `.claude/scripts/`, and the 18 commands in `.claude/commands/` are all agent-agnostic — pure Markdown, TypeScript, and shell with no SDK dependencies.
+obsidian-mind works with Claude Code, Codex CLI, and Gemini CLI. The vault conventions in `CLAUDE.md`, the hook scripts in `.claude/scripts/`, and the commands in `.claude/commands/` are all agent-agnostic — pure Markdown, TypeScript, and shell with no SDK dependencies.
 
 **Claude Code** — full support. Hooks, commands, subagents, and the memory system all work out of the box.
 
@@ -275,6 +275,8 @@ Every read is logged with the calling repo, so "what did that session actually s
 
 > [!NOTE]
 > Keeping vault material out of a public PR is the **contract's** job, not the exposure list's — a session can read your vault directly regardless. The prohibition injected into the calling session is the part that measurably holds.
+
+**Want the mechanics?** `ARCHITECTURE.md` → *Reaching the Vault From Another Repo* walks the whole layer with diagrams: the four MCP surfaces and why the non-tool ones matter, the identity handshake, a `search` call traced end to end, how each memory's reach is evaluated, the write path, and every failure mode against the signal that reveals it.
 
 ---
 

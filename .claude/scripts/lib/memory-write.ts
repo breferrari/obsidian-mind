@@ -22,7 +22,7 @@ import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { claimFile } from "./atomic-write.ts";
 
-/** Vault-relative root for every memory. The whole write fence is this prefix. */
+/** Vault-relative root for every memory. Writes are confined to this prefix. */
 export const MEMORY_ROOT = "memories";
 
 export const SCOPES = ["general", "platform", "project"] as const;

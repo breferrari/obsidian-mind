@@ -1,15 +1,13 @@
 /**
- * The search fence.
+ * The search filter.
  *
- * This suite exists because of a real leak: four revisions scoped the resource
- * surface and left `search` proxying the whole index, and a session in another
- * repo retrieved a note stamped CONFIDENTIAL. Nothing errored — the note simply
- * came back.
+ * qmd indexes the whole vault, so `scopeResults` is the only thing that keeps
+ * `search` agreeing with the other read surfaces about which notes exist.
  *
- * So the tests are adversarial by design. Most of them hand `scopeResults` a
- * result set containing something that must NOT come back, and assert on the
- * absence. An assertion that the right hit is present would have passed
- * throughout the entire period the leak was open.
+ * The tests are adversarial by design: most hand `scopeResults` a result set
+ * containing a hit outside the served set and assert on its ABSENCE. An
+ * assertion that the right hit came back passes just as well when the filter
+ * does nothing at all, which is why the absence cases carry the weight.
  */
 
 import { test, describe } from "node:test";
@@ -113,7 +111,7 @@ describe("building sub-queries", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The fence
+// The filter
 // ---------------------------------------------------------------------------
 
 describe("scoping results", () => {
@@ -124,11 +122,12 @@ describe("scoping results", () => {
 	});
 
 	test("an out-of-scope hit does NOT come back, and is counted", () => {
-		// This is the exact shape of the leak: a confidential note, in the index,
-		// matching the query, returned to a session that must not see it.
-		const r = scopeResults([hit("myvault/work/career/TR/TR Internal — Comp.md")], ALLOWED);
-		assert.ok(!r.text.includes("TR Internal"), "the withheld note must not appear at all");
-		assert.ok(!r.text.includes("work/career"), "not even its path may leak");
+		// A note the index matched, sitting in a folder this vault does not serve.
+		// The index knows nothing of the policy, so this filter is the only thing
+		// between the two.
+		const r = scopeResults([hit("myvault/work/1-1/2026-07-26 Sarah.md")], ALLOWED);
+		assert.ok(!r.text.includes("Sarah"), "the withheld note must not appear at all");
+		assert.ok(!r.text.includes("work/1-1"), "and neither must its path");
 		assert.equal(r.withheld, 1);
 	});
 
@@ -144,8 +143,8 @@ describe("scoping results", () => {
 		);
 		assert.match(r.text, /Gotchas/);
 		assert.match(r.text, /pocket/);
-		assert.ok(!r.text.includes("people/"), "people/ is outside the fence");
-		assert.ok(!r.text.includes("journal/"), "journal/ is outside the fence");
+		assert.ok(!r.text.includes("people/"), "people/ is not served");
+		assert.ok(!r.text.includes("journal/"), "journal/ is not served");
 		assert.equal(r.withheld, 2);
 		assert.equal(r.total, 4);
 		assert.match(r.text, /2 further match/);
@@ -182,17 +181,17 @@ describe("scoping results", () => {
 	});
 
 	test("a hit with no file cannot slip through", () => {
-		const r = scopeResults([{ score: 1, snippet: "leaked" } as QmdHit], ALLOWED);
+		const r = scopeResults([{ score: 1, snippet: "unmatchable" } as QmdHit], ALLOWED);
 		assert.equal(r.withheld, 1);
-		assert.ok(!r.text.includes("leaked"));
+		assert.ok(!r.text.includes("unmatchable"));
 	});
 
 	test("basename collision does not admit a note from an out-of-scope folder", () => {
 		// `projects/pocket/README.md` is allowed. A README elsewhere is not, and
 		// matching on basename rather than full path would have admitted it.
-		const r = scopeResults([hit("myvault/work/secret-client/README.md")], ALLOWED);
+		const r = scopeResults([hit("myvault/reference/runbooks/README.md")], ALLOWED);
 		assert.equal(r.withheld, 1);
-		assert.ok(!r.text.includes("secret-client"));
+		assert.ok(!r.text.includes("runbooks"));
 	});
 
 	test("a note whose name contains spaces is matched, not silently dropped", () => {
@@ -239,10 +238,10 @@ describe("client liveness", () => {
 // ---------------------------------------------------------------------------
 
 describe("rendering", () => {
-	test("limit caps the hits shown but the withheld count still reflects the fence", () => {
+	test("limit caps the hits shown but the withheld count still reflects the policy", () => {
 		const hits = [hit("myvault/brain/Gotchas.md"), hit("myvault/brain/Key Decisions.md")];
 		const r = scopeResults([...hits, hit("myvault/people/X.md")], ALLOWED, 1);
-		assert.equal(r.withheld, 1, "withheld counts the FENCE, not the limit");
+		assert.equal(r.withheld, 1, "withheld counts the POLICY, not the limit");
 		assert.equal((r.text.match(/^\[\d\]/gm) ?? []).length, 1);
 	});
 

@@ -1,13 +1,13 @@
 /**
  * Caller identity and the outbound boundary.
  *
- * Two things are being protected here and they pull in different directions.
+ * Two independent properties.
  *
- * Identity must be DERIVED, so a session cannot claim to be a project it is
- * not — that is what makes every scoping rule downstream trustworthy. And the
- * sanitiser must strip local paths out of anything crossing back, because error
- * text lands in the calling session and may be pasted into a commit or an
- * issue, which is the exact leak class this project already shipped once.
+ * Identity is DERIVED from the roots handshake, so a session cannot claim to be
+ * a project it is not — which is what makes every scoping rule downstream mean
+ * anything. And the sanitiser replaces local absolute paths in anything crossing
+ * back, because error text lands in the calling session and may be pasted into a
+ * commit or an issue.
  */
 
 import { test, describe } from "node:test";

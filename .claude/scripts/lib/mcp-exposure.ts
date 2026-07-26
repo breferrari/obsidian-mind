@@ -1,31 +1,20 @@
 /**
- * The fence: which notes may leave the vault, on any surface.
+ * Which notes this vault serves, on every surface.
  *
- * WHAT IS BEING DEFENDED
+ * The default is the vault's own `user_content_roots` — the user's notes, read
+ * by the user's own session. `mcp_exposed_roots` narrows that, and exists for a
+ * vault holding material that is not the user's to share.
  *
- * Not secrecy from the user — same machine, same account, `cat` works. The risk
- * is EGRESS: a session pasting vault material into a commit message, a PR body
- * or an issue on a public repo. That is a real failure shape here, not a
- * hypothetical one.
+ * A note is served when all three hold:
  *
- * So the fence is drawn by SENSITIVITY, not by project. An earlier revision
- * scoped notes to the calling repo and it cost the single best capability
- * measured in the whole spike: the answer that justified an expensive tier-3
- * call did so by connecting one project's constraint to another project's open
- * issue. Cross-project reading is the product. Folder sensitivity is the fence.
- *
- * THREE LAYERS, ALL OF THEM REQUIRED
- *
- *   1. the note's top-level folder is in the exposed set
+ *   1. its path is inside an exposed root
  *   2. its filename is not in the never-expose list
  *   3. it is not tagged `private` in frontmatter
  *
- * EVERY surface must apply all three. This module exists so there is one
- * implementation to apply, because the recurring defect in this layer is a
- * second read path that quietly skips the check — search proxied the whole
- * index while resources were scoped, and separately the resource enumerators
- * read `brain/` and `projects/` directly, ignoring the exposed-root list they
- * were supposed to obey. Both were the same mistake twice.
+ * Every read surface resolves through this module rather than walking the vault
+ * itself, so `search`, `expand` and the resource enumerators cannot disagree
+ * about which notes exist. A surface that reads the filesystem directly is the
+ * defect this module is shaped to prevent.
  */
 
 import { readFileSync, readdirSync, statSync, existsSync, realpathSync } from "node:fs";
@@ -40,7 +29,7 @@ const MAX_DEPTH = 4;
 const HEAD_BYTES = 1200;
 
 export interface ExposurePolicy {
-	/** Top-level folders whose notes may be read. */
+	/** Path prefixes whose notes are served. */
 	readonly roots: readonly string[];
 	/** Filenames withheld regardless of folder. */
 	readonly neverExpose: ReadonlySet<string>;
@@ -170,9 +159,9 @@ export function resolveExposure(
 /**
  * Is this note marked private?
  *
- * An UNREADABLE file returns true. Withholding something we cannot inspect is
- * the only safe default: the alternative is that a permissions error becomes an
- * exposure.
+ * An UNREADABLE file returns true, so a file whose frontmatter cannot be
+ * inspected is not served — a permissions error must not resolve to "not
+ * private".
  */
 export function isPrivate(path: string): boolean {
 	try {
@@ -213,8 +202,7 @@ export function isExposedPath(policy: ExposurePolicy, relPath: string): boolean 
  *
  * This is the single source of truth. `search` filters its hits against it,
  * `expand` computes backlinks only over it, and the resource enumerators build
- * from it — so a note cannot be invisible on one surface and readable on
- * another, which is exactly the defect that produced the confidential-note leak.
+ * from it — so a note cannot be absent from one surface and present on another.
  */
 export function visibleFiles(vaultRoot: string, policy: ExposurePolicy): VisibleFile[] {
 	const files: VisibleFile[] = [];
@@ -272,10 +260,9 @@ export function allowedSearchPaths(vaultRoot: string, policy: ExposurePolicy): S
  * and read one directly when its title already answers the question — cheaper
  * and more exact than a search.
  *
- * Built from `visibleFiles`, which is the fix for a real defect: the prototype's
- * enumerators read `brain/` and `projects/` from disk directly, so a vault that
- * declared `mcp_exposed_roots` WITHOUT those folders still handed them out. The
- * fence was configured and ignored.
+ * Built from `visibleFiles` rather than from a walk of its own, so a vault that
+ * narrows `mcp_exposed_roots` gets that narrowing here too. An enumerator that
+ * reads known folders directly ignores the setting entirely.
  */
 export function listResources(vaultRoot: string, policy: ExposurePolicy): ResourceDef[] {
 	return visibleFiles(vaultRoot, policy).map((f) => {
@@ -302,13 +289,13 @@ export function vaultRelKeyRaw(vaultRoot: string, full: string): string {
 }
 
 /**
- * Resolve a `vault://note/<rel>` URI back to a file, enforcing the fence again.
+ * Resolve a `vault://note/<rel>` URI back to a file, re-applying the policy.
  *
  * Re-checked rather than trusted: a URI is caller-supplied input, and the fact
- * that this server minted one earlier is not evidence that THIS one is legal.
- * Returns null for anything outside the policy, which the caller reports as
- * not-found rather than as forbidden — the existence of a withheld note is
- * itself something the fence is hiding.
+ * that this server minted one earlier is not evidence that THIS one resolves
+ * inside the policy. Anything outside it returns null, which the caller reports
+ * as not-found — to this server a URI it does not serve is simply not a
+ * resource.
  */
 export function resolveResourceUri(
 	vaultRoot: string,
@@ -336,9 +323,8 @@ export function resolveResourceUri(
 
 	// Containment must survive SYMLINKS, not just `..`. `resolve` collapses dot
 	// segments but happily returns a path whose real target is outside the vault,
-	// so a symlink planted inside an exposed folder would read anything this
-	// process can read. MCPVault shipped exactly this bug and patched it in
-	// v0.9.1 — a real project already paid for the lesson.
+	// so a symlink inside an exposed folder would read anything this process can
+	// read. Both ends are resolved through `realpath` and compared.
 	const segment = rel.replace(/\\/g, "/").split("/")[0] ?? "";
 	let rootReal: string;
 	let full: string;

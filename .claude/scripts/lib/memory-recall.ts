@@ -2,9 +2,10 @@
  * The vault memory layer — retrieval.
  *
  * Deliberately a separate module from the write path. They have different
- * failure modes and different blast radii: a bad write costs one note, a bad
- * read leaks one project's context into another project's session. Keeping them
- * apart means the visibility rule can be reasoned about — and hammered — alone.
+ * failure modes: a bad write costs one note, while a bad read puts another
+ * project's context into this session and is acted on as if it applied. Keeping
+ * them apart means the visibility rule can be reasoned about — and hammered —
+ * alone.
  *
  * THE PRECISION PROBLEM
  *
@@ -140,7 +141,7 @@ const overlaps = (a: readonly string[], b: readonly string[]): boolean =>
  *      platform, different project" case: an iOS lesson learned in one app
  *      should reach the next iOS app and must NOT reach the web one.
  *   4. Otherwise: not visible. Default deny — a memory with no matching facet
- *      stays put rather than leaking on a near-miss.
+ *      stays put rather than surfacing on a near-miss.
  *
  * A caller with no identity (no MCP roots) sees only `general`. That is the
  * safest reading of "I don't know who you are", and it degrades to useless

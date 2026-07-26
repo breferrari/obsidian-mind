@@ -9,14 +9,13 @@
  * vault is already a wikilink graph, so following it is nearly free — no model
  * call, no embedding, just reading what is already written down.
  *
- * WHERE SCOPING BITES HARDER HERE THAN IN SEARCH
+ * SCOPING APPLIES ON BOTH DIRECTIONS OF THE EDGE
  *
- * Backlinks are computed ONLY over notes the caller may already see. Otherwise
- * "what links to X" discloses the existence and the titles of notes the fence
- * just refused to show — a listing leak dressed up as a graph query. Outbound
- * links get the same treatment from the other side: a link pointing somewhere
- * out of scope is COUNTED but never NAMED, which is honest about the graph
- * being bigger than the view without saying what is in the rest of it.
+ * Backlinks are computed only over served notes, so `expand` and `search` agree
+ * on which notes exist rather than reaching them by different routes. Outbound
+ * links get the same treatment from the other side: a link pointing outside the
+ * served set is COUNTED but not NAMED, which is honest about the graph being
+ * larger than the view without listing the rest of it.
  */
 
 import { readFileSync } from "node:fs";
@@ -141,8 +140,8 @@ export function expandNote(files: readonly VisibleFile[], seed: string): ExpandR
 	const hit = candidates[0] ?? resolveVisible(files, seed);
 
 	if (!hit) {
-		// A near-miss list is only built from VISIBLE notes, so the suggestion
-		// itself cannot disclose something the fence withheld.
+		// The near-miss list is built from served notes only, so a suggestion
+		// always points at something the caller can actually open.
 		const near = files
 			.filter((f) => f.label.toLowerCase().includes(want) && want.length > 0)
 			.slice(0, NEAR_MISS_LIMIT)
@@ -170,9 +169,9 @@ export function expandNote(files: readonly VisibleFile[], seed: string): ExpandR
 		}
 	}
 
-	// Split outbound into what can actually be served and what exists but sits
-	// outside this caller's scope. Naming the latter would leak; counting it is
-	// honest without disclosing what it is.
+	// Split outbound into what can actually be served and what the note links to
+	// but sits outside the served set. Counting the latter tells the caller the
+	// graph continues; naming it would offer a target `expand` cannot follow.
 	const servable = outbound.filter((o) => visibleLabels.has(o.toLowerCase()));
 	const hiddenOutbound = outbound.length - servable.length;
 

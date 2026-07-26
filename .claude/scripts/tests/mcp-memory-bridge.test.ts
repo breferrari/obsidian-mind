@@ -4,8 +4,8 @@
  * Every function here has already failed once in a way that produced an EMPTY
  * result rather than an error, which is the one outcome this system cannot tell
  * apart from a correct one. So each block includes the specific shape that
- * broke: a project note outside the exposure fence, a README whose name is not
- * its project's name, an index that answers with notes the caller may not see.
+ * broke: a project note outside the exposed roots, a README whose name is not
+ * its project's name, an index that answers with memories scoped elsewhere.
  */
 
 import { test, describe } from "node:test";
@@ -185,11 +185,11 @@ describe("the caller's platforms", () => {
 		});
 	});
 
-	test("a project note OUTSIDE the exposure fence is still found", () => {
+	test("a project note OUTSIDE the exposed roots is still found", () => {
 		// The second failed version walked the exposed files only. A vault whose
-		// projects live outside mcp_exposed_roots — which the narrow default
-		// guarantees — silently returned no platform, and every platform-scoped
-		// memory was withheld with no error anywhere.
+		// projects live outside a narrowed `mcp_exposed_roots` silently returned
+		// no platform, and every platform-scoped memory was withheld with no
+		// error anywhere.
 		withVault((dir) => {
 			put(dir, "work/deeply/nested/atlas.md", "---\nplatforms: [ios]\n---\n\n# A\n");
 			assert.deepEqual(callerPlatforms(dir, "atlas", "memories"), ["ios"]);
@@ -236,8 +236,8 @@ describe("semantic ordering", () => {
 	});
 
 	test("a hit the visibility rule excluded is dropped SILENTLY", async () => {
-		// Not even a count: naming a withheld memory, or numbering it, leaks
-		// exactly what the scope rule exists to hide.
+		// Not even a count: a memory scoped to another project is not a result
+		// this caller asked about, so it does not enter the response at all.
 		const visible = [mem("memories/2026/07/a.md")];
 		const r = await semanticMemoryOrder(
 			fakeQmd(["myvault/memories/2026/07/secret.md", "myvault/memories/2026/07/a.md"]),

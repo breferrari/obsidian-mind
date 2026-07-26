@@ -15,8 +15,8 @@
  * nothing extra and beats anything this server could infer from a repo name.
  *
  * The server's job is therefore to VALIDATE, never to guess: a caller-supplied
- * folder must resolve inside an exposed root, so a session cannot talk the
- * server into writing to a fenced folder.
+ * folder must resolve inside an exposed root, so a destination string cannot
+ * turn this tool into an arbitrary write anywhere on disk.
  */
 
 import { existsSync, readdirSync, mkdirSync, realpathSync } from "node:fs";
@@ -130,14 +130,14 @@ export function resolveDestination(
 		}
 		// No traversal segments at all. Checking containment against the VAULT is
 		// not enough: `brain/../work` passes the root check on its first segment
-		// and resolves to a path still inside the vault, so an earlier version
-		// wrote into the fenced `work/` folder. Verified doing exactly that.
+		// and still resolves inside the vault, so it landed in `work/` — a folder
+		// the caller never named and the policy may not even serve.
 		if (rel.split(/[\\/]/).some((seg) => seg === "..")) {
 			throw new Error(`refused: "${folder}" contains a traversal segment`);
 		}
 		const dir = resolve(join(vaultRoot, rel));
-		// Containment against the DECLARED ROOT, not merely the vault — the fence
-		// is per-folder, so "inside the vault" is the wrong question.
+		// Containment against the DECLARED ROOT, not merely the vault: roots are
+		// per-folder, so "inside the vault" is the wrong question.
 		const rootDir = resolve(join(vaultRoot, root));
 		if (dir !== rootDir && !dir.startsWith(rootDir + sep)) {
 			throw new Error(`refused: "${folder}" escapes the "${root}" root`);
