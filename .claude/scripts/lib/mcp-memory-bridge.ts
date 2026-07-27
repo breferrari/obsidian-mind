@@ -13,21 +13,19 @@
  * result this system cannot distinguish from a correct one.**
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import {
 	readMemories,
+	agentMemories,
 	parseFrontmatter,
-	MEMORY_SOURCE,
 	type Facets,
 	type MemoryEntry,
 } from "./memory-recall.ts";
 import { qmdRelKey, vaultRelKey, subQueries, type QmdClient } from "./mcp-qmd-client.ts";
 import type { VisibleFile } from "./mcp-exposure.ts";
-import { readHead } from "./read-head.ts";
-
-const HEAD_BYTES = 1200;
+import { readHead, HEAD_CHARS } from "./read-head.ts";
 
 export interface MemoryDigest extends Facets {
 	readonly rel: string;
@@ -54,7 +52,7 @@ export function resolvableNames(files: readonly VisibleFile[]): Set<string> {
 	const names = new Set<string>();
 	for (const f of files) {
 		names.add(f.label.toLowerCase());
-		const head = readHead(f.full, HEAD_BYTES);
+		const head = readHead(f.full, HEAD_CHARS);
 		if (head === null) continue; // an unreadable file still contributes its basename
 		const block = head.match(/^aliases:\s*$([\s\S]*?)^(?=\S|---)/m);
 		if (block?.[1]) {
@@ -75,19 +73,19 @@ export function resolvableNames(files: readonly VisibleFile[]): Set<string> {
 }
 
 /** Load every agent-written memory with its facets, title and body. */
-export function loadMemoryDigests(
-	vaultRoot: string,
-	memoryRoot: string,
-	entries?: readonly MemoryEntry[],
-): MemoryDigest[] {
-	const out: MemoryDigest[] = [];
-	for (const m of entries ?? readMemories(vaultRoot, memoryRoot)) {
-		// Only agent-written memories participate. A human note that wandered in
-		// here is left alone rather than silently governed by these rules.
-		if (m.facets.source !== MEMORY_SOURCE) continue;
-		out.push({ rel: m.rel, full: m.full, title: m.title ?? "", body: m.body, ...m.facets });
-	}
-	return out;
+export function digestsFrom(entries: readonly MemoryEntry[]): MemoryDigest[] {
+	return agentMemories(entries).map((m) => ({
+		rel: m.rel,
+		full: m.full,
+		title: m.title ?? "",
+		body: m.body,
+		...m.facets,
+	}));
+}
+
+/** The same, read from disk. The IO wrapper. */
+export function loadMemoryDigests(vaultRoot: string, memoryRoot: string): MemoryDigest[] {
+	return digestsFrom(readMemories(vaultRoot, memoryRoot));
 }
 
 /**
@@ -157,7 +155,7 @@ export function callerPlatforms(vaultRoot: string, caller: string | null, memory
 	const match = findNoteNamed(vaultRoot, caller.toLowerCase(), memoryRoot);
 	if (!match) return [];
 	try {
-		const v = parseFrontmatter(readFileSync(match, "utf8")).platforms;
+		const v = parseFrontmatter(readHead(match, HEAD_CHARS) ?? "").platforms;
 		if (Array.isArray(v)) return v.map(String).filter(Boolean);
 		if (typeof v === "string" && v) return [v];
 	} catch {

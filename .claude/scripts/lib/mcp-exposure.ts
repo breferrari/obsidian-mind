@@ -26,8 +26,6 @@ import { readHead } from "./read-head.ts";
 
 /** How deep to walk inside an exposed root. */
 const MAX_DEPTH = 4;
-/** How much of a file to read when probing its frontmatter. */
-const HEAD_BYTES = 1200;
 
 export interface ExposurePolicy {
 	/** Path prefixes whose notes are served. */
@@ -165,14 +163,14 @@ export function resolveExposure(
  * private".
  */
 export function isPrivate(path: string): boolean {
-	const head = readHead(path, HEAD_BYTES);
+	const head = readHead(path);
 	if (head === null) return true;
 	return /^\s*-?\s*private\s*$/m.test(head) || /^private:\s*true/m.test(head);
 }
 
 /** Pull the frontmatter `description:` so a resource list is self-describing. */
 export function firstDescription(path: string, fallback = "Vault note"): string {
-	const head = readHead(path, HEAD_BYTES);
+	const head = readHead(path);
 	if (head === null) return fallback;
 	const m = head.match(/^description:\s*"?(.+?)"?\s*$/m);
 	return m?.[1] ? m[1].slice(0, 200) : fallback;

@@ -25,13 +25,11 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MEMORY_ROOT } from "./memory-write.ts";
+import { MEMORY_ROOT, MEMORY_SOURCE } from "./memory-write.ts";
 
-/**
- * The `source:` value that marks a file as agent-written. A note in the store
- * without it is somebody's own note and is left alone.
- */
-export const MEMORY_SOURCE = "mcp-capture";
+// Re-exported so a reader can take the marker from the module it reads with,
+// while the writer that stamps it stays the one place it is defined.
+export { MEMORY_SOURCE };
 
 export interface Facets {
 	readonly scope: string;
@@ -260,13 +258,11 @@ export function listMemoryFiles(vaultRoot: string, root: string = MEMORY_ROOT): 
 
 function safeDirs(dir: string): string[] {
 	try {
-		return readdirSync(dir).filter((n) => {
-			try {
-				return statSync(join(dir, n)).isDirectory();
-			} catch {
-				return false;
-			}
-		});
+		// Dirents answer isDirectory() from the listing itself, so this costs no
+		// stat per entry — and it runs on every read of the store.
+		return readdirSync(dir, { withFileTypes: true })
+			.filter((e) => e.isDirectory())
+			.map((e) => e.name);
 	} catch {
 		return [];
 	}
@@ -295,58 +291,72 @@ export function parseMemory(rel: string, full: string, md: string): MemoryEntry 
 	};
 }
 
+/**
+ * Read and parse one file from the store, or null if it cannot be read.
+ *
+ * Shared by the cold path below and by the cache in `memory-index.ts`, so the
+ * two cannot drift on what counts as unreadable.
+ */
+export function readMemoryFile(file: { rel: string; full: string }): MemoryEntry | null {
+	try {
+		return parseMemory(file.rel, file.full, readFileSync(file.full, "utf8"));
+	} catch {
+		return null; // an unreadable file must not take down retrieval
+	}
+}
+
 /** Read and parse the whole store. The uncached path. */
 export function readMemories(vaultRoot: string, root: string = MEMORY_ROOT): MemoryEntry[] {
 	const out: MemoryEntry[] = [];
 	for (const file of listMemoryFiles(vaultRoot, root)) {
-		let md: string;
-		try {
-			md = readFileSync(file.full, "utf8");
-		} catch {
-			continue; // an unreadable file must not take down retrieval
-		}
-		out.push(parseMemory(file.rel, file.full, md));
+		const entry = readMemoryFile(file);
+		if (entry) out.push(entry);
 	}
 	return out;
 }
 
 /**
- * Load every memory visible to this caller, ranked.
+ * The subset of a store that is agent-written.
+ *
+ * A human note that wandered into the memory folder is left alone rather than
+ * silently governed by these rules. One predicate, so "what counts as a memory"
+ * is answered in a single place.
+ */
+export function agentMemories(entries: readonly MemoryEntry[]): MemoryEntry[] {
+	return entries.filter((m) => m.facets.source === MEMORY_SOURCE);
+}
+
+/**
+ * Apply the visibility rule and rank what survives. PURE — no filesystem.
+ *
+ * This is the whole of recall's decision-making. `recall` below is the thin IO
+ * wrapper that feeds it from disk; the server feeds it from its parse cache. An
+ * earlier version took an optional pre-parsed list *alongside* `vaultRoot` and
+ * `root`, which left those arguments dead on every production call and made it
+ * possible to hand in entries read from a different root than the one named.
  *
  * `explain` attaches the visibility reason to each entry AND returns the
  * withheld ones with theirs — used to prove a memory was excluded deliberately
  * rather than missed by accident.
- *
- * `entries` supplies an already-parsed store, which is how the server avoids
- * re-reading every file on every call. Omitted, this reads from disk exactly as
- * before — the caching decision belongs to the caller that owns a lifetime, not
- * to a function a test drives once.
  */
-export function recall(
-	vaultRoot: string,
+export function recallFrom(
+	entries: readonly MemoryEntry[],
 	caller: Caller,
-	opts?: { root?: string; explain?: false; entries?: readonly MemoryEntry[] },
+	opts?: { explain?: false },
 ): MemoryEntry[];
-export function recall(
-	vaultRoot: string,
+export function recallFrom(
+	entries: readonly MemoryEntry[],
 	caller: Caller,
-	opts: { root?: string; explain: true; entries?: readonly MemoryEntry[] },
+	opts: { explain: true },
 ): { visible: MemoryEntry[]; withheld: MemoryEntry[] };
-export function recall(
-	vaultRoot: string,
+export function recallFrom(
+	entries: readonly MemoryEntry[],
 	caller: Caller,
-	{
-		root = MEMORY_ROOT,
-		explain = false,
-		entries,
-	}: { root?: string; explain?: boolean; entries?: readonly MemoryEntry[] } = {},
+	{ explain = false }: { explain?: boolean } = {},
 ): MemoryEntry[] | { visible: MemoryEntry[]; withheld: MemoryEntry[] } {
 	const visible: MemoryEntry[] = [];
 	const withheld: MemoryEntry[] = [];
-	for (const entry of entries ?? readMemories(vaultRoot, root)) {
-		// Only agent-written memories participate; a human note that wandered in
-		// here is left alone rather than silently governed by these rules.
-		if (entry.facets.source !== MEMORY_SOURCE) continue;
+	for (const entry of agentMemories(entries)) {
 		const facets = entry.facets;
 		if (isVisibleTo(facets, caller)) {
 			visible.push(explain ? { ...entry, why: visibilityReason(facets, caller) } : entry);
@@ -356,4 +366,24 @@ export function recall(
 	}
 	const ranked = rankMemories(visible, caller);
 	return explain ? { visible: ranked, withheld } : ranked;
+}
+
+/** Load every memory visible to this caller, ranked. The IO wrapper. */
+export function recall(
+	vaultRoot: string,
+	caller: Caller,
+	opts?: { root?: string; explain?: false },
+): MemoryEntry[];
+export function recall(
+	vaultRoot: string,
+	caller: Caller,
+	opts: { root?: string; explain: true },
+): { visible: MemoryEntry[]; withheld: MemoryEntry[] };
+export function recall(
+	vaultRoot: string,
+	caller: Caller,
+	{ root = MEMORY_ROOT, explain = false }: { root?: string; explain?: boolean } = {},
+): MemoryEntry[] | { visible: MemoryEntry[]; withheld: MemoryEntry[] } {
+	const entries = readMemories(vaultRoot, root);
+	return explain ? recallFrom(entries, caller, { explain: true }) : recallFrom(entries, caller);
 }

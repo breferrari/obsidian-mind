@@ -23,13 +23,25 @@
 
 import { openSync, readSync, closeSync } from "node:fs";
 
-export function readHead(path: string, chars: number): string | null {
+/**
+ * How much of a note's head is enough to hold its frontmatter.
+ *
+ * Named in CHARACTERS because that is what callers reason about and what the
+ * `.slice()` this replaced counted — the buffer underneath is four times this,
+ * since a UTF-8 character can take four bytes.
+ */
+export const HEAD_CHARS = 1200;
+
+export function readHead(path: string, chars: number = HEAD_CHARS): string | null {
 	if (!Number.isFinite(chars) || chars <= 0) return "";
 	let fd: number | null = null;
 	try {
 		fd = openSync(path, "r");
 		const want = chars * 4;
-		const buf = Buffer.alloc(want);
+		// Unsafe is exact here: only `subarray(0, filled)` is ever decoded, and
+		// every one of those bytes was written by `readSync` below. Zero-filling
+		// would memset several kilobytes per note, on a path walked per call.
+		const buf = Buffer.allocUnsafe(want);
 		// `readSync` may return a short read even when more is available, so fill
 		// the buffer rather than trusting one call to reach EOF or capacity.
 		let filled = 0;

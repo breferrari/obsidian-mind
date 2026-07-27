@@ -25,6 +25,15 @@ import { claimFile } from "./atomic-write.ts";
 /** Vault-relative root for every memory. Writes are confined to this prefix. */
 export const MEMORY_ROOT = "memories";
 
+/**
+ * The `source` value that marks a file as agent-written.
+ *
+ * Here rather than beside the readers because this module is the one that
+ * STAMPS it, and it already owns the store's on-disk contract. A reader can
+ * import a constant the writer defines; the reverse would invert the dependency.
+ */
+export const MEMORY_SOURCE = "mcp-capture";
+
 export const SCOPES = ["general", "platform", "project"] as const;
 export const CONFIDENCE = ["verified", "inferred", "unverified"] as const;
 
@@ -519,7 +528,7 @@ export function renderMemory(value: MemoryValue, links: readonly string[] = []):
 		`date: ${isoDate(value.date)}`,
 		`description: ${yamlString(deriveDescription(value.body))}`,
 		"tags: [memory]",
-		"source: mcp-capture",
+		`source: ${MEMORY_SOURCE}`,
 		`origin: ${yamlString(value.origin ?? "unknown")}`,
 		`session: ${yamlString(value.date.toISOString())}`,
 		`scope: ${value.scope}`,

@@ -18,9 +18,9 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, unlinkSync, utimesSync, 
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
-import { createMemoryIndex, agentMemories } from "../lib/memory-index.ts";
-import { readMemories, recall, MEMORY_SOURCE } from "../lib/memory-recall.ts";
-import { loadMemoryDigests } from "../lib/mcp-memory-bridge.ts";
+import { createMemoryIndex } from "../lib/memory-index.ts";
+import { readMemories, recall, recallFrom, agentMemories, MEMORY_SOURCE } from "../lib/memory-recall.ts";
+import { loadMemoryDigests, digestsFrom } from "../lib/mcp-memory-bridge.ts";
 
 const ROOT = "memories";
 
@@ -70,10 +70,7 @@ describe("the cache agrees with the filesystem", () => {
 			memory(dir, "scoped", "body", "projects: [atlas]");
 			const idx = createMemoryIndex();
 			const caller = { project: "atlas", platforms: [] as string[] };
-			assert.deepEqual(
-				recall(dir, caller, { root: ROOT, entries: idx.all(dir, ROOT) }),
-				recall(dir, caller, { root: ROOT }),
-			);
+			assert.deepEqual(recallFrom(idx.all(dir, ROOT), caller), recall(dir, caller, { root: ROOT }));
 		});
 	});
 
@@ -82,7 +79,7 @@ describe("the cache agrees with the filesystem", () => {
 			memory(dir, "one");
 			memory(dir, "two");
 			const idx = createMemoryIndex();
-			assert.deepEqual(loadMemoryDigests(dir, ROOT, idx.all(dir, ROOT)), loadMemoryDigests(dir, ROOT));
+			assert.deepEqual(digestsFrom(idx.all(dir, ROOT)), loadMemoryDigests(dir, ROOT));
 		});
 	});
 });
@@ -157,19 +154,6 @@ describe("noticing that the store changed", () => {
 			idx.all(dir, ROOT);
 			assert.equal(idx.stats.misses, 1);
 			assert.equal(idx.stats.hits, 0);
-		});
-	});
-
-	test("clear drops everything", () => {
-		withVault((dir) => {
-			memory(dir, "a");
-			memory(dir, "b");
-			const idx = createMemoryIndex();
-			idx.all(dir, ROOT);
-			idx.clear();
-			assert.equal(idx.stats.size, 0);
-			idx.all(dir, ROOT);
-			assert.equal(idx.stats.misses, 2);
 		});
 	});
 

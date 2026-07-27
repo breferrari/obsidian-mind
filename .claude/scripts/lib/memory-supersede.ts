@@ -29,8 +29,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { MEMORY_SOURCE } from "./memory-write.ts";
+
 /** The only `source` value this module is permitted to modify. */
-const OWNED_BY_SERVER = "mcp-capture";
+const OWNED_BY_SERVER = MEMORY_SOURCE;
 
 export interface FrontmatterEdit {
 	readonly changed: boolean;

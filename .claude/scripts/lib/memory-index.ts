@@ -29,9 +29,9 @@
  * start costs exactly what it costs today.
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 
-import { listMemoryFiles, parseMemory, MEMORY_SOURCE, type MemoryEntry } from "./memory-recall.ts";
+import { listMemoryFiles, readMemoryFile, type MemoryEntry } from "./memory-recall.ts";
 
 interface CacheEntry {
 	readonly mtimeMs: number;
@@ -59,24 +59,24 @@ export interface MemoryIndex {
 	all(vaultRoot: string, root: string): MemoryEntry[];
 	/** Forget one file by vault-relative path. Called after writing it. */
 	invalidate(rel: string): void;
-	/** Forget everything. */
-	clear(): void;
 	readonly stats: IndexStats;
 }
 
 export function createMemoryIndex(): MemoryIndex {
-	const cache = new Map<string, CacheEntry>();
+	let cache = new Map<string, CacheEntry>();
 	let hits = 0;
 	let misses = 0;
 
 	const all = (vaultRoot: string, root: string): MemoryEntry[] => {
 		const out: MemoryEntry[] = [];
-		const present = new Set<string>();
+		// Built fresh each pass and swapped in at the end, so a file that vanished
+		// is evicted STRUCTURALLY rather than by a second sweep that has to be kept
+		// in step with this loop.
+		const next = new Map<string, CacheEntry>();
 		hits = 0;
 		misses = 0;
 
 		for (const f of listMemoryFiles(vaultRoot, root)) {
-			present.add(f.rel);
 			let st: { mtimeMs: number; size: number };
 			try {
 				st = statSync(f.full);
@@ -87,29 +87,22 @@ export function createMemoryIndex(): MemoryIndex {
 			const cached = cache.get(f.rel);
 			if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
 				hits++;
+				next.set(f.rel, cached);
 				out.push(cached.record);
 				continue;
 			}
 
 			misses++;
-			let md: string;
-			try {
-				md = readFileSync(f.full, "utf8");
-			} catch {
-				// An unreadable file must not take down retrieval, and must not leave
-				// a stale parse behind pretending it is still readable.
-				cache.delete(f.rel);
-				continue;
-			}
-			const record = parseMemory(f.rel, f.full, md);
-			cache.set(f.rel, { mtimeMs: st.mtimeMs, size: st.size, record });
+			// An unreadable file must not take down retrieval, and must not leave a
+			// stale parse behind pretending it is still readable — dropping it is
+			// automatic here, since it simply never enters `next`.
+			const record = readMemoryFile(f);
+			if (!record) continue;
+			next.set(f.rel, { mtimeMs: st.mtimeMs, size: st.size, record });
 			out.push(record);
 		}
 
-		// Deleted files are dropped, so the map tracks the store rather than
-		// growing for the life of the server.
-		for (const rel of [...cache.keys()]) if (!present.has(rel)) cache.delete(rel);
-
+		cache = next;
 		return out;
 	};
 
@@ -118,14 +111,8 @@ export function createMemoryIndex(): MemoryIndex {
 		invalidate: (rel) => {
 			cache.delete(rel);
 		},
-		clear: () => cache.clear(),
 		get stats(): IndexStats {
 			return { hits, misses, size: cache.size };
 		},
 	};
-}
-
-/** The subset of an index's output that counts as an agent-written memory. */
-export function agentMemories(entries: readonly MemoryEntry[]): MemoryEntry[] {
-	return entries.filter((m) => m.facets.source === MEMORY_SOURCE);
 }

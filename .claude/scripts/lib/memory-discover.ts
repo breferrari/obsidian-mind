@@ -23,10 +23,14 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { normalizePath } from "./mcp-caller.ts";
 import { readHead } from "./read-head.ts";
+import { MEMORY_SOURCE } from "./memory-write.ts";
 import { join, relative, sep } from "node:path";
 
 /** Directories never worth walking, in any vault. */
 const SKIP = new Set([".git", ".obsidian", ".shardmind", "node_modules", ".claude", ".codex", ".gemini"]);
+
+/** Frontmatter that marks a file as agent-written, built from the one constant. */
+const AGENT_WRITTEN = new RegExp(`^source:\\s*["']?${MEMORY_SOURCE}["']?\\s*$`, "m");
 
 /** How deep a memory tree can nest before we stop believing it is one. */
 const MAX_DEPTH = 4;
@@ -135,7 +139,7 @@ export function discoverMemoryRoot(vaultRoot: string, configured = "memories"): 
 	const counts = new Map<string, number>();
 	for (const full of walkMarkdown(vaultRoot)) {
 		const fm = probeFrontmatter(full);
-		if (!fm || !/^source:\s*["']?mcp-capture["']?\s*$/m.test(fm)) continue;
+		if (!fm || !AGENT_WRITTEN.test(fm)) continue;
 		const rel = relative(vaultRoot, full).split(sep);
 		if (rel.length < 2) continue;
 		const top = rel[0];
