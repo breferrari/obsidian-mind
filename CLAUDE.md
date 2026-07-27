@@ -321,9 +321,11 @@ The other tools answer without inference. `reason` reads the vault with a second
 
 **It runs on your own CLI default model**, so the vault answers at the level you are already working at. MCP gives a server no way to see the calling session's model, so inheriting the CLI default is the closest reachable thing to "the same model I am using".
 
-**Every call is on the record.** It lands in `.claude/om-mcp-audit.jsonl` with its cost, turns, model, wall time and the roots it was allowed to read, and `health` reports the day's total — so "what did that use, and what could it see" is always answerable. That visibility is the whole of the control surface, because the spawn is Claude on your machine under your auth: the same resource the session asking already runs on.
+**Every call is on the record** — including one that produced no answer, since the log is written before any refusal. It lands in `.claude/om-mcp-audit.jsonl` with the question, cost, turns, terminal reason, model asked for, model that ran, wall time, and the roots the spawn was given. `health` reports the day's figure, and says *at least* when the log was too big to read whole rather than quietly under-reporting.
 
-**It reads only what this vault exposes.** The spawn is given the same `mcp_exposed_roots` boundary that filtered its search results, and is told never to read the memory root — a memory belongs to the project it was scoped to, and reading the store directly would sidestep that. The server stays responsive while it runs; other tools answer normally mid-call.
+**It reads what this vault serves, and nothing else.** The spawn is handed the same three rules the exposure policy applies to search results: your `mcp_exposed_roots`, your `mcp_never_expose` filenames, and `private:`-tagged notes — the last two matter because they live *inside* exposed roots. Unset, that is simply your `user_content_roots`, so the boundary is whatever you already declared rather than anything this tool adds. It is also told not to read the memory root, since a memory belongs to the project it was scoped to.
+
+**The server stays responsive while it runs.** Other tools answer normally mid-call, and a shutdown ends any spawn still in flight rather than orphaning it.
 
 One optional key, which does not ship set:
 
@@ -334,7 +336,7 @@ One optional key, which does not ship set:
 Left unset — the default — it uses your own Claude settings.
 
 > [!warning] If you pin a model, use a FULL id.
-> `--model haiku` is not honoured by the CLI and does not error — it silently runs `claude-sonnet-5`. An alias here is dropped in favour of inheriting, since a pin that quietly means something else is worse than no pin. The answer always reports which model actually ran.
+> `--model haiku` is not honoured by the CLI and does not error — it silently runs `claude-sonnet-5`. Bare aliases (`haiku`, `sonnet`, `opus`) are therefore dropped in favour of inheriting; anything else is passed through as written. Every answer names the model that actually ran, and says whether it was the pinned one.
 
 If a run ends early you get **no answer**, not a truncated one, plus the evidence search already found — a partial synthesis presented as complete is the one outcome worse than none.
 

@@ -17,7 +17,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -112,7 +112,7 @@ describe("the daily usage line health reports", () => {
 	// The sum itself is `sumAuditField`'s job and is tested against the writer in
 	// mcp-caller.test.ts, including rotation. Here: the line this tool composes
 	// from it, with the read injected so no log is needed.
-	const spend = (n: number) => () => n;
+	const spend = (total: number, complete = true) => () => ({ total, complete });
 
 	test("names the model a call would actually use", () => {
 		assert.match(reasonUsage("/v", {}, "2026-07-27", spend(0)), /model: your CLI default/);
@@ -132,13 +132,22 @@ describe("the daily usage line health reports", () => {
 		assert.match(reasonUsage("/v", {}, "2026-07-27", spend(0.3512)), /\$0\.3512 reported/);
 	});
 
+	test("says AT LEAST when the log was too large to read whole", () => {
+		// A silently-low figure is the failure to avoid: this line is the entire
+		// answer to where usage went, and it degrades exactly on the busiest days,
+		// so it has to admit being a floor rather than present one as a total.
+		assert.match(reasonUsage("/v", {}, "2026-07-27", spend(0.5, false)), /at least \$0\.5000/);
+		// And a truncated read with nothing found is not the same as "nothing ran".
+		assert.match(reasonUsage("/v", {}, "2026-07-27", spend(0, false)), /readable tail/);
+	});
+
 	test("asks the log for this tool's own action key", () => {
 		// The stamp and the read must move together; a rename on one side only
 		// makes the figure read zero forever, which looks like "no calls today".
 		let askedFor = "";
 		reasonUsage("/v", {}, "2026-07-27", (_root, action, _day, field) => {
 			askedFor = `${action}/${field}`;
-			return 0;
+			return { total: 0, complete: true };
 		});
 		assert.equal(askedFor, `${REASON_ACTION}/cost_usd`);
 	});
@@ -155,8 +164,18 @@ describe("the audit detail for a run", () => {
 		const d = reasonAuditDetail("q", resolveReasonConfig({}), result(), {
 			roots: ["brain", "reference"],
 			memoryRoot: "memories",
+			neverExpose: [],
 		});
 		assert.equal(d.roots, "brain,reference");
+	});
+
+	test("a very long question is truncated in the LOG, not refused", () => {
+		// One entry bigger than the log's read window leaves nothing parseable in
+		// it, and the day's usage then reports a confident zero. What may be ASKED
+		// is not capped — only what is written beside every other call's record.
+		const d = reasonAuditDetail("x".repeat(50_000), resolveReasonConfig({}), result(), undefined);
+		assert.ok(String(d.question).length < 4000, `audit line kept ${String(d.question).length} chars`);
+		assert.match(String(d.question), /…$/);
 	});
 
 	test("says vault-wide when no boundary was given, rather than omitting it", () => {
@@ -242,6 +261,7 @@ describe("the prompt", () => {
 		assert.match(p, /<evidence>/);
 	});
 
+
 	test("licenses the spawn to go beyond the seed", () => {
 		// Measured: a seeded run leaned on its passages and repeated a framing the
 		// vault had since corrected. Seeding saves about a turn and costs some
@@ -289,7 +309,7 @@ describe("the prompt", () => {
 });
 
 describe("the read boundary in the prompt", () => {
-	const scope = { roots: ["brain", "reference"], memoryRoot: "memories" };
+	const scope = { roots: ["brain", "reference"], memoryRoot: "memories", neverExpose: [] };
 
 	test("names the exposed roots as a prohibition, not a suggestion", () => {
 		// `--tools Read,Grep,Glob` with cwd at the vault root gives the spawn the
@@ -301,11 +321,28 @@ describe("the read boundary in the prompt", () => {
 		assert.match(p, /Do not read anything/i);
 	});
 
-	test("keeps the memory root out, whatever the roots say", () => {
+	test("keeps the memory root and .claude out, whatever the roots say", () => {
 		// A spawn reading memories/ directly sees every caller's, not its own —
 		// and "memories are never served as an ordinary note" holds regardless of
-		// configuration everywhere else in this layer.
-		assert.match(reasoningPrompt("q", "PASSAGE", scope), /never read memories\//);
+		// configuration everywhere else in this layer. `.claude/` holds the audit
+		// log, which is every caller's query text.
+		const p = reasoningPrompt("q", "PASSAGE", scope);
+		assert.match(p, /Never read memories\//);
+		assert.match(p, /\.claude\//);
+	});
+
+	test("states ALL THREE of the policy's rules, not just the folders", () => {
+		// never-expose filenames and `private:` notes live INSIDE exposed roots, so
+		// a boundary naming only folders grants exactly the files the other two
+		// rules exist to withhold. Demonstrated: with roots ["brain"], a spawn was
+		// permitted brain/SOUL.md (never-expose) and a private-tagged note.
+		const p = reasoningPrompt("q", "PASSAGE", {
+			roots: ["brain"],
+			memoryRoot: "memories",
+			neverExpose: ["SOUL.md", "Memories.md"],
+		});
+		assert.match(p, /Never read any file named: SOUL\.md, Memories\.md/);
+		assert.match(p, /private/i);
 	});
 
 	test("applies to the unseeded branch too", () => {
@@ -318,9 +355,19 @@ describe("the read boundary in the prompt", () => {
 
 	test("no scope means no fabricated boundary", () => {
 		assert.ok(!reasoningPrompt("q", "PASSAGE").includes("Read ONLY"));
-		assert.ok(!reasoningPrompt("q", "PASSAGE", { roots: [], memoryRoot: "memories" }).includes("Read ONLY"));
+	});
+
+	test("empty roots DENY rather than permit", () => {
+		// `resolveExposure` strips the memory root from whatever was declared, so a
+		// vault exposing only its memories resolves to an empty list. An empty list
+		// that produced no prohibition would hand the spawn the run of the vault at
+		// exactly the moment the config said to serve almost none of it.
+		const p = reasoningPrompt("q", "PASSAGE", { roots: [], memoryRoot: "memories", neverExpose: [] });
+		assert.match(p, /Do not read the note tree at all/);
+		assert.match(p, /Never read memories\//);
 	});
 });
+
 
 // ---------------------------------------------------------------------------
 // Reading a finished run — the half that used to be unreachable
@@ -461,6 +508,43 @@ describe("isolation and provenance", () => {
 		assert.equal(writeReasoningRecord("\0 not a path", new Date(), "q", result()), null);
 	});
 
+	test("two records stamped at the same instant BOTH survive", () => {
+		// The stamp is millisecond-precision and reads as collision-proof, but
+		// calls overlap now that the spawn is async, and one vault can have a
+		// server per consuming repo. Under a plain write the loser silently
+		// overwrote the winner while both reported success — the same shape that
+		// made six processes produce four files in the memory layer.
+		withDir((dir) => {
+			const t = new Date("2026-07-27T10:00:00.123Z");
+			const a = writeReasoningRecord(dir, t, "question A", result({ answer: "ANSWER-A" }));
+			const b = writeReasoningRecord(dir, t, "question B", result({ answer: "ANSWER-B" }));
+			assert.ok(a && b, "both calls report a path");
+			assert.notEqual(a, b, "and the paths differ");
+			const bodies = readdirSync(join(dir, REASONING_DIR))
+				.filter((f) => f.endsWith(".md"))
+				.map((f) => readFileSync(join(dir, REASONING_DIR, f), "utf8"));
+			assert.equal(bodies.length, 2, "no answer was overwritten");
+			assert.ok(bodies.some((s) => s.includes("ANSWER-A")));
+			assert.ok(bodies.some((s) => s.includes("ANSWER-B")));
+		});
+	});
+
+	test("the isolated config is never observable half-written", () => {
+		// A plain write truncates first. With overlapping calls, one call's
+		// truncate can land while another call's child is reading this exact path
+		// — and what it would read is the recursion guard. Rewritten many times
+		// here; the file must parse as a complete config after every one.
+		withDir((dir) => {
+			for (let i = 0; i < 25; i++) {
+				const p = writeIsolatedMcpConfig(dir);
+				assert.deepEqual(JSON.parse(readFileSync(p, "utf8")), { mcpServers: {} }, `rewrite ${i}`);
+			}
+			// And no temp files are left behind beside it.
+			const strays = readdirSync(join(dir, ".claude")).filter((f) => f.includes(".tmp"));
+			assert.deepEqual(strays, [], "temp files must not accumulate");
+		});
+	});
+
 	test("the record directory is not inside the note tree", () => {
 		// It must not be walked by visibleFiles, indexed, or served as a resource:
 		// dot-directories are skipped by every read surface.
@@ -479,8 +563,19 @@ describe("isolation and provenance", () => {
 		const rel = (abs: string) => abs.slice("/v/".length).split(/[\\/]/).join("/");
 
 		assert.ok(ignored.includes(`${REASONING_DIR}/`), `.gitignore must contain "${REASONING_DIR}/"`);
+
+		// A trailing `*` is allowed and wanted: the config is created through a
+		// `.tmp` sibling, which a crash between write and claim can leave behind.
 		const cfg = rel(writeIsolatedMcpConfigPath("/v"));
-		assert.ok(ignored.includes(cfg), `.gitignore must contain "${cfg}" — the path and the ignore rule have drifted`);
+		const covers = (line: string) => line === cfg || line === `${cfg}*`;
+		assert.ok(
+			ignored.some(covers),
+			`.gitignore must contain "${cfg}" or "${cfg}*" — the path and the ignore rule have drifted`,
+		);
+		assert.ok(
+			ignored.some((l) => l === `${cfg}*`),
+			`"${cfg}*" is what also covers the .tmp sibling this file is created through`,
+		);
 	});
 });
 

@@ -25,10 +25,13 @@
  * time.
  */
 
-import { spawn } from "node:child_process";
-import { writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { spawn, type ChildProcess, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
+import { writeFileSync, mkdirSync, readFileSync, existsSync, copyFileSync, unlinkSync, constants } from "node:fs";
 import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
+
+import { claimFile } from "./atomic-write.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -61,6 +64,15 @@ export interface ReasonConfig {
 export const REASON_ACTION = "reason";
 
 /**
+ * How much of the question the audit line keeps.
+ *
+ * A log-hygiene bound, not a limit on the caller: an entry larger than the
+ * log's read window leaves nothing parseable in that window, which zeroes the
+ * day's reported usage. Generous enough that a real question survives whole.
+ */
+const AUDIT_QUESTION_MAX = 2000;
+
+/**
  * How long a spawn may run before it is killed.
  *
  * Fixed, not configurable: this bounds a HUNG CHILD, which is a failure rather
@@ -69,8 +81,17 @@ export const REASON_ACTION = "reason";
  */
 const SPAWN_TIMEOUT_MS = 300_000;
 
-/** A model id the CLI will honour: `family-version`, not a bare alias. */
-const FULL_MODEL_ID = /^claude-[a-z]+-[0-9]/;
+/**
+ * The bare aliases the CLI accepts and then quietly ignores.
+ *
+ * Rejecting THESE, rather than allow-listing an id shape, because an allow-list
+ * silently drops ids it did not anticipate: `^claude-[a-z]+-[0-9]` was the first
+ * attempt and it rejects `claude-3-5-sonnet-20241022`, a perfectly real id, for
+ * the same "quietly means something else" reason the aliases are rejected for.
+ * Anything not on this list is passed through, and the answer always names the
+ * model that actually ran — so a pin the CLI ignores is reported, not hidden.
+ */
+const BARE_ALIASES = new Set(["haiku", "sonnet", "opus", "default", "sonnet[1m]", "opusplan"]);
 
 /**
  * Read the manifest's `reason` block. Exactly one thing is configurable — a model
@@ -80,9 +101,10 @@ const FULL_MODEL_ID = /^claude-[a-z]+-[0-9]/;
  */
 export function resolveReasonConfig(manifest: Record<string, unknown> | null | undefined): ReasonConfig {
 	const raw = (manifest?.reason ?? {}) as Record<string, unknown>;
-	// An alias, or anything unset, falls back to inheriting rather than to a
+	const asked = typeof raw.model === "string" ? raw.model.trim() : "";
+	// A bare alias, or anything unset, falls back to inheriting rather than to a
 	// hardcoded id — a wrong pin is worse than no pin.
-	return { model: typeof raw.model === "string" && FULL_MODEL_ID.test(raw.model) ? raw.model : null };
+	return { model: asked && !BARE_ALIASES.has(asked.toLowerCase()) ? asked : null };
 }
 
 /**
@@ -96,7 +118,12 @@ export function reasonAuditDetail(
 	scope: ReasoningScope | undefined,
 ): Record<string, unknown> {
 	return {
-		question,
+		// Truncated for the LOG only — the question itself is never limited. One
+		// entry longer than the log's read window leaves nothing parseable in it,
+		// and the day's usage figure then reports a confident zero. Capping what
+		// is written keeps a long question from erasing the record of every call
+		// beside it; what may be ASKED is not this layer's business.
+		question: question.length > AUDIT_QUESTION_MAX ? `${question.slice(0, AUDIT_QUESTION_MAX)}…` : question,
 		cost_usd: r.costUsd,
 		turns: r.turns,
 		terminal: r.terminal,
@@ -126,11 +153,25 @@ export function reasonUsage(
 	vaultRoot: string,
 	manifest: Record<string, unknown> | null | undefined,
 	today: string,
-	readSpend: (vaultRoot: string, action: string, day: string, field: string) => number,
+	readSpend: (
+		vaultRoot: string,
+		action: string,
+		day: string,
+		field: string,
+	) => { total: number; complete: boolean },
 ): string {
-	const spent = readSpend(vaultRoot, REASON_ACTION, today, "cost_usd");
+	const { total, complete } = readSpend(vaultRoot, REASON_ACTION, today, "cost_usd");
 	const model = resolveReasonConfig(manifest).model ?? "your CLI default";
-	const usage = spent > 0 ? `$${spent.toFixed(4)} reported across today's calls` : "nothing yet today";
+	// "at least" when the log was too large to read whole. A figure that is
+	// silently low is worse than one that says it is a floor — this line is the
+	// entire answer to where usage went, so it has to be honest about its own
+	// limits rather than quietly under-report on the busiest days.
+	const usage =
+		total > 0
+			? `${complete ? "$" : "at least $"}${total.toFixed(4)} reported across today's calls`
+			: complete
+				? "nothing yet today"
+				: "nothing in the readable tail of today's log";
 	return `${usage} · model: ${model}`;
 }
 
@@ -187,12 +228,21 @@ export function reasoningArgs(cfg: ReasonConfig, prompt: string, mcpConfigPath: 
 	];
 }
 
-/** Which of the vault the spawn may read, mirroring the exposure policy. */
+/**
+ * Which of the vault the spawn may read, mirroring the exposure policy.
+ *
+ * All THREE of the policy's rules, not just the first. Roots alone are not the
+ * policy: `mcp_never_expose` filenames and `private:`-tagged notes live INSIDE
+ * exposed roots, so a boundary naming only folders grants exactly the files the
+ * other two rules exist to withhold.
+ */
 export interface ReasoningScope {
 	/** The exposure policy's roots — the folders this vault serves. */
 	readonly roots: readonly string[];
 	/** The memory root, which is never readable as an ordinary note. */
 	readonly memoryRoot: string;
+	/** `mcp_never_expose` — filenames withheld wherever they appear. */
+	readonly neverExpose: readonly string[];
 }
 
 /**
@@ -214,12 +264,35 @@ export interface ReasoningScope {
  * what it was told is recoverable afterwards.
  */
 function boundary(scope: ReasoningScope | undefined): string[] {
-	if (!scope || scope.roots.length === 0) return [];
+	if (!scope) return [];
+
+	// The policy's other two rules. Both select files INSIDE an exposed root, so
+	// naming only folders would permit precisely what they withhold.
+	const alsoWithheld = [
+		`Never read ${scope.memoryRoot}/ or .claude/ — those are not yours to quote.`,
+		...(scope.neverExpose.length
+			? [`Never read any file named: ${scope.neverExpose.join(", ")} — wherever it appears.`]
+			: []),
+		"Skip any note whose frontmatter has `private: true` or a `private` tag, even",
+		"inside an allowed folder, and do not quote or summarise it.",
+	];
+
+	// NO roots is a deny, never a permit. `resolveExposure` strips the memory root
+	// from whatever the manifest declared, so a vault that exposes only its
+	// memories resolves to an EMPTY list — and an empty list producing no
+	// prohibition would hand the spawn the run of the vault at exactly the moment
+	// the config said to serve almost none of it. `callReason` refuses this
+	// configuration outright; the branch stays so the prompt is never the thing
+	// that fails open.
+	if (scope.roots.length === 0) {
+		return ["This vault exposes NO folders to other repos. Do not read the note tree at all.", ...alsoWithheld, ""];
+	}
+
 	return [
 		`Read ONLY within these folders: ${scope.roots.join(", ")}. Do not read anything`,
-		`outside them, and never read ${scope.memoryRoot}/ or .claude/ — those are not yours`,
-		"to quote. If the answer would require a note outside that boundary, say so instead",
-		"of reading it.",
+		"outside them; if the answer would require a note outside that boundary, say so",
+		"instead of reading it.",
+		...alsoWithheld,
 		"",
 	];
 }
@@ -256,8 +329,8 @@ export function reasoningPrompt(question: string, evidence: string, scope?: Reas
 			"",
 			"Vault search returned nothing usable — the index may be missing or stale, so",
 			"this is NOT evidence that the vault is silent on the question. You are running",
-			"inside the vault: read it directly. Look through the note tree yourself before",
-			"concluding anything.",
+			"inside the vault: read it directly, within the folders named below. Look through",
+			"the note tree yourself before concluding anything.",
 			"",
 			"Only report that nothing is recorded if you have actually looked and found",
 			"nothing, and say how you looked.",
@@ -319,8 +392,22 @@ export function visibleHits(seed: { readonly total: number; readonly withheld: n
 	return Math.max(0, seed.total - seed.withheld);
 }
 
-/** Cap on collected stdout, matching the ceiling `spawnSync`'s maxBuffer gave. */
+/**
+ * Cap on collected stdout, in UTF-16 units — approximately the ceiling
+ * `spawnSync`'s `maxBuffer` gave. Unlike `maxBuffer` it truncates rather than
+ * killing the child, so an over-cap answer degrades to "the CLI printed…" rather
+ * than to a kill. Nothing observed has come close: `--output-format json` emits
+ * one result object of a few KB.
+ */
 const MAX_STDOUT_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Spawns still running, so shutdown can end them.
+ *
+ * Module-level because there is one server process per consuming repo and the
+ * set belongs to the process, not to any one call.
+ */
+const active = new Set<ChildProcess>();
 
 /**
  * Read a finished run's output. PURE — no spawn, no clock, no filesystem.
@@ -336,7 +423,25 @@ export function interpretRun(
 	stderr: string,
 	spawnError: string | null,
 	wallMs: number,
+	/** True when node killed the child for overrunning `SPAWN_TIMEOUT_MS`. */
+	timedOut = false,
 ): ReasoningResult {
+	// A timeout is not a failure to start, and reporting it as one is a lie the
+	// caller waited five minutes for. The signal, the exit code and `child.killed`
+	// all carry it; an earlier version discarded all three, so a kill, an ENOENT
+	// and an over-long argv were indistinguishable in both the message and the log.
+	if (timedOut) {
+		return {
+			ok: false,
+			answer: "",
+			costUsd: 0,
+			turns: 0,
+			modelUsed: "unknown",
+			terminal: "timeout",
+			wallMs,
+			error: null,
+		};
+	}
 	const empty = (error: string): ReasoningResult => ({
 		ok: false,
 		answer: "",
@@ -350,7 +455,14 @@ export function interpretRun(
 
 	let j: Record<string, unknown>;
 	try {
-		j = JSON.parse(stdout) as Record<string, unknown>;
+		// `?? {}` is load-bearing: `JSON.parse("null")` returns null, and reading a
+		// field off it throws a TypeError out of the spawn's `close` listener —
+		// where nothing catches it, so it surfaces as an uncaughtException and
+		// takes the whole server down while the tool call never settles. Every
+		// other non-object body (`[]`, `42`, `"hi"`, `true`) is harmless.
+		const parsed: unknown = JSON.parse(stdout);
+		if (parsed === null || typeof parsed !== "object") throw new Error("not an object");
+		j = parsed as Record<string, unknown>;
 	} catch {
 		// A non-JSON body means the CLI never got far enough to report. Whatever it
 		// printed is the only diagnostic there is — and a spawn error outranks it,
@@ -361,7 +473,10 @@ export function interpretRun(
 	// Valid JSON but the process still failed to launch cleanly: trust the error.
 	if (spawnError) return empty(spawnError);
 
-	const usage = (j.modelUsage ?? {}) as Record<string, unknown>;
+	// Only an object yields model names. A string here would enumerate its
+	// character indices — `"abc"` became the model `"0,1,2"` in testing.
+	const rawUsage = j.modelUsage;
+	const usage = rawUsage !== null && typeof rawUsage === "object" ? (rawUsage as Record<string, unknown>) : {};
 
 	return {
 		// `is_error` covers a run that stopped without concluding, which is the
@@ -381,7 +496,7 @@ export function interpretRun(
  * Run the spawn. The thin IO half; `interpretRun` decides what its output means.
  *
  * ASYNC, and that is load-bearing rather than stylistic. `spawnSync` holds the
- * whole event loop for the life of the child — measured at 73–76s, capped at
+ * whole event loop for the life of the child — measured at 73–80s, capped at
  * 300s — during which the server parses no stdin at all: no other tool call, no
  * `ping`, no `roots/list` reply, and no timers, so the identity gate's own 2s
  * cap could not fire either. The entry script pays for concurrency deliberately
@@ -405,9 +520,12 @@ export function runReasoning(
 ): Promise<ReasoningResult> {
 	const started = Date.now();
 	return new Promise((resolve) => {
-		let child;
+		// The concrete stdio shape, stated rather than inferred: `["ignore","pipe",
+		// "pipe"]` guarantees non-null stdout/stderr, and naming the type is what
+		// makes that a compiler-checked fact instead of an evolving-any accident.
+		let spawned: ChildProcessByStdio<null, Readable, Readable>;
 		try {
-			child = spawn(claude.cmd, [...claude.leading, ...reasoningArgs(cfg, prompt, mcpConfigPath)], {
+			spawned = spawn(claude.cmd, [...claude.leading, ...reasoningArgs(cfg, prompt, mcpConfigPath)], {
 				cwd: vaultRoot,
 				// `timeout` + `killSignal` reproduce spawnSync's bound without holding
 				// the loop: node kills the child itself when it overruns.
@@ -419,6 +537,19 @@ export function runReasoning(
 			resolve(interpretRun("", "", e instanceof Error ? e.message : String(e), Date.now() - started));
 			return;
 		}
+		const child = spawned;
+
+		// Tracked so shutdown can end it. The child is not detached, but nothing
+		// reaps it either: its `timeout` timer lives in THIS process, so a server
+		// that exits mid-spawn leaves a session with no bound on it at all and no
+		// audit line — the line is written after the await that will never return.
+		// "Usage is answered by the record" stops being true the moment a run can
+		// finish unrecorded.
+		active.add(child);
+		const done = (r: ReasoningResult) => {
+			active.delete(child);
+			resolve(r);
+		};
 
 		let out = "";
 		let err = "";
@@ -438,10 +569,52 @@ export function runReasoning(
 		});
 		// `close` rather than `exit`: it fires once the pipes are drained, so the
 		// last chunk of a large answer is never lost to the race.
-		child.on("close", () => {
-			resolve(interpretRun(out, err, spawnError, Date.now() - started));
+		child.on("close", (_code: number | null, signal: NodeJS.Signals | null) => {
+			// Wrapped because this listener runs outside any await: a throw here is
+			// an uncaughtException, and the entry script installs no handler — so a
+			// malformed body would kill the server AND leave the call unsettled.
+			try {
+				// Node kills with `killSignal` on timeout; `killed` covers a kill that
+				// arrived from `killActiveReasoning` during shutdown.
+				const killed = signal === "SIGKILL" || child.killed;
+				done(interpretRun(out, err, spawnError, Date.now() - started, killed && spawnError === null));
+			} catch (e) {
+				done({
+					ok: false,
+					answer: "",
+					costUsd: 0,
+					turns: 0,
+					modelUsed: "",
+					terminal: "spawn_failed",
+					wallMs: Date.now() - started,
+					error: e instanceof Error ? e.message : String(e),
+				});
+			}
 		});
 	});
+}
+
+/**
+ * End every in-flight spawn. Called from the server's shutdown path.
+ *
+ * A `reason` child is not detached and nothing else reaps it, while the only
+ * bound on its lifetime — node's `timeout` — is a timer in THIS process. Exiting
+ * without this leaves an unbounded session running against the user's account,
+ * whose audit line can never be written because the await it would follow is
+ * gone. Returns how many were killed, so a shutdown can say so.
+ */
+export function killActiveReasoning(): number {
+	let n = 0;
+	for (const child of active) {
+		try {
+			child.kill("SIGKILL");
+			n++;
+		} catch {
+			/* already gone; nothing to do */
+		}
+	}
+	active.clear();
+	return n;
 }
 
 /** Human-readable refusal, so a caller learns what to change. */
@@ -520,18 +693,66 @@ export function resolveClaudeCommand(env: NodeJS.ProcessEnv = process.env): {
  * with runtime plumbing so "list or prune my reasoning records" never needs a
  * filename exception.
  *
- * Rewritten on every call, deliberately: it is four syscalls against a spawn
- * measured in tens of seconds, and re-creating it means a user who deletes the
- * file mid-session gets a working next call instead of a mystery.
+ * NEVER REWRITTEN IN PLACE. The content is a constant, so the steady state is
+ * to read it, find it usable, and write nothing — the only way to have no write
+ * window at all. It is created only when absent or unusable, and then by
+ * EXCLUSIVE create, so two processes racing to create it cannot truncate each
+ * other.
+ *
+ * Both obvious alternatives are wrong, and for one reason: a spawned CHILD
+ * holds this file open while it parses it, concurrently with the parent.
+ *   - A plain `writeFileSync` truncates first, so a second call can empty the
+ *     file while a first call's child is reading it. What that child is reading
+ *     is the recursion guard.
+ *   - A temp-file-plus-rename fixes that on POSIX and FAILS ON WINDOWS: rename
+ *     over a path another process holds open throws EPERM, so the rewrite blows
+ *     up precisely when one call overlaps another call's child. Measured, not
+ *     theorised — eight processes churning this path reproduced it every run.
+ *
+ * Self-healing survives: a user who deletes the file mid-session gets it back on
+ * the next call, and so does one who corrupts it, since an unparseable body
+ * counts as absent.
  */
 export function writeIsolatedMcpConfigPath(vaultRoot: string): string {
 	return join(vaultRoot, ".claude", "om-mcp-no-mcp.json");
 }
 
+/** Per-process counter, so two in-flight creates cannot share a temp name. */
+let cfgSeq = 0;
+
+/** Is there already a config here that would isolate a spawn correctly? */
+function isolationIntact(path: string): boolean {
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8")) as { mcpServers?: unknown };
+		// An empty server map is the whole point; anything else is not this file.
+		return Boolean(parsed) && typeof parsed.mcpServers === "object" && parsed.mcpServers !== null;
+	} catch {
+		return false;
+	}
+}
+
 export function writeIsolatedMcpConfig(vaultRoot: string): string {
 	const path = writeIsolatedMcpConfigPath(vaultRoot);
+	if (isolationIntact(path)) return path;
+
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, JSON.stringify({ mcpServers: {} }), "utf8");
+	const tmp = `${path}.${process.pid}-${++cfgSeq}.tmp`;
+	writeFileSync(tmp, JSON.stringify({ mcpServers: {} }), "utf8");
+	try {
+		// Fails rather than clobbering, so the loser of a create race simply keeps
+		// the winner's identical file instead of truncating it under a reader.
+		copyFileSync(tmp, path, constants.COPYFILE_EXCL);
+	} catch (e) {
+		// EEXIST is the race resolving correctly. Anything else means the guard is
+		// genuinely not on disk, and a spawn without it is a spawn that can recurse.
+		if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
+	} finally {
+		try {
+			unlinkSync(tmp);
+		} catch {
+			/* temp cleanup is best-effort */
+		}
+	}
 	return path;
 }
 
@@ -581,13 +802,23 @@ export function writeReasoningRecord(
 	question: string,
 	r: ReasoningResult,
 ): string | null {
-	const stamp = now.toISOString().replace(/[:.]/g, "-");
-	const rel = `${REASONING_DIR}/${stamp}.md`;
 	try {
-		const full = join(vaultRoot, rel);
-		mkdirSync(dirname(full), { recursive: true });
-		writeFileSync(full, renderReasoningRecord(now, question, r), "utf8");
-		return rel;
+		// Inside the try: an invalid Date throws on `toISOString`, and this function
+		// promises to return null rather than take the answer down with it.
+		const stamp = now.toISOString().replace(/[:.]/g, "-");
+		const dir = join(vaultRoot, REASONING_DIR);
+		mkdirSync(dir, { recursive: true });
+		// An exclusive claim, not a plain write. The stamp is millisecond-precision
+		// and reads as collision-proof, but two runs CAN land on it: calls overlap
+		// now that the spawn is async, and the deployment shape is one server per
+		// consuming repo, all writing into one vault. A plain write makes the loser
+		// silently overwrite the winner while both report success — the exact
+		// outcome `claimFile` was extracted for after six processes produced four
+		// files in the memory layer.
+		const { name } = claimFile(dir, renderReasoningRecord(now, question, r), (n) =>
+			n === 1 ? `${stamp}.md` : `${stamp}-${n}.md`,
+		);
+		return `${REASONING_DIR}/${name}`;
 	} catch {
 		return null;
 	}

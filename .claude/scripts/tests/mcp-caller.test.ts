@@ -380,7 +380,7 @@ describe("summing a field across one day's entries", () => {
 				entry({ action: "search", at: "2026-07-27T03:00:00Z", cost_usd: 99 }), // another action
 				entry({ action: "recall", at: "2026-07-27T04:00:00Z" }), // no such field
 			]);
-			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.35);
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").total.toFixed(4)), 0.35);
 		});
 	});
 
@@ -392,12 +392,12 @@ describe("summing a field across one day's entries", () => {
 		withVault((root) => {
 			write(`${auditPath(root)}.1`, [entry({ action: "reason", at: "2026-07-27T01:00:00Z", cost_usd: 0.5 })]);
 			write(auditPath(root), [entry({ action: "reason", at: "2026-07-27T09:00:00Z", cost_usd: 0.25 })]);
-			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.75);
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").total.toFixed(4)), 0.75);
 		});
 	});
 
 	test("a missing log is zero, not a crash", () => {
-		withVault((root) => assert.equal(sumAuditField(root, "reason", "2026-07-27", "cost_usd"), 0));
+		withVault((root) => assert.equal(sumAuditField(root, "reason", "2026-07-27", "cost_usd").total, 0));
 	});
 
 	test("a torn or hand-edited line is skipped, never fatal", () => {
@@ -412,7 +412,7 @@ describe("summing a field across one day's entries", () => {
 				entry({ action: "reason", at: "2026-07-27T03:00:00Z", cost_usd: "free" }), // wrong type
 				entry({ action: "reason", at: "2026-07-27T04:00:00Z", cost_usd: 0.2 }),
 			]);
-			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.3);
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").total.toFixed(4)), 0.3);
 		});
 	});
 
@@ -424,7 +424,7 @@ describe("summing a field across one day's entries", () => {
 				entry({ action: "search", at: "2026-07-27T01:00:00Z", query: "why reason is slow", cost_usd: 99 }),
 				entry({ action: "reason", at: "2026-07-27T02:00:00Z", cost_usd: 0.4 }),
 			]);
-			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.4);
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").total.toFixed(4)), 0.4);
 		});
 	});
 
@@ -435,7 +435,7 @@ describe("summing a field across one day's entries", () => {
 			const audit = createAuditor(auditPath(root), () => "atlas", () => "2026-07-27T05:00:00Z");
 			audit("reason", { cost_usd: 0.6 });
 			audit("search", { cost_usd: 5 });
-			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.6);
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").total.toFixed(4)), 0.6);
 		});
 	});
 });

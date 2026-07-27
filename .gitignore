@@ -49,5 +49,6 @@ node_modules/
 .claude/om-reasoning/
 
 # The empty MCP config `reason` spawns against — the recursion guard. Runtime
-# plumbing, rewritten on every call.
-.claude/om-mcp-no-mcp.json
+# plumbing, created when absent. The glob also covers the `.tmp` sibling it is
+# created through, which a crash between write and claim can leave behind.
+.claude/om-mcp-no-mcp.json*

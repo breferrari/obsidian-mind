@@ -8,7 +8,17 @@
  * empty vault.
  */
 
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync } from "node:fs";
+import {
+	appendFileSync,
+	closeSync,
+	fstatSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	readSync,
+	renameSync,
+	statSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -192,31 +202,73 @@ export function auditPath(vaultRoot: string): string {
  */
 const AUDIT_TAIL_BYTES = 512 * 1024;
 
-/** Read the last `AUDIT_TAIL_BYTES` of a file, dropping a torn leading line. */
-function tail(path: string): string {
+/**
+ * Read the last `AUDIT_TAIL_BYTES` of a file, dropping a torn leading line.
+ *
+ * `whole` says whether the window reached the start of the file. A caller
+ * summing a day cannot know from the numbers alone whether it saw all of them,
+ * and a silently-low figure is worse than an explicitly partial one.
+ */
+function tail(path: string): { text: string; whole: boolean } {
 	let fd: number;
 	try {
 		fd = openSync(path, "r");
 	} catch {
-		return "";
+		// Absent is "nothing to add", not "truncated" — a vault with no log yet
+		// must not report its zero as partial.
+		return { text: "", whole: true };
 	}
 	try {
-		const size = statSync(path).size;
-		const from = Math.max(0, size - AUDIT_TAIL_BYTES);
-		const buf = Buffer.allocUnsafe(Math.min(size, AUDIT_TAIL_BYTES));
+		// The OPEN FILE, not the path — that is the whole reason the fd is held.
+		// `createAuditor` can rotate between the open and the stat, and then
+		// `statSync(path)` describes the fresh live file while the fd still points
+		// at the renamed inode. Measured: a 61-byte stat against a 680KB fd made
+		// `from` compute to 0, which skipped the torn-line drop AND re-read the
+		// head of a generation the caller had already summed — double-counting it.
+		const size = fstatSync(fd).size;
+		// One byte BEFORE the window when there is one, so an aligned boundary can
+		// be told from a torn one. Without it, a window that happens to start
+		// exactly at a line start discards a whole valid entry — proven with
+		// fixed-width entries: 4,096 inside the window, 4,095 summed.
+		const from = size > AUDIT_TAIL_BYTES ? size - AUDIT_TAIL_BYTES - 1 : 0;
+		const buf = Buffer.allocUnsafe(size - from);
 		let read = 0;
 		while (read < buf.length) {
 			const n = readSync(fd, buf, read, buf.length - read, from + read);
 			if (n <= 0) break;
 			read += n;
 		}
+		// Decoding from an arbitrary byte offset can split a multi-byte character,
+		// but only at the START — the window always ends at EOF — and any partial
+		// leading line is dropped below.
 		const text = buf.subarray(0, read).toString("utf8");
-		// A window that did not start at byte 0 almost certainly begins mid-entry.
-		return from === 0 ? text : text.slice(text.indexOf("\n") + 1);
+		if (from === 0) return { text, whole: true };
+		// The probe byte was a newline, so the window began on a line boundary and
+		// every line after it is complete. Otherwise the first line is torn.
+		return text.startsWith("\n")
+			? { text: text.slice(1), whole: false }
+			: { text: text.slice(text.indexOf("\n") + 1), whole: false };
 	} catch {
-		return "";
+		return { text: "", whole: true };
 	} finally {
 		closeSync(fd);
+	}
+}
+
+/**
+ * Can we prove the oldest surviving entry predates the day?
+ *
+ * Only then is a partial read still a complete answer for that day. An
+ * unreadable or absent first entry proves nothing, so it counts as partial.
+ */
+function predatesDay(text: string, dayPrefix: string): boolean {
+	const first = text.split("\n", 1)[0];
+	if (!first?.trim()) return false;
+	try {
+		const at = (JSON.parse(first) as AuditEntry).at;
+		return typeof at === "string" && at < dayPrefix;
+	} catch {
+		return false;
 	}
 }
 
@@ -242,10 +294,19 @@ export function sumAuditField(
 	action: string,
 	dayPrefix: string,
 	field: string,
-): number {
+): { total: number; complete: boolean } {
 	const live = auditPath(vaultRoot);
+	const generations = [tail(`${live}.1`), tail(live)];
+	let complete = true;
 	let total = 0;
-	for (const text of [tail(`${live}.1`), tail(live)]) {
+	for (const { text, whole } of generations) {
+		// A partial read is only provably complete for the DAY if its oldest
+		// surviving entry already predates the day — then nothing of today can be
+		// hiding behind it. Anything else counts as partial, INCLUDING a window
+		// that yielded no readable entry at all: one audit line larger than the
+		// window leaves exactly that, and an earlier version read the resulting
+		// empty text as "no entries today" and reported a confident zero.
+		if (!whole) complete &&= predatesDay(text, dayPrefix);
 		for (const line of text.split("\n")) {
 			// Cheap reject before the parse: any encoding of an entry with this
 			// action contains the action's name somewhere in the line.
@@ -261,5 +322,5 @@ export function sumAuditField(
 			}
 		}
 	}
-	return total;
+	return { total, complete };
 }

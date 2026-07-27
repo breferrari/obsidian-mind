@@ -110,7 +110,7 @@ The hook scripts, subagent prompts, command definitions, and vault conventions a
 
 ## The Manifest as Source of Truth
 
-`vault-manifest.json` is the one file that every layer reads. It answers seven questions:
+`vault-manifest.json` is the one file that every layer reads. It answers eight questions:
 
 | Question | Field |
 |----------|-------|
@@ -121,6 +121,7 @@ The hook scripts, subagent prompts, command definitions, and vault conventions a
 | What frontmatter is required for each note type? | `frontmatter_required{}` |
 | Which notes does the `om` server serve, and where do memories live? | `mcp_exposed_roots[]`, `mcp_never_expose[]`, `memory_root`, `mcp_inbox` |
 | How much context may the eager layer spend? | `eager_layer_budget_bytes`, `listing_collapse_threshold` |
+| Which model does a `reason` spawn run on? | `reason.model` — unset means the user's own CLI default |
 
 The `qmd_index` field is the most load-bearing. **Five independent callers** read it, and they fail *silently* when they disagree — one writes to a store another never reads, which surfaces only as "0 documents" or as an empty search:
 
@@ -416,7 +417,7 @@ flowchart TB
     Server --> Reason
     Server --> Idx
     Server --> Core
-    Reason --> Qmd
+    Server --> Qmd
     Idx --> MR
     Graph --> Exp
     Qmd --> Exp
@@ -714,15 +715,15 @@ flowchart TB
     P1 --> Spawn
     P2 --> Spawn
     Spawn["spawn claude, async, cwd = vault root"] --> Flags["--strict-mcp-config + empty server map<br/>--tools Read,Grep,Glob<br/>--output-format json<br/>stdin closed"]
-    Flags --> Run{"answer came back?"}
-    Run -->|no| Ref["refuse, and hand back<br/>the evidence anyway"]
+    Flags --> Log["audit — EVERY run, before any refusal:<br/>question, cost, turns, terminal,<br/>model asked, model used, wall ms, roots"]
+    Log --> Run{"answer came back?"}
+    Run -->|no| Ref["refuse by name — timeout, early end,<br/>or could-not-start — with the evidence"]
     Run -->|yes| Rec["write the record<br/>.claude/om-reasoning/, gitignored"]
-    Rec --> Log["audit: cost, turns,<br/>model asked, model used, wall ms"]
 ```
 
-**It runs on the caller's own model, by running on none of its own.** MCP gives a server no way to see which model the calling session is using, so there is nothing to mirror. Passing no `--model` at all makes the spawn take the user's CLI default — whatever they get typing `claude` — which is the closest reachable thing to *the level they are already working at*. A vault that wants something else sets `reason.model`, and then it must be a full id: `--model haiku` is not honoured and does **not** error, it silently runs `claude-sonnet-5`. An alias is dropped in favour of inheriting, because a pin that quietly means a different model is worse than no pin, and the answer always reports which model actually ran.
+**It runs on the caller's own model, by running on none of its own.** MCP gives a server no way to see which model the calling session is using, so there is nothing to mirror. Passing no `--model` at all makes the spawn take the user's CLI default — whatever they get typing `claude` — which is the closest reachable thing to *the level they are already working at*. A vault that wants something else sets `reason.model`. Bare aliases — `haiku`, `sonnet`, `opus` — are dropped in favour of inheriting, because `--model haiku` is not honoured and does **not** error: it silently runs `claude-sonnet-5`, and a pin that quietly means a different model is worse than no pin. Anything else is passed through as written rather than matched against a shape, since an id-shaped allow-list drops real ids it did not anticipate. Every answer names the model that actually ran, and says whether that was the pinned one.
 
-**Usage is answered by the record, not by a limit.** Every invocation is appended to the audit log with cost, turns, model and wall time, and `health` reports the day's total — so "what did that use" is always answerable after the fact, which is the question worth being able to answer. The spawn is Claude, on the user's machine, under the user's auth, on the account the calling session already runs on; a server-side bound there would be this layer rationing the user's own resource back to them. The one bound present is a 300-second timeout, which kills a **hung child** — a failure, not a preference.
+**Usage is answered by the record, not by a limit.** Every invocation is appended to the audit log — before any refusal, so a run that produced no answer is still recorded — with the question, cost, turns, terminal reason, model asked for, model that ran, wall time, and the roots the spawn was given. `health` reports the day's figure from the tail of that log, and says *at least* when the log was too large to read whole: a number standing in for a cap has to admit being a floor rather than quietly under-report on the busiest day. The spawn is Claude, on the user's machine, under the user's auth, on the account the calling session already runs on; a server-side bound there would be this layer rationing the user's own resource back to them. The one bound present is a 300-second timeout, which kills a **hung child** — a failure, not a preference.
 
 **Isolation is what stops it recursing.** `--strict-mcp-config` pointed at a config declaring no servers leaves the spawn with no MCP at all, so it cannot call back into `om` and start a tree that multiplies at every level. Verified on the wire: a spawn under those flags reports no MCP servers available.
 
@@ -787,6 +788,8 @@ Every failure in this layer presents identically as **"no results"**. That is wh
 | the CLI is not on the server's PATH | `reason` cannot start at all | the refusal names the spawn error; `OM_CLAUDE_BIN` points at the binary |
 | a pinned `reason.model` is ignored | answers come from another model, silently | the answer names the model that actually ran, and flags the mismatch |
 | a reasoning spawn ends early | would otherwise read as a complete answer | refused by name, with the turn count, the terminal reason and the evidence |
+| a reasoning spawn hits the 300s timeout | looks identical to a spawn that never started | the kill signal is read, so the terminal reason is `timeout`, in the message and the log |
+| the server exits mid-spawn | a session runs on with no bound and no audit line | shutdown kills every in-flight spawn |
 
 A stray `VAULT_PATH` was honoured at one point, and that name is too generic to claim — it is set for unrelated reasons on real machines, and the result was a server serving a *different* vault while reporting that vault's config as if correct. Only `OM_VAULT_PATH` is read now.
 

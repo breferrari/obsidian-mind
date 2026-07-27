@@ -27,6 +27,7 @@ import { McpSession, type Handlers } from "./lib/mcp-protocol.ts";
 import { createQmdClient, type QmdClient } from "./lib/mcp-qmd-client.ts";
 import { createAuditor, auditPath, callerProject } from "./lib/mcp-caller.ts";
 import { createHandlers } from "./lib/mcp-server.ts";
+import { killActiveReasoning } from "./lib/mcp-reason.ts";
 
 const vaultRoot = resolveVaultRoot(import.meta.url);
 const ctx = createContext(vaultRoot, derivedVaultRoot(import.meta.url));
@@ -86,6 +87,11 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 
 const shutdown = (): void => {
 	qmdClient?.dispose();
+	// A `reason` spawn is not detached and nothing else reaps it, while the only
+	// bound on its lifetime is a timer in THIS process. Exiting without this
+	// leaves a session running against the user's account that can never be
+	// recorded, because the audit line follows an await that will never return.
+	killActiveReasoning();
 	process.exit(0);
 };
 process.on("SIGTERM", shutdown);
