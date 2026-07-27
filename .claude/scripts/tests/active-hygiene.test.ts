@@ -219,6 +219,34 @@ describe("scanActiveHygiene — detectors", () => {
 		assert.ok(report.inboxPressure!.oldestDays >= 40);
 	});
 
+	test("the shipped inbox README never counts as pressure (#155)", () => {
+		// Isolated root: the shared fixture already holds a real export, and
+		// the point here is what an *untouched* inbox reports.
+		const solo = mkdtempSync(join(tmpdir(), "active-hygiene-scaffold-"));
+		try {
+			mkdirSync(join(solo, "work/meetings"), { recursive: true });
+			const scaffold = join(solo, "work/meetings/README.md");
+			writeFileSync(scaffold, "# Meeting Notes Inbox\n\nDrop exports here.\n");
+			// Well past the 7-day threshold — the age the flag kept climbing to.
+			const t = new Date(NOW - 96 * DAY_MS);
+			utimesSync(scaffold, t, t);
+
+			// The bug: an inbox holding nothing but its own scaffold flagged
+			// forever, and /om-intake could never clear it.
+			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).inboxPressure, null);
+
+			// …while a genuine export beside it still counts, and counts once.
+			const real = join(solo, "work/meetings/2026-04-01 Standup.md");
+			writeFileSync(real, "raw dump");
+			utimesSync(real, t, t);
+			const withExport = scanActiveHygiene(solo, NOW, DEFAULTS).inboxPressure;
+			assert.ok(withExport !== null);
+			assert.equal(withExport!.count, 1);
+		} finally {
+			rmSync(solo, { recursive: true, force: true });
+		}
+	});
+
 	test("missing folders produce an empty report, not errors", () => {
 		const empty = mkdtempSync(join(tmpdir(), "active-hygiene-empty-"));
 		try {

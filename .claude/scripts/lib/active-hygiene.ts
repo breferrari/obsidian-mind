@@ -240,6 +240,11 @@ function findOpenLoops(
 		// Archive notes hold historical bulk by convention — a "waiting on"
 		// line in an archive is a record, not a live loop.
 		if ((rel.split("/").pop() ?? "").includes("Archive")) continue;
+		// The meetings-inbox scaffold is template prose, not a follow-up
+		// surface. It carries no checkboxes today, so this changes nothing
+		// yet — it stops the shipped file becoming an unclearable open loop
+		// the first time its instructions gain one (#155).
+		if (isInboxScaffold(rel)) continue;
 		let content: string;
 		let mtimeMs: number;
 		try {
@@ -418,10 +423,29 @@ function findOversizedNotes(
 
 export const INBOX_PRESSURE_DAYS = 7;
 
+const INBOX_REL = "work/meetings";
+
+/**
+ * The inbox's own README ships with the template and describes how to drain
+ * the folder — /om-intake never processes it, so counting it made the flag
+ * permanently unclearable (#155): it fired on a genuinely empty inbox and
+ * the "oldest Nd" figure climbed forever, training the reader to ignore the
+ * whole hygiene block.
+ *
+ * Matched as an exact path, not as any README: a README a user creates
+ * inside a subfolder of their own is their content, and theirs to process.
+ * Compared case-insensitively because the shipped `README.md` can arrive as
+ * `readme.md` through a case-insensitive checkout.
+ */
+function isInboxScaffold(rel: string): boolean {
+	return rel.toLowerCase() === `${INBOX_REL}/readme.md`;
+}
+
 function findInboxPressure(root: string, nowMs: number): InboxPressure | null {
 	let count = 0;
 	let oldestDays = 0;
-	for (const rel of walkMarkdown(root, "work/meetings")) {
+	for (const rel of walkMarkdown(root, INBOX_REL)) {
+		if (isInboxScaffold(rel)) continue;
 		let mtimeMs: number;
 		try {
 			mtimeMs = statSync(join(root, rel)).mtimeMs;
