@@ -29,6 +29,7 @@ import {
 	formatActiveWork,
 	formatRecentChanges,
 	isSkippedPath,
+	MACHINERY_DIRS,
 	extractFrontmatterField,
 	formatBrainIndex,
 	stripFrontmatter,
@@ -157,6 +158,27 @@ describe("session-start entry — env export cannot be hand-rolled", () => {
 			/quoteForPosixShell\(/,
 			"the entry should call formatEnvExport, which quotes internally",
 		);
+	});
+
+	// SKIP_PREFIXES is module-private and the entry runs on import, so the
+	// wiring can only be pinned at the source level. Without this, #156
+	// regresses silently: MACHINERY_DIRS keeps its entries and its own tests
+	// keep passing while the listing walks a hardcoded list again.
+	const SKIP_DEF = /const SKIP_PREFIXES[^=]*=\s*\[\s*\.\.\.MACHINERY_DIRS\s*,/;
+
+	test("builds SKIP_PREFIXES from the shared machinery list (#156)", () => {
+		assert.match(
+			entry,
+			SKIP_DEF,
+			"the listing walk must spread MACHINERY_DIRS, not re-list dirs by hand",
+		);
+	});
+
+	test("GUARD IS NOT VACUOUS — the pattern rejects a hand-listed set", () => {
+		// The exact pre-#156 definition, which is what let .shardmind through.
+		const regression =
+			'const SKIP_PREFIXES: readonly string[] = [\n\t".git",\n\t".obsidian",\n\t"thinking",\n\t".claude",\n];';
+		assert.doesNotMatch(regression, SKIP_DEF, "guard must reject the old literal");
 	});
 
 	// A guard that cannot fail is worse than no guard: it reads as coverage
@@ -367,6 +389,51 @@ describe("isSkippedPath", () => {
 	});
 	test("empty prefix list never skips", () => {
 		assert.equal(isSkippedPath(".git/foo", []), false);
+	});
+});
+
+describe("MACHINERY_DIRS", () => {
+	// The listing walk is filesystem-level and does not read .gitignore, so
+	// the engine's own tree has to be skipped by name.
+	test("skips the ShardMind engine tree an installed vault carries (#156)", () => {
+		// The cached template copy and every pre-update backup snapshot —
+		// engine artifacts that outnumbered real notes 3:1 on a v7.0.1 install.
+		assert.equal(
+			isSkippedPath(".shardmind/templates/CLAUDE.md", MACHINERY_DIRS),
+			true,
+		);
+		assert.equal(
+			isSkippedPath(
+				".shardmind/backups/update-2026-07-01T00:00:00Z/work/Index.md",
+				MACHINERY_DIRS,
+			),
+			true,
+		);
+		assert.equal(isSkippedPath(".shardmind", MACHINERY_DIRS), true);
+	});
+
+	test("skips .github, which the segment boundary excludes from .git", () => {
+		assert.equal(
+			isSkippedPath(".github/pull_request_template.md", MACHINERY_DIRS),
+			true,
+		);
+	});
+
+	test("leaves user content alone", () => {
+		for (const p of [
+			"work/active/Note.md",
+			"brain/Patterns.md",
+			"templates/Work Note.md", // scaffold, but the listing does show it
+		]) {
+			assert.equal(isSkippedPath(p, MACHINERY_DIRS), false);
+		}
+	});
+
+	test("holds only what is machinery for BOTH consumers", () => {
+		// `thinking/` and `templates/` are each skipped by exactly one
+		// consumer, so neither belongs in the shared list.
+		assert.equal(MACHINERY_DIRS.includes("thinking"), false);
+		assert.equal(MACHINERY_DIRS.includes("templates"), false);
 	});
 });
 

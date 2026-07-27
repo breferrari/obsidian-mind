@@ -292,6 +292,38 @@ export function isSkippedPath(
 }
 
 /**
+ * Root-level directories that hold machinery, never vault notes: VCS
+ * internals, editor and agent config, the ShardMind engine's own tree,
+ * installed dependencies.
+ *
+ * Shared because two consumers of the same idea drifted apart. The oversize
+ * scan already knew the full set while the SessionStart listing skipped only
+ * a four-entry subset, so an *installed* vault walked `.shardmind/` and
+ * injected the engine's cached template copy plus every pre-update backup
+ * snapshot as if they were the user's notes (#156). One list, so the next
+ * machinery directory is hidden from both the moment it is added here.
+ *
+ * Callers append their own list-specific entries rather than editing this
+ * one: `thinking/` is hidden from the listing but still size-scanned, and
+ * `templates/` is the reverse. Only what is machinery for BOTH belongs here.
+ *
+ * Note `.github` earns its own entry — `isSkippedPath` matches on segment
+ * boundaries, so `.git` deliberately does not cover it.
+ */
+export const MACHINERY_DIRS: readonly string[] = [
+	".git",
+	".github",
+	".obsidian",
+	".claude",
+	".claude-plugin",
+	".codex",
+	".gemini",
+	".shardmind",
+	".qmd",
+	"node_modules",
+];
+
+/**
  * Find the closing `---` delimiter of a YAML frontmatter block. The input
  * is assumed to start with `---` (caller checks). Returns the index of the
  * newline before the closing delimiter, or -1 if the block is unterminated.

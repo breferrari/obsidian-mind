@@ -43,6 +43,7 @@ import {
 	extractFrontmatterField,
 	isInfraFilename,
 	isMarkdownFilename,
+	MACHINERY_DIRS,
 } from "./session-start.ts";
 
 const ACTIVE_REL = "work/active";
@@ -274,19 +275,10 @@ export function isMonolithExempt(filename: string): boolean {
 	return filename.includes("Archive");
 }
 
-// Never walked for oversize: machinery and non-note trees.
-const OVERSIZE_SKIP_DIRS = new Set([
-	".git",
-	".obsidian",
-	".claude",
-	".codex",
-	".gemini",
-	".github",
-	".shardmind",
-	".qmd",
-	"node_modules",
-	"templates",
-]);
+// Never walked for oversize: machinery (shared with the SessionStart
+// listing, so the two can't drift — see MACHINERY_DIRS) plus `templates/`,
+// whose files are scaffold rather than notes.
+const OVERSIZE_SKIP_DIRS = new Set([...MACHINERY_DIRS, "templates"]);
 
 // Recursively collect .md files under a directory, returning paths relative
 // to `root`. Tolerates a missing directory (returns []). Shared by every

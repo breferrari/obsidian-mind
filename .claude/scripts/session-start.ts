@@ -29,6 +29,7 @@ import {
 	formatActiveWork,
 	formatRecentChanges,
 	isSkippedPath,
+	MACHINERY_DIRS,
 	extractFrontmatterField,
 	formatBrainIndex,
 	stripFrontmatter,
@@ -410,12 +411,9 @@ function activeWork(): string {
 	return formatActiveWork(files, 10);
 }
 
-const SKIP_PREFIXES: readonly string[] = [
-	".git",
-	".obsidian",
-	"thinking",
-	".claude",
-];
+// Machinery (shared with the oversize scan) plus `thinking/` — scratchpads
+// are real notes, just not orientation material for the listing.
+const SKIP_PREFIXES: readonly string[] = [...MACHINERY_DIRS, "thinking"];
 
 // Dirs that collapse to one count line regardless of size (#107): the
 // archive is orientation noise whether it holds 3 notes or 300 — Glob or
