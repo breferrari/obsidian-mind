@@ -3,18 +3,30 @@
  *
  * A cache on the retrieval path is only as good as the moment it decides to stop
  * trusting itself, so almost every test here is about INVALIDATION rather than
- * about hits. The specific fear is the duplicate scan: `remember` compares a new
- * memory against the store, and a cache that missed a recent write would let a
- * duplicate through — silently, and permanently, because nothing re-checks.
+ * about hits.
  *
  * The load-bearing property, asserted directly: what the cache returns is what
  * reading the store from disk returns. Every other test is a way for that to
  * stop being true.
+ *
+ * One limit is asserted rather than defended: `(size, mtime)` is a change hint,
+ * not a content hash, so an edit preserving both is invisible here. That is why
+ * the duplicate scan reads from disk instead of through this — a test below
+ * pins both halves of that split.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, unlinkSync, utimesSync, statSync } from "node:fs";
+import {
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+	mkdirSync,
+	unlinkSync,
+	utimesSync,
+	statSync,
+	symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -154,6 +166,51 @@ describe("noticing that the store changed", () => {
 			idx.all();
 			assert.equal(idx.stats.misses, 1);
 			assert.equal(idx.stats.hits, 0);
+		});
+	});
+
+	test("the duplicate-scan path sees an edit the cache is not guaranteed to", () => {
+		// `(size, mtime)` is a change hint, not a content hash: `rsync -t`, `tar -p`,
+		// `unzip`, a sync client and a second-granularity filesystem all produce
+		// same-size, same-mtime, different-bytes. Whether THIS filesystem happens to
+		// collide is not something a test can force portably — restoring an mtime
+		// through a Date loses sub-millisecond precision, so it does not collide
+		// here — so the assertion is on the guarantee that does hold: the path
+		// `remember` uses reads from disk, and therefore always reflects the file.
+		withVault((dir) => {
+			const full = memory(dir, "a", "aaaa");
+			const before = statSync(full);
+			memory(dir, "a", "bbbb"); // identical length
+			utimesSync(full, before.atime, before.mtime);
+
+			assert.match(
+				readMemories(dir, ROOT)[0]!.body,
+				/bbbb/,
+				"the duplicate scan must never be able to miss a write",
+			);
+		});
+	});
+
+	test("a symlinked year folder is walked, not silently skipped", () => {
+		// A Dirent reports a link-to-directory as isSymbolicLink() and NOT
+		// isDirectory(), so filtering on isDirectory() alone drops every memory
+		// under `memories/2025 -> /somewhere/archive` — from recall, from the
+		// duplicate scan and from health, with no warning anywhere.
+		withVault((dir) => {
+			memory(dir, "live");
+			const archive = join(dir, "archived-elsewhere", "07");
+			mkdirSync(archive, { recursive: true });
+			writeFileSync(
+				join(archive, "old.md"),
+				`---\ndate: 2025-07-01\nsource: ${MEMORY_SOURCE}\nscope: general\nconfidence: verified\n---\n\n# old\n\nbody.\n`,
+				"utf8",
+			);
+			try {
+				symlinkSync(join(dir, "archived-elsewhere"), join(dir, ROOT, "2025"), "junction");
+			} catch {
+				return; // Windows without developer mode
+			}
+			assert.deepEqual(titles(createMemoryIndex(dir, ROOT).all()), ["live", "old"]);
 		});
 	});
 

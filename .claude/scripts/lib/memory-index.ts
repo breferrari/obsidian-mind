@@ -9,15 +9,22 @@
  *
  * The cache holds the PARSE, never the answer. Every call still lists the store
  * and stats each file; only re-reading and re-parsing a file whose size and
- * mtime are unchanged is skipped. So a memory written a second ago is always
- * seen, which is what makes this safe on the duplicate-check path — a stale view
- * there would let a genuine duplicate through, and duplicates are the failure
- * this store is least able to recover from.
+ * mtime are unchanged is skipped. A new or deleted memory is therefore always
+ * seen, and an ordinary edit is caught by one of the two.
  *
- * Size AND mtime, because either alone is weak: some filesystems keep mtime to a
- * whole second, and an edit that preserves length is not hypothetical here
- * (marking a memory superseded rewrites frontmatter in place). Writers also
- * `invalidate()` explicitly, so correctness never rests on timestamp resolution.
+ * WHAT THIS IS NOT GOOD ENOUGH FOR
+ *
+ * `(size, mtime)` is a change hint, not a content hash, and the gap is wider
+ * than it looks: measured on NTFS, 356 of 400 back-to-back same-size rewrites
+ * carried an identical mtimeMs. Anything that sets mtime deliberately — rsync,
+ * tar, unzip, a sync client, a restored file version — collides on purpose, and
+ * a second-granularity filesystem collides by design. `invalidate()` closes the
+ * gap only WITHIN one process, while the deployment shape is one server per
+ * consuming repo, all writing into a single vault.
+ *
+ * So this serves reads, where the cost of being stale is ordering. The duplicate
+ * scan reads from disk instead (`storeFresh` in `mcp-server.ts`): a duplicate
+ * admitted there is permanent, because nothing downstream ever re-checks.
  *
  * WHY IT IS NOT ON DISK
  *
@@ -44,6 +51,13 @@ export interface IndexStats {
 	readonly hits: number;
 	/** Files read and parsed by the last `all()`. */
 	readonly misses: number;
+	/**
+	 * Files that exist but could not be re-checked, served from the previous
+	 * parse. Counted separately so `hits + misses + stale` always equals what
+	 * `all()` returned — a store this server is half-failing to read is otherwise
+	 * indistinguishable from a healthy one.
+	 */
+	readonly stale: number;
 	/** Entries currently held. */
 	readonly size: number;
 }
@@ -73,6 +87,7 @@ export function createMemoryIndex(vaultRoot: string, root: string): MemoryIndex 
 	let cache = new Map<string, CacheEntry>();
 	let hits = 0;
 	let misses = 0;
+	let stale = 0;
 
 	/**
 	 * Synchronous end to end, and it must stay that way: an `invalidate` landing
@@ -87,6 +102,7 @@ export function createMemoryIndex(vaultRoot: string, root: string): MemoryIndex 
 		const next = new Map<string, CacheEntry>();
 		hits = 0;
 		misses = 0;
+		stale = 0;
 
 		for (const f of listMemoryFiles(vaultRoot, root)) {
 			const cached = cache.get(f.rel);
@@ -101,6 +117,7 @@ export function createMemoryIndex(vaultRoot: string, root: string): MemoryIndex 
 				// memory does not exist. That distinction matters most on the
 				// duplicate path, where an omission admits a duplicate permanently.
 				if ((e as NodeJS.ErrnoException).code !== "ENOENT" && cached) {
+					stale++;
 					next.set(f.rel, cached);
 					out.push(cached.record);
 				}
@@ -115,11 +132,21 @@ export function createMemoryIndex(vaultRoot: string, root: string): MemoryIndex 
 			}
 
 			misses++;
-			// An unreadable file must not take down retrieval, and must not leave a
-			// stale parse behind pretending it is still readable — dropping it is
-			// automatic here, since it simply never enters `next`.
 			const record = readMemoryFile(f);
-			if (!record) continue;
+			if (!record) {
+				// The file is listed and stats fine, so it EXISTS — it just could not
+				// be read this instant: a lock, an ACL, a sharing violation, a
+				// momentarily exhausted fd table. Those land here far more often than
+				// on the stat above, which needs only directory traversal. Keeping
+				// the previous parse beats reporting that the memory is gone, and
+				// matters most on the duplicate path where an omission is permanent.
+				if (cached) {
+					stale++;
+					next.set(f.rel, cached);
+					out.push(cached.record);
+				}
+				continue;
+			}
 			next.set(f.rel, { mtimeMs: st.mtimeMs, size: st.size, record });
 			out.push(record);
 		}
@@ -134,7 +161,7 @@ export function createMemoryIndex(vaultRoot: string, root: string): MemoryIndex 
 			cache.delete(rel);
 		},
 		get stats(): IndexStats {
-			return { hits, misses, size: cache.size };
+			return { hits, misses, stale, size: cache.size };
 		},
 	};
 }

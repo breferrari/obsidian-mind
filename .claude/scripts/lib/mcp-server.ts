@@ -32,7 +32,7 @@ import { callerPlatforms, digestsFrom, resolvableNames } from "./mcp-memory-brid
 import { captureNote } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
-import { recallFrom, type MemoryEntry } from "./memory-recall.ts";
+import { recallFrom, readMemories, type MemoryEntry } from "./memory-recall.ts";
 import { createMemoryIndex } from "./memory-index.ts";
 import { validateMemory, writeMemory, renderMemory, resolveLinks, neutralizeWikilinks } from "./memory-write.ts";
 import { findSimilar } from "./memory-similarity.ts";
@@ -116,11 +116,30 @@ export function createHandlers(deps: ServerDeps): Handlers {
 	const memoryIndex = createMemoryIndex(ctx.vaultRoot, ctx.memoryRoot);
 
 	/**
-	 * The store, parsed. Lists and stats every file on every call — only the
-	 * re-parse of an unchanged file is skipped — so this is safe on the duplicate
-	 * path, where a stale view would admit a memory that already exists.
+	 * The store, parsed, for READ paths. Lists and stats every file on every
+	 * call; only the re-parse of an unchanged file is skipped.
 	 */
 	const storeEntries = (): MemoryEntry[] => memoryIndex.all();
+
+	/**
+	 * The store, read fresh from disk. For the duplicate scan ONLY.
+	 *
+	 * The cache validates with size + mtime, which is not a content hash. Any
+	 * writer that sets mtime explicitly — rsync, tar, unzip, a sync client, a
+	 * restored file version — produces same-size, same-mtime, different-bytes;
+	 * so does a second-granularity filesystem. Measured on NTFS, 356 of 400
+	 * back-to-back same-size rewrites carried an identical mtimeMs.
+	 *
+	 * That is survivable on recall, where the cost is stale ordering. It is not
+	 * survivable here: a duplicate admitted by a stale view is permanent, because
+	 * nothing downstream ever re-checks. The explicit `invalidate()` after a write
+	 * does not save this either — it is per-process, and the deployment shape is
+	 * one server per consuming repo, all writing into one vault.
+	 *
+	 * So the filesystem stays authoritative for the correctness-critical read, at
+	 * the price of one uncached pass per write.
+	 */
+	const storeFresh = (): MemoryEntry[] => readMemories(ctx.vaultRoot, ctx.memoryRoot);
 
 	/** Who is asking, as the memory layer understands it. */
 	const caller = () => ({
@@ -267,7 +286,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			return `Refused:\n${v.errors.map((e) => `- ${e}`).join("\n")}`;
 		}
 
-		const digests = digestsFrom(storeEntries());
+		const digests = digestsFrom(storeFresh());
 
 		// Near-duplicate suppression, facet-gated so two projects can each hold
 		// their own copy of the same lesson.
@@ -362,6 +381,11 @@ export function createHandlers(deps: ServerDeps): Handlers {
 
 	function callHealth(): string {
 		const who = caller();
+		// Populate the cache before reporting on it. `recall` tells the user to run
+		// health when a memory is missing, so this is routinely the FIRST call a
+		// server serves — and "3 memories / 0 entries held" reads as a parse
+		// failure when nothing is wrong.
+		const parsed = storeEntries().length;
 		const names = new Set(visibleFiles(ctx.vaultRoot, policy).map((f) => f.label));
 		if (who.project) names.add(who.project);
 		const h = health(ctx.vaultRoot, ctx.manifest, {
@@ -384,10 +408,10 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				: []),
 			`Platforms: ${who.platforms.length ? who.platforms.join(", ") : "(none declared)"}`,
 			`Memory root: ${h.memory.root}/ (${h.memory.memories} memor${h.memory.memories === 1 ? "y" : "ies"}, ${h.memory.source})`,
-			// The cache re-checks the store on every call, so a store this server
-			// cannot read shows up as entries it never parsed. Reported because
-			// every failure in this layer otherwise presents as "no results".
-			`Parse cache: ${memoryIndex.stats.size} entr${memoryIndex.stats.size === 1 ? "y" : "ies"} held`,
+			// Reported because every failure in this layer otherwise presents as "no
+			// results". `stale` is the one that matters: files that exist but this
+			// server could not re-read, served from an older parse.
+			`Parsed store: ${parsed} entr${parsed === 1 ? "y" : "ies"}${memoryIndex.stats.stale ? ` (${memoryIndex.stats.stale} served from an older parse — check permissions)` : ""}`,
 			`Exposed roots: ${policy.roots.join(", ") || "(none)"} [${policy.source}]`,
 			`Search index: ${ctx.qmdIndex ?? "(qmd default)"} · launcher ${ctx.qmdLauncher ? "found" : "NOT FOUND"}`,
 			"",

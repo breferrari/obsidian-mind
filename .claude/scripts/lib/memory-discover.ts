@@ -29,8 +29,17 @@ import { join, relative, sep } from "node:path";
 /** Directories never worth walking, in any vault. */
 const SKIP = new Set([".git", ".obsidian", ".shardmind", "node_modules", ".claude", ".codex", ".gemini"]);
 
-/** Frontmatter that marks a file as agent-written, built from the one constant. */
-const AGENT_WRITTEN = new RegExp(`^source:\\s*["']?${MEMORY_SOURCE}["']?\\s*$`, "m");
+/**
+ * Frontmatter that marks a file as agent-written, built from the one constant.
+ *
+ * Escaped because the value belongs to another module: a marker containing `.`
+ * or `|` would quietly widen what counts as agent-written, and this regex is
+ * what decides where the entire store is judged to live.
+ */
+const AGENT_WRITTEN = new RegExp(
+	`^source:\\s*["']?${MEMORY_SOURCE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']?\\s*$`,
+	"m",
+);
 
 /** How deep a memory tree can nest before we stop believing it is one. */
 const MAX_DEPTH = 4;

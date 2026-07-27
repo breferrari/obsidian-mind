@@ -23,7 +23,7 @@
  * at read time. A reader never widens what a writer declared.
  */
 
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { MEMORY_ROOT, MEMORY_SOURCE } from "./memory-write.ts";
 
@@ -258,10 +258,24 @@ export function listMemoryFiles(vaultRoot: string, root: string = MEMORY_ROOT): 
 
 function safeDirs(dir: string): string[] {
 	try {
-		// Dirents answer isDirectory() from the listing itself, so this costs no
-		// stat per entry — and it runs on every read of the store.
+		// Dirents answer isDirectory() from the listing itself, so an ordinary
+		// folder costs no stat — and this runs on every read of the store.
+		//
+		// A symlink still needs one. `Dirent` reports a link-to-directory as
+		// isSymbolicLink() and NOT isDirectory(), so filtering on isDirectory()
+		// alone silently skips it: every memory under `memories/2025 -> /archive`
+		// disappears from recall, from the duplicate scan and from `health`, with
+		// no warning anywhere. The stat is paid only for links.
 		return readdirSync(dir, { withFileTypes: true })
-			.filter((e) => e.isDirectory())
+			.filter((e) => {
+				if (e.isDirectory()) return true;
+				if (!e.isSymbolicLink()) return false;
+				try {
+					return statSync(join(dir, e.name)).isDirectory();
+				} catch {
+					return false; // broken link
+				}
+			})
 			.map((e) => e.name);
 	} catch {
 		return [];
