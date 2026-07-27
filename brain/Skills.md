@@ -129,9 +129,12 @@ SessionStart hook runs `qmd --index <name> update` automatically, reading the in
 | `recall` | durable lessons scoped to the calling repo, most specific first; `explain: true` reports what was withheld and why |
 | `remember` | record a lesson that generalises beyond this repo |
 | `record_work` | record what happened here, filed where it belongs |
+| `reason` | judgement across several notes, by reading the vault with a second Claude session |
 | `health` | where memories live, which roots are exposed, is the index reachable |
 
 Two prompts you invoke yourself from the `/` menu: `recall_topic`, `prior_art`. They must be **selected** from the menu — typing the displayed label errors.
+
+**`reason` is the slow one.** The rest answer without inference; this one spawns a session, so it takes seconds to minutes. Reach for it when `search` or `recall` returned the notes but not the answer — it seeds itself from search, so there is no need to search first. It runs on your own CLI default model unless `reason.model` pins one, nothing about it is capped, and every call is logged with its cost, turns, model and wall time. Answers land in `.claude/om-reasoning/` marked `confidence: inferred` and are never auto-recorded as memories.
 
 **Debugging it:** call `health` first. Every failure in this layer presents identically as "no results" — a renamed memory folder, a moved launcher, an index registered to a different vault, a session with no identity — and `health` is what tells them apart. A caller reported as `ANONYMOUS` means the client never completed the roots handshake, so only `general`-scope memories are visible.
 

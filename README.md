@@ -263,7 +263,9 @@ That goes in the **consuming project's** `.mcp.json`. Then add a short section t
 >
 > A **prohibition** in the MCP `instructions` field propagates into the calling session reliably. A positive *"go consult the vault"* is advisory and gets skipped whenever a nearer source exists. The server can stop a session doing something; only the project's own law makes one go looking.
 
-**What the session gets:** `search` (semantic + keyword), `expand` (a note's links and backlinks), `recall` (durable lessons scoped to that repo), `remember` (record a lesson), `record_work` (file what happened), and `health` (is the wiring intact?). Plus your notes as readable resources.
+**What the session gets:** `search` (semantic + keyword), `expand` (a note's links and backlinks), `recall` (durable lessons scoped to that repo), `remember` (record a lesson), `record_work` (file what happened), `reason` (judgement across several notes), and `health` (is the wiring intact?). Plus your notes as readable resources.
+
+**`reason` is the one that thinks.** The others retrieve; this one reads the vault with a second Claude session and answers questions that need judgement across notes — *is what I am about to do consistent with what these six notes decided?* It seeds itself from search, so you never have to search first. It runs on your own CLI default model, so the vault answers at the level you are already working at, and nothing about it is capped: it is Claude, on your machine, under your auth. Every call is logged with its cost, turns, model and wall time. Its answers are marked `confidence: inferred` and are never recorded as memories on their own — your session decides whether any of it is worth keeping.
 
 **Repos are identified by folder name**, which is right until it isn't — two repos both called `api` share one identity and therefore each other's memories. Drop a `.om-project` file with a distinct name at the repo root to separate them; `health` tells you which repo it thinks is calling and where that name came from.
 

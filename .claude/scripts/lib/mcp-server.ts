@@ -27,7 +27,7 @@ import {
 } from "./mcp-exposure.ts";
 import { expandNote } from "./mcp-graph.ts";
 import { qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
-import { callerProject, callerProjectSource, isVaultItself, PROJECT_MARKER } from "./mcp-caller.ts";
+import { callerProject, callerProjectSource, isVaultItself, PROJECT_MARKER, auditPath, sanitize } from "./mcp-caller.ts";
 import { callerPlatforms, digestsFrom, resolvableNames } from "./mcp-memory-bridge.ts";
 import { captureNote } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
@@ -39,6 +39,17 @@ import { findSimilar } from "./memory-similarity.ts";
 import { markSuperseded, resolveSupersedes } from "./memory-supersede.ts";
 import { health } from "./memory-discover.ts";
 import { resolveQmdEntry, buildQmdCommand } from "./qmd.ts";
+import {
+	resolveReasonConfig,
+	spentToday,
+	runReasoning,
+	reasoningPrompt,
+	resolveClaudeBin,
+	writeIsolatedMcpConfig,
+	writeReasoningRecord,
+	describeRefusal,
+	REASON_DEFAULTS,
+} from "./mcp-reason.ts";
 
 const PROTOCOL_VERSION = "2025-11-25";
 const SERVER_NAME = "om";
@@ -379,6 +390,95 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		].join("\n");
 	}
 
+	/**
+	 * `reason` — seed from search, spawn, log, hand back the answer.
+	 *
+	 * A call with no question in it is the only one refused.
+	 */
+	async function callReason(args: Record<string, unknown>): Promise<string> {
+		const cfg = resolveReasonConfig(ctx.manifest);
+
+		const question = String(args.question ?? "").trim();
+		if (!question) return describeRefusal("no question given.", "Ask the judgement you need, in full.");
+
+		// Seed with what the server already has, so the spawn does not spend turns
+		// rediscovering it.
+		const allowed = allowedSearchPaths(ctx.vaultRoot, policy);
+		const seed = await qmdSearch(qmd(), allowed, question, 6);
+		const r = runReasoning(
+			resolveClaudeBin(),
+			ctx.vaultRoot,
+			cfg,
+			reasoningPrompt(question, seed.text),
+			writeIsolatedMcpConfig(ctx.vaultRoot),
+		);
+
+		audit("reason", {
+			question,
+			cost_usd: r.costUsd,
+			turns: r.turns,
+			terminal: r.terminal,
+			model_asked: cfg.model,
+			model_used: r.modelUsed,
+			wall_ms: r.wallMs,
+		});
+
+		if (r.error) {
+			return describeRefusal("the reasoning session could not start.", sanitize(r.error));
+		}
+
+		// A run can end without an answer — the timeout fires, the CLI errors, the
+		// session stops early. Reporting that as an answer is the one outcome worse
+		// than refusing, so it is named.
+		if (!r.ok || !r.answer.trim()) {
+			const why = `it ended early (${r.terminal}) after ${r.turns} turn(s).`;
+			return describeRefusal(
+				`no answer — ${why}`,
+				[
+					"Nothing partial is returned, because a truncated synthesis presented as a",
+					"complete one is worse than no answer. The evidence search already found is",
+					"below; a narrower question is usually the fix.",
+					"",
+					seed.text,
+				].join("\n"),
+			);
+		}
+
+		// Only meaningful when the vault PINNED a model: a pin that is silently
+		// ignored is the surprise this layer already got caught by once. With no
+		// pin the spawn is meant to follow the CLI default, so there is nothing to
+		// disagree with.
+		const mismatch = cfg.model !== null && r.modelUsed !== "" && !r.modelUsed.includes(cfg.model);
+		const record = writeReasoningRecord(ctx.vaultRoot, now(), question, r);
+
+		return [
+			r.answer.trim(),
+			"",
+			"---",
+			`Reasoned over the vault in ${r.turns} turn(s), ${(r.wallMs / 1000).toFixed(1)}s. Reported cost ${r.costUsd.toFixed(4)}.`,
+			...(mismatch ? [`⚠ Ran on ${r.modelUsed}, not the pinned ${cfg.model}. Check reason.model in vault-manifest.json.`] : []),
+			...(cfg.model === null ? [`Model: ${r.modelUsed} (your CLI default — pin reason.model to change it).`] : []),
+			...(record ? [`Full record: ${record}`] : []),
+		].join("\n");
+	}
+
+	/**
+	 * What `reason` has spent today, and on which model.
+	 *
+	 * Read from the audit log rather than from a counter, so it cannot drift from
+	 * the record it summarises — and so it stays right across restarts and across
+	 * the several servers one vault may have, one per consuming repo.
+	 */
+	function reasonUsageLine(): string {
+		const today = now().toISOString().slice(0, 10);
+		const spent = spentToday(auditPath(ctx.vaultRoot), today);
+		const pinned = resolveReasonConfig(ctx.manifest).model;
+		const model = pinned ?? `${REASON_DEFAULTS.model === null ? "your CLI default" : REASON_DEFAULTS.model}`;
+		return spent > 0
+			? `$${spent.toFixed(4)} reported across today's calls · model: ${model}`
+			: `nothing yet today · model: ${model}`;
+	}
+
 	function callHealth(): string {
 		const who = caller();
 		// Populate the cache before reporting on it. `recall` tells the user to run
@@ -414,6 +514,10 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			`Parsed store: ${parsed} entr${parsed === 1 ? "y" : "ies"}${memoryIndex.stats.stale ? ` (${memoryIndex.stats.stale} served from an older parse — check permissions)` : ""}`,
 			`Exposed roots: ${policy.roots.join(", ") || "(none)"} [${policy.source}]`,
 			`Search index: ${ctx.qmdIndex ?? "(qmd default)"} · launcher ${ctx.qmdLauncher ? "found" : "NOT FOUND"}`,
+			// `reason` is the one tool that spawns a session, and nothing bounds it.
+			// Reporting the day's usage is what stands in for a limit: the answer to
+			// "where did that go" has to exist somewhere, and this is where.
+			`Reasoning today: ${reasonUsageLine()}`,
 			"",
 			h.warnings.length ? `Warnings:\n${h.warnings.map((w) => `- ${w}`).join("\n")}` : "No warnings.",
 			...(h.notes.length ? ["", `Notes:\n${h.notes.map((n) => `- ${n}`).join("\n")}`] : []),
@@ -457,6 +561,8 @@ export function createHandlers(deps: ServerDeps): Handlers {
 					return session.ok(id, text(callRemember(args)));
 				case "record_work":
 					return session.ok(id, text(callRecordWork(args)));
+				case "reason":
+					return session.ok(id, text(await callReason(args)));
 				case "health":
 					return session.ok(id, text(callHealth()));
 				default:

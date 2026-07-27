@@ -42,3 +42,8 @@ node_modules/
 # query strings are the user's own thinking.
 .claude/om-mcp-audit.jsonl
 .claude/om-mcp-audit.jsonl.1
+
+# Tier-3 reasoning transcripts. A spawned session's conclusion is INFERRED, so
+# it is kept for provenance and cost review but never committed as vault
+# knowledge — the calling session decides whether any of it is worth a memory.
+.claude/om-reasoning/

@@ -350,7 +350,7 @@ The non-tool surfaces turned out to matter more than expected, so it is worth na
 | surface | direction | what it is | who triggers it |
 |---|---|---|---|
 | `instructions` | vault → session | the vault's rules, injected into the calling session's system prompt at connect | automatic, once per connection |
-| `tools` | session → vault | `search`, `expand`, `recall`, `remember`, `record_work`, `health` | the **model** decides |
+| `tools` | session → vault | `search`, `expand`, `recall`, `remember`, `record_work`, `reason`, `health` | the **model** decides |
 | `resources` | session → vault | notes listable and readable by `vault://note/<path>` URI | the model or the client |
 | `prompts` | you → vault | `recall_topic`, `prior_art` — slash commands in the calling session | the **human** decides |
 
@@ -364,14 +364,16 @@ That is why `prompts` exist (the human invokes them, so no model decision is inv
 
 ### The tier ladder
 
-| tier | what | cost at call time |
+| tier | what | what it costs you at call time |
 |---|---|---|
 | **0 — presence** | the contract reaches the calling session | one-off, no extra session spawned |
 | **1 — retrieval** | `search`, `expand`, resources | seconds, **no model call** beyond the local embedding |
 | **2 — capture** | `recall`, `remember`, `record_work` | no model call |
-| 3 — reasoning | a spawned session that reads and reasons | a full session, billed to the user — tracked in #158, not shipped |
+| **3 — reasoning** | `reason` — a spawned session reads the vault and judges | seconds to minutes of waiting |
 
-Tier 0 is the counterintuitive one. The original design assumed the vault would have to *think* for you: spawn its own session, hand back an answer. That works and it is expensive. Tier 0 instead hands the calling session the vault's contract and lets it think with the model you are already paying for.
+Tier 0 is the counterintuitive one. The original design assumed the vault would have to *think* for you: spawn its own session, hand back an answer. That works and it is expensive. Tier 0 instead hands the calling session the vault's contract and lets it think with the model you are already using.
+
+The ladder is about **latency**, not money. Tier 3 runs your CLI, on your machine, under your auth — the same thing you get typing `claude`. Prefer `search` when `search` would do because it answers in two seconds, not because a second session is a hazard.
 
 ### Module map
 
@@ -390,6 +392,7 @@ flowchart TB
     Caller["mcp-caller.ts<br/>identity · sanitise · audit log"]
     Bridge["mcp-memory-bridge.ts<br/>memory ↔ vault seam"]
     Capture["mcp-capture.ts<br/>record_work filing"]
+    Reason["mcp-reason.ts<br/>tier 3: argv · prompt · spawn · record"]
     RH["read-head.ts<br/>bounded frontmatter prefix"]
     subgraph Core["Memory core — no MCP knowledge at all"]
         MW["memory-write.ts"]
@@ -410,8 +413,10 @@ flowchart TB
     Server --> Graph
     Server --> Bridge
     Server --> Capture
+    Server --> Reason
     Server --> Idx
     Server --> Core
+    Reason --> Qmd
     Idx --> MR
     Graph --> Exp
     Qmd --> Exp
@@ -694,6 +699,67 @@ The vault normally re-indexes from a PostToolUse hook, but an MCP write is not a
 
 **`record_work` is the sibling tool, and the two are constantly confused.** The distinction is single-valued vs multi-valued: a work record is about one project at one moment, so it has a correct folder and gets filed into it. Routing is *delegated* to the calling session — which already carries the vault's conventions and can search to see where similar notes live — and the server's job is to validate, never to guess. A caller-supplied folder must resolve inside a declared root, with containment checked against **that root** rather than merely the vault: `brain/../work` passes a first-segment check and still resolves inside the vault, which is how a capture once landed in a folder nobody named.
 
+### Tier 3: reasoning, and why it has to spawn
+
+Everything above answers without inference. `search` returns passages, `expand` returns neighbours, `recall` returns memories in a defensible order. None of them can answer *"is what I am about to do consistent with what these six notes decided, and what do I do about the two that disagree?"* — retrieval hands you the notes. Something has to read them.
+
+The server cannot borrow the calling session's inference to do that. MCP has a name for it — **sampling**, where a server asks its client to run a completion — and Claude Code does not implement it ([anthropics/claude-code#1785](https://github.com/anthropics/claude-code/issues/1785)). So `reason` starts a session through the user's own CLI.
+
+```mermaid
+flowchart TB
+    Q["reason(question)"] --> Seed["tier-1 search, 6 hits<br/>inside the exposure policy"]
+    Seed --> HasEv{"did the index<br/>return anything?"}
+    HasEv -->|yes| P1["prompt: start from these passages,<br/>read further when they are thin"]
+    HasEv -->|no| P2["prompt: the INDEX was silent,<br/>the vault may not be —<br/>go read it yourself"]
+    P1 --> Spawn
+    P2 --> Spawn
+    Spawn["spawn claude, cwd = vault root"] --> Flags["--strict-mcp-config + empty server map<br/>--permission-mode plan<br/>--output-format json<br/>stdin closed"]
+    Flags --> Run{"answer came back?"}
+    Run -->|no| Ref["refuse, and hand back<br/>the evidence anyway"]
+    Run -->|yes| Rec["write the record<br/>.claude/om-reasoning/, gitignored"]
+    Rec --> Log["audit: cost, turns,<br/>model asked, model used, wall ms"]
+```
+
+**It runs on the caller's own model, by running on none of its own.** MCP gives a server no way to see which model the calling session is using, so there is nothing to mirror. Passing no `--model` at all makes the spawn take the user's CLI default — whatever they get typing `claude` — which is the closest reachable thing to *the level they are already working at*. A vault that wants something else sets `reason.model`, and then it must be a full id: `--model haiku` is not honoured and does **not** error, it silently runs `claude-sonnet-5`. An alias is dropped in favour of inheriting, because a pin that quietly means a different model is worse than no pin, and the answer always reports which model actually ran.
+
+**Usage is answered by the record, not by a limit.** Every invocation is appended to the audit log with cost, turns, model and wall time, and `health` reports the day's total — so "what did that use" is always answerable after the fact, which is the question worth being able to answer. The spawn is Claude, on the user's machine, under the user's auth, on the account the calling session already runs on; a server-side bound there would be this layer rationing the user's own resource back to them. The one bound present is a 300-second timeout, which kills a **hung child** — a failure, not a preference.
+
+**Isolation is what stops it recursing.** `--strict-mcp-config` pointed at a config declaring no servers leaves the spawn with no MCP at all, so it cannot call back into `om` and start a tree that multiplies at every level. Verified on the wire: a spawn under those flags reports no MCP servers available. `--permission-mode plan` keeps it read-only — a reasoning pass answers, it does not edit the vault.
+
+Two things about the spawn are non-obvious and were found the hard way. **stdin must be closed**, or the CLI waits on it and the call hangs to the timeout instead of answering. And the binary is spawned **directly with argv, never through a shell** — on Windows `cmd.exe` strips the quotes out of an inline JSON argument, and the CLI then tries to open the mangled string as a file path.
+
+**The seed prompt has two branches, and the second one exists because of a measured failure.**
+
+```mermaid
+flowchart LR
+    E["empty seed"] --> R1["read as: the vault<br/>has nothing on this"]
+    R1 --> W["reports 'no prior decisions recorded'<br/>about a question answered<br/>one directory away"]
+    E --> R2["read as: the INDEX<br/>had nothing"]
+    R2 --> G["go read the vault directly,<br/>and say how you looked"]
+
+    style W fill:#5f1e1e,color:#fff
+    style G fill:#1e4620,color:#fff
+```
+
+A vault whose index is missing or stale returns exactly what a vault with nothing to say returns. Under the normal wording the spawn treated the first as the second and reported silence — the same *absence-read-as-answer* failure this layer already had in retrieval, reproduced one tier up. The empty case therefore gets its own instructions rather than a blank evidence block. `qmdSearch` reports its own failures in prose (`(no results)`, `search failed: …`), so both arrive as text and both have to be recognised as "not evidence of absence".
+
+Against a vault whose index is working, seeding is worth about **one turn** — less than it looks like it should be, because a spawn with `cwd` set to the vault already inherits the vault's contract and can search for itself. Its value there is mostly that it starts in the right place, and it carries a bias: in a measured run the seeded answer leaned on the passages and repeated a framing the vault had since corrected. Hence the explicit licence in the prompt to read past the evidence, and the instruction to say when it is thin.
+
+Losing the index entirely costs less than it sounds like it should. Same vault, same question, same build, run solo and sequentially so nothing competes for the machine:
+
+| condition | turns | wall | reported cost |
+|---|--:|--:|--:|
+| index working, seeded | 23 | 72.8s | $0.37 |
+| no index at all, 1,267 notes | 26 | 76.2s | $0.44 |
+
+Three turns and four seconds. The fallback branch does exactly what it is told — enumerates the note tree, greps it, reads every distinct note, correctly identifies the 1,200 synthetic filler notes as filler, reports *how it looked*, and only then says nothing is recorded — and a spawn sitting in the vault turns out to be good at that. **The index makes tier 3 cheaper, not viable.** The thing that would make it useless is the failure above: concluding silence without looking.
+
+> Both figures are from the shipped flags. An earlier measurement here showed 143s for the unindexed case and was wrong about the cause — it was taken under `--permission-mode plan`, where the turns went into composing a plan rather than into reading the vault.
+
+**An early end returns no answer, not a short one.** If the spawn errors, times out, or stops before producing a result, the tool refuses and hands back the evidence the search already found. A truncated synthesis presented as a complete one is the single outcome worse than admitting there isn't one.
+
+**Answers are not memories.** The record lands in `.claude/om-reasoning/` — gitignored, outside the note tree, skipped by every read surface because it is a dot-directory — carrying `confidence: inferred`. Auto-recording it would fill the store with machine conclusions nobody asked for and nobody verified, and the epistemic contract exists precisely to stop that. The calling session decides whether any of it earns a `remember`.
+
 ### Failure modes, and how each is made visible
 
 Every failure in this layer presents identically as **"no results"**. That is what `health` exists for.
@@ -708,6 +774,9 @@ Every failure in this layer presents identically as **"no results"**. That is wh
 | caller unidentified | only general memories visible | `recall` says so in prose; `health` says ANONYMOUS |
 | memory scoped away | absent from recall | `recall` with `explain: true` gives counts and reasons |
 | two repos sharing a folder name | each sees the other's memories | `health` reports the identity source and suggests `.om-project` |
+| the CLI is not on the server's PATH | `reason` cannot start at all | the refusal names the spawn error; `OM_CLAUDE_BIN` points at the binary |
+| a pinned `reason.model` is ignored | answers come from another model, silently | the answer names the model that actually ran, and flags the mismatch |
+| a reasoning spawn ends early | would otherwise read as a complete answer | refused by name, with the turn count, the terminal reason and the evidence |
 
 A stray `VAULT_PATH` was honoured at one point, and that name is too generic to claim — it is set for unrelated reasons on real machines, and the result was a server serving a *different* vault while reporting that vault's config as if correct. Only `OM_VAULT_PATH` is read now.
 

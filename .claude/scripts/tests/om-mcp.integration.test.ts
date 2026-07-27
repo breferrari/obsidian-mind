@@ -139,10 +139,24 @@ describe("the om server on the wire", () => {
 		const r = await call("tools/list");
 		const tools = (r.result?.tools ?? []) as { name: string; annotations?: Record<string, unknown> }[];
 		const names = tools.map((t) => t.name).sort();
-		assert.deepEqual(names, ["expand", "health", "recall", "record_work", "remember", "search"]);
+		assert.deepEqual(names, ["expand", "health", "reason", "recall", "record_work", "remember", "search"]);
 		for (const t of tools) {
 			assert.ok(t.annotations, `${t.name} must annotate so a client can pick without trial-and-error`);
 		}
+		// `reason` starts a process and calls a model, so a client choosing between
+		// tools must be able to tell it apart from a local read without trying it.
+		const reason = tools.find((t) => t.name === "reason");
+		assert.equal(reason?.annotations?.openWorldHint, true, "reason reaches outside this process");
+		assert.equal(reason?.annotations?.idempotentHint, false, "same question, different answer");
+	});
+
+	test("reason refuses an empty question without spawning anything", async () => {
+		// This suite must never hand `reason` a real question — that would start a
+		// second Claude session from a unit test. The empty-question path is the one
+		// refusal reachable without spawning, and it proves the handler is wired.
+		const out = textOf(await call("tools/call", { name: "reason", arguments: { question: "   " } }));
+		assert.match(out, /Not run:/);
+		assert.match(out, /no question/);
 	});
 
 	test("the resource listing honours the policy — work/ never appears", async () => {
@@ -179,6 +193,19 @@ describe("the om server on the wire", () => {
 		// The platform comes from work/atlas.md, which is OUTSIDE the exposure
 		// fence — proof the caller-identity lookup is not scoped by it.
 		assert.match(t, /Platforms: ios/);
+	});
+
+	test("health reports the day's reasoning usage, which is what replaces a cap", async () => {
+		// Nothing bounds `reason`, so this line is the entire answer to "where did
+		// that usage go". If it stops being reported, the argument for having no
+		// cap stops holding — hence a test rather than a docstring.
+		const t = textOf(await call("tools/call", { name: "health", arguments: {} }));
+		assert.match(t, /Reasoning today: /);
+		// No spawn has happened in this suite, so it must say so rather than omit
+		// the line — an absent line reads as "not tracked".
+		assert.match(t, /Reasoning today: nothing yet today/);
+		// And it names the model that a call would actually use.
+		assert.match(t, /model: your CLI default/);
 	});
 
 	test("recall on an empty store explains itself rather than returning nothing", async () => {

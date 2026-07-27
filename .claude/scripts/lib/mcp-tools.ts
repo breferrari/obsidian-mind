@@ -234,6 +234,31 @@ export const TOOLS: readonly ToolDef[] = [
 		},
 	},
 	{
+		name: "reason",
+		description:
+			"Ask the vault a question that needs JUDGEMENT ACROSS several notes rather than retrieval of one — 'is what I am about to do consistent with what we decided', or 'these notes disagree, what did we actually conclude'. It reads the vault with a second Claude session, so it takes longer and uses more than the other tools: reach for it when search or recall returned the notes but not the answer, and use those instead when they would do. It seeds itself from search, so you do not need to search first.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				question: {
+					type: "string",
+					description:
+						"The judgement you need, stated in full. It is answered by a session that cannot see this conversation, so include what you are about to do and why it matters — a bare topic gets a summary rather than a verdict.",
+				},
+			},
+			required: ["question"],
+		},
+		annotations: {
+			title: "Reason over the vault (spawns a second session)",
+			readOnlyHint: true,
+			destructiveHint: false,
+			// Same question, different answer, different usage.
+			idempotentHint: false,
+			// It starts a process that reads the vault and calls a model.
+			openWorldHint: true,
+		},
+	},
+	{
 		name: "health",
 		description:
 			"Check that this vault's wiring is intact: where memories actually live, which roots are exposed, whether the search index is reachable, and whether any memories reference a project that no longer resolves. Call this when something that should be in the vault cannot be found — every failure in this layer presents identically as 'no results', and this is what tells them apart.",

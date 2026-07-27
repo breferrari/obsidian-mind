@@ -310,9 +310,33 @@ The vault normally only helps while you are sitting in it. The **`om` MCP server
 | `recall` | durable lessons scoped to the calling repo, most specific first |
 | `remember` | record a lesson that will still be true in a different repo |
 | `record_work` | record what happened in this repo, filed where it belongs |
+| `reason` | judgement across several notes — spawns a second session, so it takes longer |
 | `health` | is the wiring intact? |
 
 Plus notes as readable **resources**, and `recall_topic` / `prior_art` as **prompts** you invoke yourself from the `/` menu.
+
+### `reason` — judgement across notes
+
+The other tools answer without inference. `reason` reads the vault with a second Claude session, so it is slower and uses more — reach for it when `search` or `recall` returned the notes but not the judgement. It seeds itself from search, so there is no need to search first.
+
+**It runs on your own CLI default model**, so the vault answers at the level you are already working at. MCP gives a server no way to see the calling session's model, so inheriting the CLI default is the closest reachable thing to "the same model I am using".
+
+**Every call is on the record.** It lands in `.claude/om-mcp-audit.jsonl` with its cost, turns, model and wall time, and `health` reports the day's total — so "what did that use" is always answerable. That visibility is the whole of the control surface, because the spawn is Claude on your machine under your auth: the same resource the session asking already runs on.
+
+One optional key, which does not ship set:
+
+```json
+"reason": { "model": "claude-haiku-4-5" }   // pin a model instead of inheriting
+```
+
+Left unset — the default — it uses your own Claude settings.
+
+> [!warning] If you pin a model, use a FULL id.
+> `--model haiku` is not honoured by the CLI and does not error — it silently runs `claude-sonnet-5`. An alias here is dropped in favour of inheriting, since a pin that quietly means something else is worse than no pin. The answer always reports which model actually ran.
+
+If a run ends early you get **no answer**, not a truncated one, plus the evidence search already found — a partial synthesis presented as complete is the one outcome worse than none.
+
+Answers land in `.claude/om-reasoning/` (gitignored) marked `confidence: inferred`. They are deliberately **not** recorded as memories — a spawned conclusion is reasoning, not verified knowledge, and the calling session decides whether any of it earns a `remember`.
 
 ### Which memories reach which project
 
