@@ -27,7 +27,7 @@ import {
 } from "./mcp-exposure.ts";
 import { expandNote } from "./mcp-graph.ts";
 import { qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
-import { callerProject, callerProjectSource, isVaultItself, PROJECT_MARKER, auditPath, sanitize } from "./mcp-caller.ts";
+import { callerProject, callerProjectSource, isVaultItself, PROJECT_MARKER, sumAuditField, sanitize } from "./mcp-caller.ts";
 import { callerPlatforms, digestsFrom, resolvableNames } from "./mcp-memory-bridge.ts";
 import { captureNote } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
@@ -41,14 +41,16 @@ import { health } from "./memory-discover.ts";
 import { resolveQmdEntry, buildQmdCommand } from "./qmd.ts";
 import {
 	resolveReasonConfig,
-	spentToday,
+	reasonUsage,
+	reasonAuditDetail,
 	runReasoning,
 	reasoningPrompt,
-	resolveClaudeBin,
+	visibleHits,
+	resolveClaudeCommand,
 	writeIsolatedMcpConfig,
 	writeReasoningRecord,
 	describeRefusal,
-	REASON_DEFAULTS,
+	REASON_ACTION,
 } from "./mcp-reason.ts";
 
 const PROTOCOL_VERSION = "2025-11-25";
@@ -396,32 +398,32 @@ export function createHandlers(deps: ServerDeps): Handlers {
 	 * A call with no question in it is the only one refused.
 	 */
 	async function callReason(args: Record<string, unknown>): Promise<string> {
-		const cfg = resolveReasonConfig(ctx.manifest);
-
 		const question = String(args.question ?? "").trim();
 		if (!question) return describeRefusal("no question given.", "Ask the judgement you need, in full.");
+
+		const cfg = resolveReasonConfig(ctx.manifest);
+		// The spawn reads the vault with its own tools, so it is told the same
+		// boundary the seed was filtered through. Without it the one tool that
+		// reads most is the one that ignores `mcp_exposed_roots`.
+		const scope = { roots: policy.roots, memoryRoot: ctx.memoryRoot };
 
 		// Seed with what the server already has, so the spawn does not spend turns
 		// rediscovering it.
 		const allowed = allowedSearchPaths(ctx.vaultRoot, policy);
 		const seed = await qmdSearch(qmd(), allowed, question, 6);
-		const r = runReasoning(
-			resolveClaudeBin(),
+		// The PERMITTED count, not `total` — a search whose every hit was withheld
+		// has `total > 0` and nothing the spawn can see, and must take the
+		// read-the-vault-yourself branch rather than be handed an empty block.
+		const evidence = visibleHits(seed) > 0 ? seed.text : "";
+		const r = await runReasoning(
+			resolveClaudeCommand(),
 			ctx.vaultRoot,
 			cfg,
-			reasoningPrompt(question, seed.text),
+			reasoningPrompt(question, evidence, scope),
 			writeIsolatedMcpConfig(ctx.vaultRoot),
 		);
 
-		audit("reason", {
-			question,
-			cost_usd: r.costUsd,
-			turns: r.turns,
-			terminal: r.terminal,
-			model_asked: cfg.model,
-			model_used: r.modelUsed,
-			wall_ms: r.wallMs,
-		});
+		audit(REASON_ACTION, reasonAuditDetail(question, cfg, r, scope));
 
 		if (r.error) {
 			return describeRefusal("the reasoning session could not start.", sanitize(r.error));
@@ -462,23 +464,6 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		].join("\n");
 	}
 
-	/**
-	 * What `reason` has spent today, and on which model.
-	 *
-	 * Read from the audit log rather than from a counter, so it cannot drift from
-	 * the record it summarises — and so it stays right across restarts and across
-	 * the several servers one vault may have, one per consuming repo.
-	 */
-	function reasonUsageLine(): string {
-		const today = now().toISOString().slice(0, 10);
-		const spent = spentToday(auditPath(ctx.vaultRoot), today);
-		const pinned = resolveReasonConfig(ctx.manifest).model;
-		const model = pinned ?? `${REASON_DEFAULTS.model === null ? "your CLI default" : REASON_DEFAULTS.model}`;
-		return spent > 0
-			? `$${spent.toFixed(4)} reported across today's calls · model: ${model}`
-			: `nothing yet today · model: ${model}`;
-	}
-
 	function callHealth(): string {
 		const who = caller();
 		// Populate the cache before reporting on it. `recall` tells the user to run
@@ -517,7 +502,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			// `reason` is the one tool that spawns a session, and nothing bounds it.
 			// Reporting the day's usage is what stands in for a limit: the answer to
 			// "where did that go" has to exist somewhere, and this is where.
-			`Reasoning today: ${reasonUsageLine()}`,
+			`Reasoning today: ${reasonUsage(ctx.vaultRoot, ctx.manifest, now().toISOString().slice(0, 10), sumAuditField)}`,
 			"",
 			h.warnings.length ? `Warnings:\n${h.warnings.map((w) => `- ${w}`).join("\n")}` : "No warnings.",
 			...(h.notes.length ? ["", `Notes:\n${h.notes.map((n) => `- ${n}`).join("\n")}`] : []),

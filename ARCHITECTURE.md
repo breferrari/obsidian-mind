@@ -708,12 +708,12 @@ The server cannot borrow the calling session's inference to do that. MCP has a n
 ```mermaid
 flowchart TB
     Q["reason(question)"] --> Seed["tier-1 search, 6 hits<br/>inside the exposure policy"]
-    Seed --> HasEv{"did the index<br/>return anything?"}
+    Seed --> HasEv{"any hits the caller<br/>may actually see?"}
     HasEv -->|yes| P1["prompt: start from these passages,<br/>read further when they are thin"]
     HasEv -->|no| P2["prompt: the INDEX was silent,<br/>the vault may not be —<br/>go read it yourself"]
     P1 --> Spawn
     P2 --> Spawn
-    Spawn["spawn claude, cwd = vault root"] --> Flags["--strict-mcp-config + empty server map<br/>--permission-mode plan<br/>--output-format json<br/>stdin closed"]
+    Spawn["spawn claude, async, cwd = vault root"] --> Flags["--strict-mcp-config + empty server map<br/>--tools Read,Grep,Glob<br/>--output-format json<br/>stdin closed"]
     Flags --> Run{"answer came back?"}
     Run -->|no| Ref["refuse, and hand back<br/>the evidence anyway"]
     Run -->|yes| Rec["write the record<br/>.claude/om-reasoning/, gitignored"]
@@ -724,7 +724,15 @@ flowchart TB
 
 **Usage is answered by the record, not by a limit.** Every invocation is appended to the audit log with cost, turns, model and wall time, and `health` reports the day's total — so "what did that use" is always answerable after the fact, which is the question worth being able to answer. The spawn is Claude, on the user's machine, under the user's auth, on the account the calling session already runs on; a server-side bound there would be this layer rationing the user's own resource back to them. The one bound present is a 300-second timeout, which kills a **hung child** — a failure, not a preference.
 
-**Isolation is what stops it recursing.** `--strict-mcp-config` pointed at a config declaring no servers leaves the spawn with no MCP at all, so it cannot call back into `om` and start a tree that multiplies at every level. Verified on the wire: a spawn under those flags reports no MCP servers available. `--permission-mode plan` keeps it read-only — a reasoning pass answers, it does not edit the vault.
+**Isolation is what stops it recursing.** `--strict-mcp-config` pointed at a config declaring no servers leaves the spawn with no MCP at all, so it cannot call back into `om` and start a tree that multiplies at every level. Verified on the wire: a spawn under those flags reports no MCP servers available.
+
+**Read-only comes from restricting the toolset, not from a permission mode.** `--tools Read,Grep,Glob` removes the writing tools outright, so an attempted write returns `No such tool available: Write` rather than waiting on a prompt nothing is there to answer. `--permission-mode plan` was the first attempt and is wrong twice over: it writes the plan under `~/.claude/plans/`, outside the vault, and it changes what the spawn believes it is producing — in a measured run the model composed its analysis *as a plan*, could not hand it back without `ExitPlanMode` headlessly, wrote the content to a file and returned a one-line note about having done so. The whole answer was lost, and the failure is non-deterministic, so it survived the first round of testing.
+
+A related trap, since it is how that one nearly got mis-diagnosed: **a spawn's account of its own tools is unreliable.** Asked to list them under this allowlist, it returns the full default set including `Write`. Asked to actually write a file, it cannot. It reports its prior, not its runtime — so capability is checked by trying, never by asking.
+
+**The spawn is told the same boundary its seed was filtered through.** `Read,Grep,Glob` with `cwd` at the vault root reaches the whole tree, while the seed came through `allowedSearchPaths` — so without an explicit boundary the one tool that reads most would be the only one ignoring `mcp_exposed_roots`, and could quote `memories/` scoped to other callers into its answer. The prompt therefore names the exposed roots and prohibits everything else, in the prohibition form measured to propagate. It is a boundary the spawn observes, not one the filesystem enforces, which is exactly why the audit line records the roots it was given: what it was allowed to read stays answerable afterwards.
+
+**It runs asynchronously, and that is load-bearing.** A synchronous spawn holds the whole event loop for the life of the child — measured at 73–80s, capped at 300s — during which the server parses no stdin at all: no other tool call, no `ping`, no `roots/list` reply, and no timers, so even the identity gate's own 2s cap could not fire. The entry script buys concurrency deliberately (*"serialising them here would make one slow search block every other call"*), and a synchronous spawn took that back harder than serialising would have. Verified on the wire: with `reason` running for 80.3s, a `search` and a `health` issued two seconds in came back at 2.9s and 2.8s.
 
 Two things about the spawn are non-obvious and were found the hard way. **stdin must be closed**, or the CLI waits on it and the call hangs to the timeout instead of answering. And the binary is spawned **directly with argv, never through a shell** — on Windows `cmd.exe` strips the quotes out of an inline JSON argument, and the CLI then tries to open the mangled string as a file path.
 
@@ -741,7 +749,9 @@ flowchart LR
     style G fill:#1e4620,color:#fff
 ```
 
-A vault whose index is missing or stale returns exactly what a vault with nothing to say returns. Under the normal wording the spawn treated the first as the second and reported silence — the same *absence-read-as-answer* failure this layer already had in retrieval, reproduced one tier up. The empty case therefore gets its own instructions rather than a blank evidence block. `qmdSearch` reports its own failures in prose (`(no results)`, `search failed: …`), so both arrive as text and both have to be recognised as "not evidence of absence".
+A vault whose index is missing or stale returns exactly what a vault with nothing to say returns. Under the normal wording the spawn treated the first as the second and reported silence — the same *absence-read-as-answer* failure this layer already had in retrieval, reproduced one tier up. The empty case therefore gets its own instructions rather than a blank evidence block.
+
+Which branch fires is decided by the **permitted** hit count, not by qmd's total: `total` counts what the index returned *before* the exposure policy filtered it, so a search whose every hit was withheld has `total > 0` and nothing the spawn can see. Reading the total alone would hand it an empty evidence block — precisely the shape that produced the false-absence answer. The prose sentinels (`(no results)`, `search failed: …`) remain as a fallback for callers holding only the text, matched as prefixes so a passage that merely quotes one of those phrases still counts as evidence.
 
 Against a vault whose index is working, seeding is worth about **one turn** — less than it looks like it should be, because a spawn with `cwd` set to the vault already inherits the vault's contract and can search for itself. Its value there is mostly that it starts in the right place, and it carries a bias: in a measured run the seeded answer leaned on the passages and repeated a framing the vault had since corrected. Hence the explicit licence in the prompt to read past the evidence, and the instruction to say when it is thin.
 

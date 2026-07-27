@@ -43,7 +43,11 @@ node_modules/
 .claude/om-mcp-audit.jsonl
 .claude/om-mcp-audit.jsonl.1
 
-# Tier-3 reasoning transcripts. A spawned session's conclusion is INFERRED, so
-# it is kept for provenance and cost review but never committed as vault
-# knowledge — the calling session decides whether any of it is worth a memory.
+# `reason` transcripts. A spawned session's conclusion is INFERRED, so it is
+# kept for provenance and cost review but never committed as vault knowledge —
+# the calling session decides whether any of it is worth a memory.
 .claude/om-reasoning/
+
+# The empty MCP config `reason` spawns against — the recursion guard. Runtime
+# plumbing, rewritten on every call.
+.claude/om-mcp-no-mcp.json

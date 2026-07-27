@@ -321,7 +321,9 @@ The other tools answer without inference. `reason` reads the vault with a second
 
 **It runs on your own CLI default model**, so the vault answers at the level you are already working at. MCP gives a server no way to see the calling session's model, so inheriting the CLI default is the closest reachable thing to "the same model I am using".
 
-**Every call is on the record.** It lands in `.claude/om-mcp-audit.jsonl` with its cost, turns, model and wall time, and `health` reports the day's total — so "what did that use" is always answerable. That visibility is the whole of the control surface, because the spawn is Claude on your machine under your auth: the same resource the session asking already runs on.
+**Every call is on the record.** It lands in `.claude/om-mcp-audit.jsonl` with its cost, turns, model, wall time and the roots it was allowed to read, and `health` reports the day's total — so "what did that use, and what could it see" is always answerable. That visibility is the whole of the control surface, because the spawn is Claude on your machine under your auth: the same resource the session asking already runs on.
+
+**It reads only what this vault exposes.** The spawn is given the same `mcp_exposed_roots` boundary that filtered its search results, and is told never to read the memory root — a memory belongs to the project it was scoped to, and reading the store directly would sidestep that. The server stays responsive while it runs; other tools answer normally mid-call.
 
 One optional key, which does not ship set:
 

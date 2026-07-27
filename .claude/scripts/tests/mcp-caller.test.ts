@@ -12,7 +12,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -27,6 +27,7 @@ import {
 	sanitize,
 	createAuditor,
 	auditPath,
+	sumAuditField,
 	type Root,
 } from "../lib/mcp-caller.ts";
 
@@ -346,6 +347,95 @@ describe("the audit log", () => {
 			const log = join(dir, "sub", "audit.jsonl");
 			createAuditor(log, () => "x");
 			assert.equal(existsSync(log), false);
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Reading the log back — lives here so it cannot drift from the writer
+// ---------------------------------------------------------------------------
+
+describe("summing a field across one day's entries", () => {
+	function withVault(fn: (root: string) => void): void {
+		const dir = mkdtempSync(join(tmpdir(), "auditsum-"));
+		try {
+			fn(dir);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}
+
+	const entry = (o: Record<string, unknown>) => JSON.stringify(o);
+	const write = (path: string, lines: string[]) => {
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, lines.join("\n") + "\n", "utf8");
+	};
+
+	test("counts only the named action, on the named day", () => {
+		withVault((root) => {
+			write(auditPath(root), [
+				entry({ action: "reason", at: "2026-07-27T01:00:00Z", cost_usd: 0.1 }),
+				entry({ action: "reason", at: "2026-07-27T02:00:00Z", cost_usd: 0.25 }),
+				entry({ action: "reason", at: "2026-07-26T23:00:00Z", cost_usd: 99 }), // yesterday
+				entry({ action: "search", at: "2026-07-27T03:00:00Z", cost_usd: 99 }), // another action
+				entry({ action: "recall", at: "2026-07-27T04:00:00Z" }), // no such field
+			]);
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.35);
+		});
+	});
+
+	test("reads the ROTATED generation too, not just the live log", () => {
+		// createAuditor renames the log to .jsonl.1 once it crosses AUDIT_MAX_BYTES.
+		// A reader that knows only the live path reports zero for a day that did
+		// spend — indistinguishable from "nothing ran", which is the one thing this
+		// figure exists to tell apart.
+		withVault((root) => {
+			write(`${auditPath(root)}.1`, [entry({ action: "reason", at: "2026-07-27T01:00:00Z", cost_usd: 0.5 })]);
+			write(auditPath(root), [entry({ action: "reason", at: "2026-07-27T09:00:00Z", cost_usd: 0.25 })]);
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.75);
+		});
+	});
+
+	test("a missing log is zero, not a crash", () => {
+		withVault((root) => assert.equal(sumAuditField(root, "reason", "2026-07-27", "cost_usd"), 0));
+	});
+
+	test("a torn or hand-edited line is skipped, never fatal", () => {
+		// Read for reporting only, so a corrupt line may under-report — but it must
+		// never throw and take `health` down with it.
+		withVault((root) => {
+			write(auditPath(root), [
+				entry({ action: "reason", at: "2026-07-27T01:00:00Z", cost_usd: 0.1 }),
+				'{"action":"reason","at":"2026-07-27T02:00:00Z","cost_usd":', // truncated
+				"",
+				"not json at all",
+				entry({ action: "reason", at: "2026-07-27T03:00:00Z", cost_usd: "free" }), // wrong type
+				entry({ action: "reason", at: "2026-07-27T04:00:00Z", cost_usd: 0.2 }),
+			]);
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.3);
+		});
+	});
+
+	test("an entry that merely MENTIONS the action is not counted as one", () => {
+		// The line is prefiltered on the action's name before parsing, for speed.
+		// The parse still has to be what decides.
+		withVault((root) => {
+			write(auditPath(root), [
+				entry({ action: "search", at: "2026-07-27T01:00:00Z", query: "why reason is slow", cost_usd: 99 }),
+				entry({ action: "reason", at: "2026-07-27T02:00:00Z", cost_usd: 0.4 }),
+			]);
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.4);
+		});
+	});
+
+	test("what the auditor actually writes is what this reads", () => {
+		// The end-to-end guard: stamp through createAuditor, read through
+		// sumAuditField. Nothing hand-rolls the entry shape on either side.
+		withVault((root) => {
+			const audit = createAuditor(auditPath(root), () => "atlas", () => "2026-07-27T05:00:00Z");
+			audit("reason", { cost_usd: 0.6 });
+			audit("search", { cost_usd: 5 });
+			assert.equal(Number(sumAuditField(root, "reason", "2026-07-27", "cost_usd").toFixed(4)), 0.6);
 		});
 	});
 });

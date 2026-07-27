@@ -17,21 +17,27 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
 	resolveReasonConfig,
-	spentToday,
+	reasonUsage,
+	reasonAuditDetail,
 	reasoningArgs,
 	reasoningPrompt,
 	hasEvidence,
-	resolveClaudeBin,
+	visibleHits,
+	interpretRun,
+	renderReasoningRecord,
+	resolveClaudeCommand,
 	writeIsolatedMcpConfig,
+	writeIsolatedMcpConfigPath,
 	writeReasoningRecord,
 	describeRefusal,
-	REASON_DEFAULTS,
+	REASON_ACTION,
 	REASONING_DIR,
 	type ReasoningResult,
 } from "../lib/mcp-reason.ts";
@@ -44,6 +50,19 @@ function withDir(fn: (dir: string) => void): void {
 		rmSync(dir, { recursive: true, force: true });
 	}
 }
+
+/** A completed run. Tests override only the field they are about. */
+const result = (over: Partial<ReasoningResult> = {}): ReasoningResult => ({
+	ok: true,
+	answer: "the answer",
+	costUsd: 0.12,
+	turns: 5,
+	modelUsed: "claude-haiku-4-5",
+	terminal: "completed",
+	wallMs: 21_000,
+	error: null,
+	...over,
+});
 
 // ---------------------------------------------------------------------------
 // Config
@@ -65,8 +84,10 @@ describe("resolving the reason config", () => {
 		// MCP does not tell a server what model the CALLER is using, so inheriting
 		// the user's own CLI default is the closest reachable thing to "the same
 		// model I am already working at".
-		assert.equal(REASON_DEFAULTS.model, null);
 		assert.equal(resolveReasonConfig({}).model, null);
+		// And the argv agrees — the default is one fact, not a constant that a
+		// second code path could disagree with.
+		assert.ok(!reasoningArgs(resolveReasonConfig({}), "q", "c.json").includes("--model"));
 	});
 
 	test("a model ALIAS falls back to inheriting, never to a hardcoded id", () => {
@@ -87,50 +108,66 @@ describe("resolving the reason config", () => {
 // The daily ledger
 // ---------------------------------------------------------------------------
 
-describe("the daily usage figure health reports", () => {
-	const entry = (o: Record<string, unknown>) => JSON.stringify(o);
+describe("the daily usage line health reports", () => {
+	// The sum itself is `sumAuditField`'s job and is tested against the writer in
+	// mcp-caller.test.ts, including rotation. Here: the line this tool composes
+	// from it, with the read injected so no log is needed.
+	const spend = (n: number) => () => n;
 
-	test("sums only today's reasoning, and gates nothing", () => {
-		withDir((dir) => {
-			const log = join(dir, "audit.jsonl");
-			writeFileSync(
-				log,
-				[
-					entry({ action: "reason", at: "2026-07-27T01:00:00Z", cost_usd: 0.1 }),
-					entry({ action: "reason", at: "2026-07-27T02:00:00Z", cost_usd: 0.25 }),
-					entry({ action: "reason", at: "2026-07-26T23:00:00Z", cost_usd: 99 }), // yesterday
-					entry({ action: "search", at: "2026-07-27T03:00:00Z", cost_usd: 99 }), // not a spawn
-					entry({ action: "recall", at: "2026-07-27T04:00:00Z" }),
-				].join("\n"),
-				"utf8",
-			);
-			assert.equal(Number(spentToday(log, "2026-07-27").toFixed(4)), 0.35);
-		});
+	test("names the model a call would actually use", () => {
+		assert.match(reasonUsage("/v", {}, "2026-07-27", spend(0)), /model: your CLI default/);
+		assert.match(
+			reasonUsage("/v", { reason: { model: "claude-opus-4-6" } }, "2026-07-27", spend(0)),
+			/model: claude-opus-4-6/,
+		);
 	});
 
-	test("a missing log is zero, not a crash", () => {
-		withDir((dir) => assert.equal(spentToday(join(dir, "nope.jsonl"), "2026-07-27"), 0));
+	test("says so explicitly when nothing has run, rather than reporting $0", () => {
+		// An absent or zeroed line reads as "not tracked", and this line is the
+		// whole of the answer to where usage went.
+		assert.match(reasonUsage("/v", {}, "2026-07-27", spend(0)), /nothing yet today/);
 	});
 
-	test("a torn or hand-edited line is skipped, never fatal", () => {
-		// This log is read for reporting, so a corrupt line may under-report — but
-		// it must never throw and take `health` down with it.
-		withDir((dir) => {
-			const log = join(dir, "audit.jsonl");
-			writeFileSync(
-				log,
-				[
-					entry({ action: "reason", at: "2026-07-27T01:00:00Z", cost_usd: 0.1 }),
-					'{"action":"reason","at":"2026-07-27T02:00:00Z","cost_usd":', // truncated
-					"",
-					"not json at all",
-					entry({ action: "reason", at: "2026-07-27T03:00:00Z", cost_usd: "free" }),
-					entry({ action: "reason", at: "2026-07-27T04:00:00Z", cost_usd: 0.2 }),
-				].join("\n"),
-				"utf8",
-			);
-			assert.equal(Number(spentToday(log, "2026-07-27").toFixed(4)), 0.3);
+	test("reports the day's total when there is one", () => {
+		assert.match(reasonUsage("/v", {}, "2026-07-27", spend(0.3512)), /\$0\.3512 reported/);
+	});
+
+	test("asks the log for this tool's own action key", () => {
+		// The stamp and the read must move together; a rename on one side only
+		// makes the figure read zero forever, which looks like "no calls today".
+		let askedFor = "";
+		reasonUsage("/v", {}, "2026-07-27", (_root, action, _day, field) => {
+			askedFor = `${action}/${field}`;
+			return 0;
 		});
+		assert.equal(askedFor, `${REASON_ACTION}/cost_usd`);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// The audit detail — written here, read here
+// ---------------------------------------------------------------------------
+
+describe("the audit detail for a run", () => {
+	test("records what the spawn was TOLD it could read", () => {
+		// The boundary is observed by the spawn, not enforced by the filesystem,
+		// so the log is the only place it stays answerable afterwards.
+		const d = reasonAuditDetail("q", resolveReasonConfig({}), result(), {
+			roots: ["brain", "reference"],
+			memoryRoot: "memories",
+		});
+		assert.equal(d.roots, "brain,reference");
+	});
+
+	test("says vault-wide when no boundary was given, rather than omitting it", () => {
+		const d = reasonAuditDetail("q", resolveReasonConfig({}), result(), undefined);
+		assert.equal(d.roots, "vault-wide");
+	});
+
+	test("separates the model asked for from the model that ran", () => {
+		const d = reasonAuditDetail("q", resolveReasonConfig({ reason: { model: "claude-opus-4-6" } }), result(), undefined);
+		assert.equal(d.model_asked, "claude-opus-4-6");
+		assert.equal(d.model_used, "claude-haiku-4-5");
 	});
 });
 
@@ -233,10 +270,128 @@ describe("the prompt", () => {
 		}
 	});
 
-	test("a real seed is still passed as evidence", () => {
-		assert.ok(hasEvidence("[1] brain/Caching.md  (score 91%)"));
-		assert.ok(!hasEvidence("(no results)"));
-		assert.match(reasoningPrompt("q", "[1] brain/Caching.md"), /<evidence>/);
+	test("only qmd's own failure prose reads as an empty seed", () => {
+		// The sentinels are PREFIXES. A retrieved passage that happens to quote one
+		// of those phrases is still evidence, and must not flip the branch.
+		assert.ok(hasEvidence("[1] brain/Search.md — logs 'no results' when the index is cold"));
+		assert.ok(!hasEvidence("(no results visible to this repo; 3 match(es) withheld as out of scope)"));
+	});
+
+	test("the permitted count decides, not what qmd returned before filtering", () => {
+		// `total` counts hits BEFORE the exposure policy filtered them, so a search
+		// whose every hit was withheld has total > 0 and nothing the spawn can see.
+		// Reading `total` alone would hand it an empty evidence block — the exact
+		// shape that produced the false-absence answer above.
+		assert.equal(visibleHits({ total: 5, withheld: 5 }), 0);
+		assert.equal(visibleHits({ total: 5, withheld: 2 }), 3);
+		assert.equal(visibleHits({ total: 0, withheld: 0 }), 0);
+	});
+});
+
+describe("the read boundary in the prompt", () => {
+	const scope = { roots: ["brain", "reference"], memoryRoot: "memories" };
+
+	test("names the exposed roots as a prohibition, not a suggestion", () => {
+		// `--tools Read,Grep,Glob` with cwd at the vault root gives the spawn the
+		// whole tree, while its seed came through the exposure policy. A prohibition
+		// is the form measured to propagate into a session; a positive "consult X"
+		// is advisory and gets skipped whenever something nearer answers.
+		const p = reasoningPrompt("q", "PASSAGE", scope);
+		assert.match(p, /Read ONLY within these folders: brain, reference/);
+		assert.match(p, /Do not read anything/i);
+	});
+
+	test("keeps the memory root out, whatever the roots say", () => {
+		// A spawn reading memories/ directly sees every caller's, not its own —
+		// and "memories are never served as an ordinary note" holds regardless of
+		// configuration everywhere else in this layer.
+		assert.match(reasoningPrompt("q", "PASSAGE", scope), /never read memories\//);
+	});
+
+	test("applies to the unseeded branch too", () => {
+		// The empty-seed branch tells the spawn to go read the tree itself, so it is
+		// the branch where an unbounded read is most likely.
+		const p = reasoningPrompt("q", "", scope);
+		assert.match(p, /Read ONLY within these folders/);
+		assert.match(p, /read it directly/i);
+	});
+
+	test("no scope means no fabricated boundary", () => {
+		assert.ok(!reasoningPrompt("q", "PASSAGE").includes("Read ONLY"));
+		assert.ok(!reasoningPrompt("q", "PASSAGE", { roots: [], memoryRoot: "memories" }).includes("Read ONLY"));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Reading a finished run — the half that used to be unreachable
+// ---------------------------------------------------------------------------
+
+describe("interpreting a finished run", () => {
+	const json = (o: Record<string, unknown>) => JSON.stringify(o);
+
+	test("a completed run carries its answer and telemetry", () => {
+		const r = interpretRun(
+			json({
+				result: "because of X",
+				num_turns: 4,
+				total_cost_usd: 0.42,
+				terminal_reason: "completed",
+				modelUsage: { "claude-opus-5": {} },
+			}),
+			"",
+			null,
+			16_000,
+		);
+		assert.equal(r.ok, true);
+		assert.equal(r.answer, "because of X");
+		assert.equal(r.turns, 4);
+		assert.equal(r.costUsd, 0.42);
+		assert.equal(r.modelUsed, "claude-opus-5");
+		assert.equal(r.wallMs, 16_000);
+		assert.equal(r.error, null);
+	});
+
+	test("is_error is NOT ok, even with a result string present", () => {
+		// This is the flag gating the "no answer, refused by name" path. A run that
+		// stopped early must never be handed back as a complete answer.
+		const r = interpretRun(json({ is_error: true, result: "partial…", terminal_reason: "budget_exhausted" }), "", null, 5);
+		assert.equal(r.ok, false);
+		assert.equal(r.terminal, "budget_exhausted");
+	});
+
+	test("a non-JSON body reports whatever the CLI printed", () => {
+		const r = interpretRun("Usage: claude [options]", "", null, 5);
+		assert.equal(r.ok, false);
+		assert.equal(r.terminal, "spawn_failed");
+		assert.match(String(r.error), /Usage: claude/);
+	});
+
+	test("stderr is used when stdout is empty", () => {
+		const r = interpretRun("", "command not found", null, 5);
+		assert.match(String(r.error), /command not found/);
+	});
+
+	test("a spawn error outranks the output, because it explains it", () => {
+		const r = interpretRun("", "", "spawn claude ENOENT", 5);
+		assert.match(String(r.error), /ENOENT/);
+	});
+
+	test("a spawn error still wins when the body happens to parse", () => {
+		const r = interpretRun(json({ result: "x" }), "", "spawn claude ENOENT", 5);
+		assert.equal(r.ok, false);
+		assert.match(String(r.error), /ENOENT/);
+	});
+
+	test("silence reports as silence rather than as an empty answer", () => {
+		assert.match(String(interpretRun("", "", null, 5).error), /no output/);
+	});
+
+	test("missing telemetry fields degrade to zero, never to NaN", () => {
+		const r = interpretRun(json({ result: "x" }), "", null, 5);
+		assert.equal(r.costUsd, 0);
+		assert.equal(r.turns, 0);
+		assert.equal(r.modelUsed, "unknown");
+		assert.equal(r.terminal, "unknown");
 	});
 });
 
@@ -252,58 +407,80 @@ describe("isolation and provenance", () => {
 		});
 	});
 
-	test("the binary can be pointed somewhere else", () => {
-		// A CLI that is not on this process's PATH has no other way to be found.
-		assert.equal(resolveClaudeBin({}), "claude");
-		assert.equal(resolveClaudeBin({ OM_CLAUDE_BIN: "/opt/claude/bin/claude" }), "/opt/claude/bin/claude");
-		assert.equal(resolveClaudeBin({ OM_CLAUDE_BIN: "   " }), "claude");
+	test("the isolated config is plumbing, kept out of the provenance directory", () => {
+		// REASONING_DIR is user-facing — every answer names a record inside it — and
+		// is otherwise a homogeneous set of timestamped transcripts. A config file
+		// in there means any future list-or-prune needs a filename exception.
+		withDir((dir) => {
+			assert.ok(!writeIsolatedMcpConfig(dir).includes("om-reasoning"));
+		});
 	});
 
-	test("a record is written outside the vault's note tree, marked inferred", () => {
+	test("the CLI can be pointed somewhere else, and the override wins", () => {
+		// A CLI that is not on this process's PATH has no other way to be found.
+		assert.deepEqual(resolveClaudeCommand({ OM_CLAUDE_BIN: "/opt/claude/bin/claude" }), {
+			cmd: "/opt/claude/bin/claude",
+			leading: [],
+		});
+		assert.deepEqual(resolveClaudeCommand({ OM_CLAUDE_BIN: "   " }), resolveClaudeCommand({}));
+	});
+
+	test("without an override it is spawnable without a shell", () => {
+		// Either the npm entry through this Node binary, or the bare name for a
+		// native install. Never a shell: the prompt is a JSON-bearing argument and
+		// cmd.exe strips its quotes.
+		const c = resolveClaudeCommand({});
+		assert.ok(c.cmd === "claude" || c.cmd === process.execPath, c.cmd);
+		// When it resolved the npm entry, that entry is the first argument.
+		assert.equal(c.leading.length, c.cmd === process.execPath ? 1 : 0);
+	});
+
+	test("the record's text is assertable without touching disk", () => {
+		// A spawned conclusion is reasoning, not verified knowledge. Recording it
+		// as anything else is how a store fills with claims nobody checked.
+		const md = renderReasoningRecord(new Date("2026-07-27T01:02:03Z"), "the question", result());
+		assert.match(md, /confidence: inferred/);
+		assert.match(md, /source: mcp-reason/);
+		assert.match(md, /cost_usd: 0\.12/);
+		assert.match(md, /date: 2026-07-27T01:02:03/);
+		assert.match(md, /the question/);
+		assert.match(md, /the answer/);
+	});
+
+	test("a record is written outside the vault's note tree", () => {
 		withDir((dir) => {
-			const r: ReasoningResult = {
-				ok: true,
-				answer: "the answer",
-				costUsd: 0.12,
-				turns: 5,
-				modelUsed: "claude-haiku-4-5",
-				terminal: "completed",
-				wallMs: 21_000,
-				error: null,
-			};
-			const rel = writeReasoningRecord(dir, new Date("2026-07-27T01:02:03Z"), "the question", r);
+			const rel = writeReasoningRecord(dir, new Date("2026-07-27T01:02:03Z"), "the question", result());
 			assert.ok(rel, "a record path is returned");
 			assert.ok(rel!.startsWith(REASONING_DIR), "kept beside the audit log, not filed as a note");
-			const md = readFileSync(join(dir, rel!), "utf8");
-			// A spawned conclusion is reasoning, not verified knowledge. Recording it
-			// as anything else is how a store fills with claims nobody checked.
-			assert.match(md, /confidence: inferred/);
-			assert.match(md, /source: mcp-reason/);
-			assert.match(md, /cost_usd: 0\.12/);
-			assert.match(md, /the question/);
-			assert.match(md, /the answer/);
+			assert.match(readFileSync(join(dir, rel!), "utf8"), /confidence: inferred/);
 		});
 	});
 
 	test("losing the record does not lose the answer", () => {
 		// The transcript is provenance, not the result.
-		const r: ReasoningResult = {
-			ok: true,
-			answer: "a",
-			costUsd: 0,
-			turns: 1,
-			modelUsed: "m",
-			terminal: "completed",
-			wallMs: 1,
-			error: null,
-		};
-		assert.equal(writeReasoningRecord("\0 not a path", new Date(), "q", r), null);
+		assert.equal(writeReasoningRecord("\0 not a path", new Date(), "q", result()), null);
 	});
 
 	test("the record directory is not inside the note tree", () => {
 		// It must not be walked by visibleFiles, indexed, or served as a resource:
 		// dot-directories are skipped by every read surface.
 		assert.ok(REASONING_DIR.startsWith("."), REASONING_DIR);
+	});
+
+	test("both artefacts are actually gitignored, and the two places agree", () => {
+		// Two sources of truth per path: the code decides where the file goes,
+		// .gitignore decides whether it is tracked. Move one without the other and
+		// a machine config, or a transcript of the user's own questions and the
+		// answers to them, starts appearing in commits.
+		const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+		const ignored = readFileSync(join(repoRoot, ".gitignore"), "utf8")
+			.split(/\r?\n/)
+			.map((l) => l.trim());
+		const rel = (abs: string) => abs.slice("/v/".length).split(/[\\/]/).join("/");
+
+		assert.ok(ignored.includes(`${REASONING_DIR}/`), `.gitignore must contain "${REASONING_DIR}/"`);
+		const cfg = rel(writeIsolatedMcpConfigPath("/v"));
+		assert.ok(ignored.includes(cfg), `.gitignore must contain "${cfg}" — the path and the ignore rule have drifted`);
 	});
 });
 

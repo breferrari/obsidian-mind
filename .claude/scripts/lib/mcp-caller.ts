@@ -8,7 +8,7 @@
  * empty vault.
  */
 
-import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -183,4 +183,83 @@ export function createAuditor(
 /** Where the audit log lives for a given vault. */
 export function auditPath(vaultRoot: string): string {
 	return join(vaultRoot, ".claude", "om-mcp-audit.jsonl");
+}
+
+/**
+ * How much of the tail to read back. The log is append-only and time-ordered, so
+ * one day's entries are contiguous at the end; a fixed window keeps a read
+ * bounded no matter how large the log has grown.
+ */
+const AUDIT_TAIL_BYTES = 512 * 1024;
+
+/** Read the last `AUDIT_TAIL_BYTES` of a file, dropping a torn leading line. */
+function tail(path: string): string {
+	let fd: number;
+	try {
+		fd = openSync(path, "r");
+	} catch {
+		return "";
+	}
+	try {
+		const size = statSync(path).size;
+		const from = Math.max(0, size - AUDIT_TAIL_BYTES);
+		const buf = Buffer.allocUnsafe(Math.min(size, AUDIT_TAIL_BYTES));
+		let read = 0;
+		while (read < buf.length) {
+			const n = readSync(fd, buf, read, buf.length - read, from + read);
+			if (n <= 0) break;
+			read += n;
+		}
+		const text = buf.subarray(0, read).toString("utf8");
+		// A window that did not start at byte 0 almost certainly begins mid-entry.
+		return from === 0 ? text : text.slice(text.indexOf("\n") + 1);
+	} catch {
+		return "";
+	} finally {
+		closeSync(fd);
+	}
+}
+
+/**
+ * Sum a numeric field across today's entries for one action.
+ *
+ * Lives here, beside the writer, because everything it depends on is this
+ * module's business: the entry shape, the `at` format, the log's path, and the
+ * ROTATION. `createAuditor` renames the log to `.jsonl.1` once it crosses
+ * `AUDIT_MAX_BYTES`, so a reader that knows only the live path reports zero for
+ * a day that did spend — the rotated generation is read too, for exactly that
+ * reason. Kept away from its writer, this drifts the moment either side changes.
+ *
+ * Reads a bounded tail rather than the whole file: the caller is `health`, which
+ * is routinely the FIRST call a server serves, and the log records a line per
+ * read across every consuming repo sharing this vault.
+ *
+ * Unparseable lines are skipped rather than throwing — a torn write may
+ * under-report, but it must never take `health` down with it.
+ */
+export function sumAuditField(
+	vaultRoot: string,
+	action: string,
+	dayPrefix: string,
+	field: string,
+): number {
+	const live = auditPath(vaultRoot);
+	let total = 0;
+	for (const text of [tail(`${live}.1`), tail(live)]) {
+		for (const line of text.split("\n")) {
+			// Cheap reject before the parse: any encoding of an entry with this
+			// action contains the action's name somewhere in the line.
+			if (!line.includes(action)) continue;
+			try {
+				const e = JSON.parse(line) as AuditEntry;
+				if (e.action !== action) continue;
+				if (typeof e.at !== "string" || !e.at.startsWith(dayPrefix)) continue;
+				const v = e[field];
+				if (typeof v === "number" && Number.isFinite(v)) total += v;
+			} catch {
+				/* a torn or hand-edited line is skipped, never fatal */
+			}
+		}
+	}
+	return total;
 }
