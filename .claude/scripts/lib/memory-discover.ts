@@ -114,8 +114,8 @@ export function walkMarkdown(root: string, { maxDepth = MAX_DEPTH }: { maxDepth?
 }
 
 /** Cheap frontmatter probe — reads only the head of a file, not all of it. */
-export function probeFrontmatter(full: string, bytes = 800): string | null {
-	const head = readHead(full, bytes);
+export function probeFrontmatter(full: string, chars = 800): string | null {
+	const head = readHead(full, chars);
 	if (head === null) return null;
 	const m = head.match(/^---\r?\n([\s\S]*?)\r?\n---/);
 	return m ? (m[1] ?? null) : null;

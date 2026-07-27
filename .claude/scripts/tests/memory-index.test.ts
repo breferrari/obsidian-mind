@@ -56,9 +56,9 @@ describe("the cache agrees with the filesystem", () => {
 	test("returns exactly what reading the store returns", () => {
 		withVault((dir) => {
 			for (const n of ["a", "b", "c"]) memory(dir, n);
-			const idx = createMemoryIndex();
+			const idx = createMemoryIndex(dir, ROOT);
 			assert.deepEqual(
-				idx.all(dir, ROOT).map((m) => ({ rel: m.rel, title: m.title, body: m.body, facets: m.facets })),
+				idx.all().map((m) => ({ rel: m.rel, title: m.title, body: m.body, facets: m.facets })),
 				readMemories(dir, ROOT).map((m) => ({ rel: m.rel, title: m.title, body: m.body, facets: m.facets })),
 			);
 		});
@@ -68,9 +68,9 @@ describe("the cache agrees with the filesystem", () => {
 		withVault((dir) => {
 			memory(dir, "shared");
 			memory(dir, "scoped", "body", "projects: [atlas]");
-			const idx = createMemoryIndex();
+			const idx = createMemoryIndex(dir, ROOT);
 			const caller = { project: "atlas", platforms: [] as string[] };
-			assert.deepEqual(recallFrom(idx.all(dir, ROOT), caller), recall(dir, caller, { root: ROOT }));
+			assert.deepEqual(recallFrom(idx.all(), caller), recall(dir, caller, { root: ROOT }));
 		});
 	});
 
@@ -78,8 +78,8 @@ describe("the cache agrees with the filesystem", () => {
 		withVault((dir) => {
 			memory(dir, "one");
 			memory(dir, "two");
-			const idx = createMemoryIndex();
-			assert.deepEqual(digestsFrom(idx.all(dir, ROOT)), loadMemoryDigests(dir, ROOT));
+			const idx = createMemoryIndex(dir, ROOT);
+			assert.deepEqual(digestsFrom(idx.all()), loadMemoryDigests(dir, ROOT));
 		});
 	});
 });
@@ -92,10 +92,10 @@ describe("noticing that the store changed", () => {
 	test("a second call is served from cache", () => {
 		withVault((dir) => {
 			for (const n of ["a", "b"]) memory(dir, n);
-			const idx = createMemoryIndex();
-			idx.all(dir, ROOT);
+			const idx = createMemoryIndex(dir, ROOT);
+			idx.all();
 			assert.deepEqual({ h: idx.stats.hits, m: idx.stats.misses }, { h: 0, m: 2 }, "first call parses");
-			idx.all(dir, ROOT);
+			idx.all();
 			assert.deepEqual({ h: idx.stats.hits, m: idx.stats.misses }, { h: 2, m: 0 }, "second call reuses");
 		});
 	});
@@ -106,11 +106,11 @@ describe("noticing that the store changed", () => {
 		// correction that replaced it.
 		withVault((dir) => {
 			memory(dir, "a", "original body");
-			const idx = createMemoryIndex();
-			assert.match(idx.all(dir, ROOT)[0]!.body, /original body/);
+			const idx = createMemoryIndex(dir, ROOT);
+			assert.match(idx.all()[0]!.body, /original body/);
 
 			memory(dir, "a", "corrected body that is a different length entirely");
-			const after = idx.all(dir, ROOT);
+			const after = idx.all();
 			assert.match(after[0]!.body, /corrected body/, "the edit must be visible");
 			assert.equal(idx.stats.misses, 1, "and it must have been re-parsed");
 		});
@@ -119,13 +119,13 @@ describe("noticing that the store changed", () => {
 	test("an edit that preserves SIZE is still caught, via mtime", () => {
 		withVault((dir) => {
 			const full = memory(dir, "a", "aaaa");
-			const idx = createMemoryIndex();
-			idx.all(dir, ROOT);
+			const idx = createMemoryIndex(dir, ROOT);
+			idx.all();
 			// Same byte length, different content — size alone would miss this.
 			memory(dir, "a", "bbbb");
 			const st = statSync(full);
 			utimesSync(full, st.atime, new Date(st.mtimeMs + 5000));
-			assert.match(idx.all(dir, ROOT)[0]!.body, /bbbb/);
+			assert.match(idx.all()[0]!.body, /bbbb/);
 		});
 	});
 
@@ -134,12 +134,12 @@ describe("noticing that the store changed", () => {
 		// second can carry an identical timestamp.
 		withVault((dir) => {
 			const full = memory(dir, "a", "short");
-			const idx = createMemoryIndex();
-			idx.all(dir, ROOT);
+			const idx = createMemoryIndex(dir, ROOT);
+			idx.all();
 			const before = statSync(full);
 			memory(dir, "a", "a considerably longer body than the one before it");
 			utimesSync(full, before.atime, before.mtime);
-			assert.match(idx.all(dir, ROOT)[0]!.body, /considerably longer/);
+			assert.match(idx.all()[0]!.body, /considerably longer/);
 		});
 	});
 
@@ -148,10 +148,10 @@ describe("noticing that the store changed", () => {
 		// rests on timestamp resolution.
 		withVault((dir) => {
 			memory(dir, "a");
-			const idx = createMemoryIndex();
-			const [first] = idx.all(dir, ROOT);
+			const idx = createMemoryIndex(dir, ROOT);
+			const [first] = idx.all();
 			idx.invalidate(first!.rel);
-			idx.all(dir, ROOT);
+			idx.all();
 			assert.equal(idx.stats.misses, 1);
 			assert.equal(idx.stats.hits, 0);
 		});
@@ -160,10 +160,10 @@ describe("noticing that the store changed", () => {
 	test("a NEW memory appears without any explicit invalidation", () => {
 		withVault((dir) => {
 			memory(dir, "a");
-			const idx = createMemoryIndex();
-			assert.equal(idx.all(dir, ROOT).length, 1);
+			const idx = createMemoryIndex(dir, ROOT);
+			assert.equal(idx.all().length, 1);
 			memory(dir, "b");
-			assert.deepEqual(titles(idx.all(dir, ROOT)), ["a", "b"]);
+			assert.deepEqual(titles(idx.all()), ["a", "b"]);
 		});
 	});
 
@@ -171,10 +171,10 @@ describe("noticing that the store changed", () => {
 		withVault((dir) => {
 			const full = memory(dir, "a");
 			memory(dir, "b");
-			const idx = createMemoryIndex();
-			assert.equal(idx.all(dir, ROOT).length, 2);
+			const idx = createMemoryIndex(dir, ROOT);
+			assert.equal(idx.all().length, 2);
 			unlinkSync(full);
-			assert.deepEqual(titles(idx.all(dir, ROOT)), ["b"]);
+			assert.deepEqual(titles(idx.all()), ["b"]);
 			assert.equal(idx.stats.size, 1, "the cache tracks the store rather than growing forever");
 		});
 	});
@@ -182,10 +182,10 @@ describe("noticing that the store changed", () => {
 	test("an emptied store returns nothing and holds nothing", () => {
 		withVault((dir) => {
 			const full = memory(dir, "only");
-			const idx = createMemoryIndex();
-			idx.all(dir, ROOT);
+			const idx = createMemoryIndex(dir, ROOT);
+			idx.all();
 			unlinkSync(full);
-			assert.deepEqual(idx.all(dir, ROOT), []);
+			assert.deepEqual(idx.all(), []);
 			assert.equal(idx.stats.size, 0);
 		});
 	});
@@ -205,18 +205,18 @@ describe("policy stays with the caller", () => {
 			mkdirSync(dirname(rel), { recursive: true });
 			writeFileSync(rel, "---\ndate: 2026-07-26\ntags: [note]\n---\n\n# mine\n\nhand written\n", "utf8");
 
-			const idx = createMemoryIndex();
-			const all = idx.all(dir, ROOT);
+			const idx = createMemoryIndex(dir, ROOT);
+			const all = idx.all();
 			assert.equal(all.length, 2, "both are cached");
 			assert.deepEqual(titles(agentMemories(all)), ["written-by-an-agent"]);
 		});
 	});
 
 	test("an empty store is an empty list, not a throw", () => {
-		withVault((dir) => assert.deepEqual(createMemoryIndex().all(dir, ROOT), []));
+		withVault((dir) => assert.deepEqual(createMemoryIndex(dir, ROOT).all(), []));
 	});
 
 	test("a missing memory root is an empty list", () => {
-		withVault((dir) => assert.deepEqual(createMemoryIndex().all(dir, "nowhere"), []));
+		withVault((dir) => assert.deepEqual(createMemoryIndex(dir, "nowhere").all(), []));
 	});
 });

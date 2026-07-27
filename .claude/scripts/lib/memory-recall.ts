@@ -23,7 +23,7 @@
  * at read time. A reader never widens what a writer declared.
  */
 
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { MEMORY_ROOT, MEMORY_SOURCE } from "./memory-write.ts";
 
@@ -330,10 +330,12 @@ export function agentMemories(entries: readonly MemoryEntry[]): MemoryEntry[] {
  * Apply the visibility rule and rank what survives. PURE — no filesystem.
  *
  * This is the whole of recall's decision-making. `recall` below is the thin IO
- * wrapper that feeds it from disk; the server feeds it from its parse cache. An
- * earlier version took an optional pre-parsed list *alongside* `vaultRoot` and
- * `root`, which left those arguments dead on every production call and made it
- * possible to hand in entries read from a different root than the one named.
+ * wrapper that feeds it from disk; the server feeds it from its parse cache.
+ *
+ * Taking a pre-parsed list as an OPTIONAL argument alongside `vaultRoot` and
+ * `root` was designed and rejected: it left both of those dead on every
+ * production call, and made it possible to hand in entries read from one root
+ * while naming another, with nothing able to notice.
  *
  * `explain` attaches the visibility reason to each entry AND returns the
  * withheld ones with theirs — used to prove a memory was excluded deliberately
@@ -368,7 +370,13 @@ export function recallFrom(
 	return explain ? { visible: ranked, withheld } : ranked;
 }
 
-/** Load every memory visible to this caller, ranked. The IO wrapper. */
+/**
+ * Load every memory visible to this caller, ranked. The IO wrapper.
+ *
+ * No production caller: the server reads through `memory-index`. This is the
+ * on-disk oracle those cache tests assert equality against, so a dead-code sweep
+ * that removes it takes the equivalence guarantee with it.
+ */
 export function recall(
 	vaultRoot: string,
 	caller: Caller,

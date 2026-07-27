@@ -2,8 +2,8 @@
  * A parse cache over the memory store.
  *
  * `recall` and the duplicate scan read the SAME files and parse the same
- * frontmatter, once per call each. At a thousand memories that is ~200ms per
- * operation, linear in the store, and it runs on every recall and every write.
+ * frontmatter, once per call each. That is linear in the store, and it runs on
+ * every recall and every write.
  *
  * WHAT IS CACHED, AND WHAT IS NOT
  *
@@ -21,12 +21,12 @@
  *
  * WHY IT IS NOT ON DISK
  *
- * Measured, these walks are ~300 ms of a ~3,000 ms queried recall — the local
- * query embedding dominates — so persisting the index buys a fraction of one
- * operation while adding a file that can rot, disagree with the store, or need
- * migrating in every vault that ever installed the template. The server is
- * long-lived per repo, so every call after the first is already warm, and a cold
- * start costs exactly what it costs today.
+ * Measured, these walks are a minority of a queried recall — the local query
+ * embedding dominates — so persisting the index buys a fraction of one operation
+ * while adding a file that can rot, disagree with the store, or need migrating in
+ * every vault that ever installed the template. The server is long-lived per
+ * repo, so every call after the first is already warm, and a cold start costs
+ * what it always did.
  */
 
 import { statSync } from "node:fs";
@@ -56,18 +56,30 @@ export interface MemoryIndex {
 	 * because "is this a memory" is a policy question and a cache that answers it
 	 * would have to be rebuilt whenever the policy moved.
 	 */
-	all(vaultRoot: string, root: string): MemoryEntry[];
+	all(): MemoryEntry[];
 	/** Forget one file by vault-relative path. Called after writing it. */
 	invalidate(rel: string): void;
 	readonly stats: IndexStats;
 }
 
-export function createMemoryIndex(): MemoryIndex {
+/**
+ * The vault and root are fixed for the life of the index, not passed per call.
+ *
+ * Keys carry the root prefix, so calling with a different root would evict the
+ * whole cache on every alternation — a silent thrash with no error. Binding them
+ * at construction makes that impossible rather than merely unlikely.
+ */
+export function createMemoryIndex(vaultRoot: string, root: string): MemoryIndex {
 	let cache = new Map<string, CacheEntry>();
 	let hits = 0;
 	let misses = 0;
 
-	const all = (vaultRoot: string, root: string): MemoryEntry[] => {
+	/**
+	 * Synchronous end to end, and it must stay that way: an `invalidate` landing
+	 * between the walk and the `cache = next` swap below would be undone by the
+	 * swap. Adding an `await` here reintroduces exactly that race.
+	 */
+	const all = (): MemoryEntry[] => {
 		const out: MemoryEntry[] = [];
 		// Built fresh each pass and swapped in at the end, so a file that vanished
 		// is evicted STRUCTURALLY rather than by a second sweep that has to be kept
@@ -77,14 +89,24 @@ export function createMemoryIndex(): MemoryIndex {
 		misses = 0;
 
 		for (const f of listMemoryFiles(vaultRoot, root)) {
+			const cached = cache.get(f.rel);
 			let st: { mtimeMs: number; size: number };
 			try {
 				st = statSync(f.full);
-			} catch {
-				continue; // vanished between listing and stat
+			} catch (e) {
+				// ENOENT means it vanished between listing and stat, and dropping it
+				// is right. Any other errno — EACCES, EMFILE, a Windows sharing
+				// violation — means the file is still THERE and we merely could not
+				// look at it, so a previous parse is better than pretending the
+				// memory does not exist. That distinction matters most on the
+				// duplicate path, where an omission admits a duplicate permanently.
+				if ((e as NodeJS.ErrnoException).code !== "ENOENT" && cached) {
+					next.set(f.rel, cached);
+					out.push(cached.record);
+				}
+				continue;
 			}
 
-			const cached = cache.get(f.rel);
 			if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
 				hits++;
 				next.set(f.rel, cached);

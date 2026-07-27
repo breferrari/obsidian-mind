@@ -185,6 +185,25 @@ describe("the caller's platforms", () => {
 		});
 	});
 
+	test("frontmatter LONGER than a head read is still parsed in full", () => {
+		// The third near-miss, caught in review. Reading only the head here looks
+		// like the same optimisation the other frontmatter probes in this module
+		// took, but those replaced an equally-sized character slice while this
+		// replaced a whole-file read. `parseFrontmatter` needs the CLOSING `---`,
+		// so a note with a long description or many aliases — both ordinary on a
+		// real project note — parsed to nothing and the caller lost every
+		// platform-scoped memory, silently.
+		withVault((dir) => {
+			const aliases = Array.from({ length: 60 }, (_, i) => `  - a-fairly-long-alias-name-${i}`).join("\n");
+			put(
+				dir,
+				"work/atlas.md",
+				`---\ndate: 2026-07-26\ndescription: "${"padding ".repeat(80)}"\naliases:\n${aliases}\nplatforms: [ios, macos]\n---\n\n# atlas\n\nbody\n`,
+			);
+			assert.deepEqual(callerPlatforms(dir, "atlas", "memories"), ["ios", "macos"]);
+		});
+	});
+
 	test("a project note OUTSIDE the exposed roots is still found", () => {
 		// The second failed version walked the exposed files only. A vault whose
 		// projects live outside a narrowed `mcp_exposed_roots` silently returned

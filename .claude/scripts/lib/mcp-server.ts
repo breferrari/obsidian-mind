@@ -113,14 +113,14 @@ export function createHandlers(deps: ServerDeps): Handlers {
 	const now = deps.now ?? (() => new Date());
 	const reindex = deps.reindex ?? (() => reindexSync(ctx.qmdIndex));
 	// One cache per server, living exactly as long as the process that owns it.
-	const memoryIndex = createMemoryIndex();
+	const memoryIndex = createMemoryIndex(ctx.vaultRoot, ctx.memoryRoot);
 
 	/**
 	 * The store, parsed. Lists and stats every file on every call — only the
 	 * re-parse of an unchanged file is skipped — so this is safe on the duplicate
 	 * path, where a stale view would admit a memory that already exists.
 	 */
-	const storeEntries = (): MemoryEntry[] => memoryIndex.all(ctx.vaultRoot, ctx.memoryRoot);
+	const storeEntries = (): MemoryEntry[] => memoryIndex.all();
 
 	/** Who is asking, as the memory layer understands it. */
 	const caller = () => ({
@@ -384,6 +384,10 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				: []),
 			`Platforms: ${who.platforms.length ? who.platforms.join(", ") : "(none declared)"}`,
 			`Memory root: ${h.memory.root}/ (${h.memory.memories} memor${h.memory.memories === 1 ? "y" : "ies"}, ${h.memory.source})`,
+			// The cache re-checks the store on every call, so a store this server
+			// cannot read shows up as entries it never parsed. Reported because
+			// every failure in this layer otherwise presents as "no results".
+			`Parse cache: ${memoryIndex.stats.size} entr${memoryIndex.stats.size === 1 ? "y" : "ies"} held`,
 			`Exposed roots: ${policy.roots.join(", ") || "(none)"} [${policy.source}]`,
 			`Search index: ${ctx.qmdIndex ?? "(qmd default)"} · launcher ${ctx.qmdLauncher ? "found" : "NOT FOUND"}`,
 			"",

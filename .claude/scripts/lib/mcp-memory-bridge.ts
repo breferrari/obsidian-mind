@@ -13,7 +13,7 @@
  * result this system cannot distinguish from a correct one.**
  */
 
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -83,7 +83,13 @@ export function digestsFrom(entries: readonly MemoryEntry[]): MemoryDigest[] {
 	}));
 }
 
-/** The same, read from disk. The IO wrapper. */
+/**
+ * The same, read from disk. The IO wrapper.
+ *
+ * No production caller: the server reads through `memory-index`. This is the
+ * on-disk oracle those cache tests assert equality against, so a dead-code sweep
+ * that removes it takes the equivalence guarantee with it.
+ */
 export function loadMemoryDigests(vaultRoot: string, memoryRoot: string): MemoryDigest[] {
 	return digestsFrom(readMemories(vaultRoot, memoryRoot));
 }
@@ -147,15 +153,24 @@ export function findNoteNamed(vaultRoot: string, name: string, memoryRoot: strin
  * the CALLER belongs to is a property of the caller, not of what the vault
  * chooses to expose as readable content. So the search is vault-wide by
  * FILENAME, exactly one frontmatter key is read from the single matching file,
- * no note body is opened, and nothing is returned to the caller except its own
+ * no note body is used, and nothing is returned to the caller except its own
  * platform list.
+ *
+ * A THIRD version was nearly shipped and caught in review. Reading only the
+ * head — as the other frontmatter probes in this file do — looks like the same
+ * optimisation, but it is not: those replaced an equally-sized character slice,
+ * while this replaced a WHOLE-file read. `parseFrontmatter` needs the CLOSING
+ * `---`, so a project note whose frontmatter runs past the head (a long
+ * description, or aliases, both ordinary) parsed to `{}` and the caller got no
+ * platforms — presenting exactly like the two failures above. This reads the
+ * whole file on purpose: it is one file per call, next to a vault walk.
  */
 export function callerPlatforms(vaultRoot: string, caller: string | null, memoryRoot: string): string[] {
 	if (!caller) return [];
 	const match = findNoteNamed(vaultRoot, caller.toLowerCase(), memoryRoot);
 	if (!match) return [];
 	try {
-		const v = parseFrontmatter(readHead(match, HEAD_CHARS) ?? "").platforms;
+		const v = parseFrontmatter(readFileSync(match, "utf8")).platforms;
 		if (Array.isArray(v)) return v.map(String).filter(Boolean);
 		if (typeof v === "string" && v) return [v];
 	} catch {

@@ -390,13 +390,14 @@ flowchart TB
     Caller["mcp-caller.ts<br/>identity · sanitise · audit log"]
     Bridge["mcp-memory-bridge.ts<br/>memory ↔ vault seam"]
     Capture["mcp-capture.ts<br/>record_work filing"]
-    Idx["memory-index.ts<br/>parse cache over the store"]
+    RH["read-head.ts<br/>bounded frontmatter prefix"]
     subgraph Core["Memory core — no MCP knowledge at all"]
         MW["memory-write.ts"]
         MR["memory-recall.ts"]
         MS["memory-similarity.ts"]
         MSup["memory-supersede.ts"]
         MD["memory-discover.ts"]
+        Idx["memory-index.ts<br/>parse cache over the store"]
     end
 
     Entry --> Proto
@@ -411,11 +412,14 @@ flowchart TB
     Server --> Capture
     Server --> Idx
     Server --> Core
-    Idx --> Core
+    Idx --> MR
     Graph --> Exp
     Qmd --> Exp
     Bridge --> Core
     Bridge --> Qmd
+    Exp --> RH
+    Bridge --> RH
+    MD --> RH
 ```
 
 The memory core knows nothing about MCP. That is what lets the epistemic contract be hammered by tests without an MCP client, a vault on disk, or a search index.
@@ -650,7 +654,7 @@ Size *and* mtime, because either alone is weak — some filesystems keep mtime t
 
 **It is deliberately in-process, not on disk.** Measured, these walks are a minority of a queried recall — the local query embedding dominates — so persisting the index buys a fraction of one operation while adding a file that can rot, disagree with the store, or need migrating in every vault that ever installed the template. The server is long-lived per repo, so every call after the first is warm and a cold start costs what it always did.
 
-The same reasoning trimmed a second cost. Four call sites inspected only a note's frontmatter — is it private, what is its description, what are its aliases, was it agent-written — and each read the **whole file** to look at its first kilobyte. `visibleFiles` does that for every note it enumerates, on every search, expand and write, so the cost scaled with the vault's total **bytes**: one long reference note made every unrelated call slower. `read-head.ts` reads a bounded prefix instead, preserving the exact string the old expression produced.
+The same reasoning trimmed a second cost. Several call sites inspected only a note's frontmatter — is it private, what is its description, what are its aliases, was it agent-written, which platforms does the calling repo declare — and each read the **whole file** to look at its first kilobyte. `visibleFiles` does that for every note it enumerates, on every search, expand and write, so the cost scaled with the vault's total **bytes**: one long reference note made every unrelated call slower. `read-head.ts` reads a bounded prefix instead, preserving the exact string the old expression produced.
 
 ### The write path
 

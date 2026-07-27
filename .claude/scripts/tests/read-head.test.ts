@@ -1,8 +1,9 @@
 /**
  * Reading only the head of a file.
  *
- * This replaced `readFileSync(f, "utf8").slice(0, n)` on four hot paths, so the
- * bar is EQUIVALENCE, not merely plausibility: every test that matters compares
+ * This replaced `readFileSync(f, "utf8").slice(0, n)` on every hot path that
+ * only wanted frontmatter, so the bar is EQUIVALENCE rather than merely
+ * plausibility: every test that matters compares
  * against what the old expression returned for the same bytes. A prefix that is
  * subtly different would change which notes count as private, what descriptions
  * a listing carries, and which aliases resolve — all silently.
