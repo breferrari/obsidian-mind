@@ -24,6 +24,7 @@ import {
 	allowedSearchPaths,
 	listResources,
 	resolveResourceUri,
+	vaultRelKeyRaw,
 } from "./mcp-exposure.ts";
 import { expandNote } from "./mcp-graph.ts";
 import { qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
@@ -621,15 +622,29 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		"resources/read": async (id, params) => {
 			await session.identityReady();
 			const uri = String((params as { uri?: unknown } | undefined)?.uri ?? "");
-			const full = resolveResourceUri(ctx.vaultRoot, policy, uri);
+
+			// The collection name is passed so a URI read straight out of a `search`
+			// result resolves. See resolveResourceUri for what qmd does to paths.
+			const full = resolveResourceUri(ctx.vaultRoot, policy, uri, ctx.qmdIndex);
 			if (!full) {
 				// Not-found rather than forbidden: to this server, a URI outside
 				// the served set is simply not a resource it has.
 				audit("resource_denied", { uri });
 				return session.fail(id, `no such resource: ${uri}`, -32602);
 			}
-			audit("resource_read", { uri });
-			session.ok(id, { contents: [{ uri, mimeType: "text/markdown", text: readFileSync(full, "utf8") }] });
+
+			// The canonical URI goes back, not the requested one, so a caller that
+			// arrived via a prefixed or slugified path learns the form that works.
+			// vaultRelKeyRaw, not vaultRelKey: the latter normalises case for
+			// comparison, and a URI has to round-trip to a real file.
+			const served = `vault://note/${vaultRelKeyRaw(ctx.vaultRoot, full)
+				.split("/")
+				.map(encodeURIComponent)
+				.join("/")}`;
+			audit("resource_read", served === uri ? { uri } : { uri: served, from: uri });
+			session.ok(id, {
+				contents: [{ uri: served, mimeType: "text/markdown", text: readFileSync(full, "utf8") }],
+			});
 		},
 
 		"prompts/list": (id) => session.ok(id, { prompts: PROMPTS }),

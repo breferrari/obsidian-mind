@@ -339,12 +339,94 @@ export function vaultRelKeyRaw(vaultRoot: string, full: string): string {
  * inside the policy. Anything outside it returns null, which the caller reports
  * as not-found — to this server a URI it does not serve is simply not a
  * resource.
+ *
+ * `collection` is optional, and exists because a path a caller reads out of a
+ * `search` result is not a path this resolver would otherwise accept. qmd reports
+ * paths **prefixed with the collection name** and with **spaces replaced by
+ * dashes**, in directory names as well as filenames. So a note at
+ * `projects/notes/2026-01-02 Some Title.md` comes back as
+ * `myvault/projects/notes/2026-01-02-Some-Title.md`, and pasting that into a
+ * resource URI produced a bare not-found the caller had no way to diagnose.
+ * `expand` already tolerated the prefix, which left this the only surface
+ * rejecting the form the server's own search hands out.
+ *
+ * Three tiers, each ending in the same strict resolver, so exposure, traversal,
+ * extension, never-expose and realpath containment are re-run on whatever comes
+ * out. Nothing is loosened; only the spelling is repaired.
  */
 export function resolveResourceUri(
 	vaultRoot: string,
 	policy: ExposurePolicy,
 	uri: string,
+	collection?: string | null,
 ): string | null {
+	const direct = resolveExactResourceUri(vaultRoot, policy, uri);
+	if (direct) return direct;
+
+	// Tier 2: drop an exactly-matching collection prefix and retry.
+	let bare = String(uri);
+	if (collection) {
+		const prefix = `vault://note/${collection}/`;
+		if (bare.startsWith(prefix)) {
+			bare = `vault://note/${bare.slice(prefix.length)}`;
+			const stripped = resolveExactResourceUri(vaultRoot, policy, bare);
+			if (stripped) return stripped;
+		}
+	}
+
+	// Tier 3: de-slugify against the real tree.
+	const m = bare.match(/^vault:\/\/note\/(.+)$/);
+	if (!m?.[1]) return null;
+	let slug: string;
+	try {
+		slug = m[1]
+			.split("/")
+			.map((s) => decodeURIComponent(s))
+			.join("/");
+	} catch {
+		return null;
+	}
+	if (slug.includes("..") || slug.startsWith("/") || /^[A-Za-z]:/.test(slug)) return null;
+
+	const real = unslugPath(vaultRoot, slug);
+	if (!real) return null;
+	return resolveExactResourceUri(
+		vaultRoot,
+		policy,
+		`vault://note/${real.split("/").map(encodeURIComponent).join("/")}`,
+	);
+}
+
+/**
+ * Walk `slug` against the real tree, accepting a segment whose spaces became
+ * dashes. Returns the true vault-relative path, or null.
+ *
+ * Refuses when a segment is AMBIGUOUS. If both `A B.md` and `A-B.md` exist, the
+ * slug `A-B.md` cannot say which was meant, and guessing would silently serve
+ * the wrong note — worse than a not-found. Bounded work: one `readdir` per
+ * segment, and only after exact resolution has already failed.
+ */
+function unslugPath(vaultRoot: string, slug: string): string | null {
+	const parts = slug.split("/").filter(Boolean);
+	if (!parts.length) return null;
+
+	let acc = "";
+	for (const want of parts) {
+		let entries: string[];
+		try {
+			entries = readdirSync(join(vaultRoot, acc));
+		} catch {
+			return null;
+		}
+		const hits = entries.filter((e) => e === want || e.replace(/ /g, "-") === want);
+		if (hits.length !== 1) return null; // missing, or ambiguous
+		acc = acc ? `${acc}/${hits[0]}` : hits[0]!;
+	}
+	return acc;
+}
+
+/** The strict resolver. `resolveResourceUri` is this plus two repair attempts. */
+function resolveExactResourceUri(vaultRoot: string, policy: ExposurePolicy, uri: string): string | null {
 	const m = String(uri).match(/^vault:\/\/note\/(.+)$/);
 	if (!m?.[1]) return null;
 

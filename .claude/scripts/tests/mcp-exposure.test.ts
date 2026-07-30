@@ -404,6 +404,98 @@ describe("resolving a resource URI", () => {
 		});
 	});
 
+	// qmd reports paths PREFIXED with the collection name and with spaces replaced
+	// by dashes, in directory names as well as filenames. So a path read out of a
+	// `search` result names a file that does not exist, and pasting it into a
+	// resource URI produced a bare not-found. Both repairs re-enter the strict
+	// resolver, so these also pin that nothing was loosened.
+
+	test("a collection-prefixed URI resolves once the collection is known", () => {
+		withVault((dir) => {
+			stocked(dir);
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
+			const uri = listResources(dir, policy).find((r) => r.uri.includes("Gotchas"))!.uri;
+			const prefixed = uri.replace("vault://note/", "vault://note/myvault/");
+
+			assert.equal(resolveResourceUri(dir, policy, prefixed), null, "refused without the collection");
+			assert.equal(
+				resolveResourceUri(dir, policy, prefixed, "myvault"),
+				resolveResourceUri(dir, policy, uri),
+				"same file once the collection is known",
+			);
+		});
+	});
+
+	test("a slugified path resolves back to the real file, directory names included", () => {
+		withVault((dir) => {
+			stocked(dir);
+			put(dir, "reference/Deep Folder/A Long Note.md", NOTE("the real one"));
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain", "reference"] });
+
+			const truth = resolveResourceUri(dir, policy, "vault://note/reference/Deep Folder/A Long Note.md");
+			assert.ok(truth, "sanity: the true path resolves");
+
+			for (const uri of [
+				"vault://note/reference/Deep Folder/A-Long-Note.md",
+				"vault://note/reference/Deep-Folder/A-Long-Note.md",
+				"vault://note/myvault/reference/Deep-Folder/A-Long-Note.md",
+			]) {
+				assert.equal(resolveResourceUri(dir, policy, uri, "myvault"), truth, uri);
+			}
+		});
+	});
+
+	test("an ambiguous slug is refused rather than guessed", () => {
+		withVault((dir) => {
+			// Two sibling directories that slugify to the same thing, with the note in
+			// only one. The exact path cannot resolve, so repair runs and finds the
+			// segment matches both. Serving a note from a directory the caller did not
+			// name would be worse than a not-found.
+			put(dir, "reference/Deep Folder/A Long Note.md", NOTE("the real one"));
+			put(dir, "reference/Deep-Folder/Other Note.md", NOTE("a decoy"));
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["reference"] });
+
+			assert.equal(
+				resolveResourceUri(dir, policy, "vault://note/reference/Deep-Folder/A-Long-Note.md", "myvault"),
+				null,
+				"ambiguous directory segment must not be guessed",
+			);
+			assert.ok(
+				resolveResourceUri(dir, policy, "vault://note/reference/Deep Folder/A-Long-Note.md", "myvault"),
+				"unambiguous repair still works",
+			);
+		});
+	});
+
+	test("repair loosens nothing: scope, traversal and never-expose still decide", () => {
+		withVault((dir) => {
+			stocked(dir);
+			put(dir, "work/1-1/Some Person.md", NOTE("a 1:1 note"));
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
+
+			for (const uri of [
+				// out of scope, reached by slug and by prefix
+				"vault://note/work/1-1/Some-Person.md",
+				"vault://note/myvault/work/1-1/Some-Person.md",
+				"vault://note/myvault/work/1-1/Some Person.md",
+				// traversal, behind both repairs
+				"vault://note/myvault/brain/../work/1-1/Some-Person.md",
+				// only the exact collection name is stripped, and only once
+				"vault://note/other/brain/Gotchas.md",
+				"vault://note/myvault/myvault/brain/Gotchas.md",
+			]) {
+				assert.equal(resolveResourceUri(dir, policy, uri, "myvault"), null, uri);
+			}
+
+			// A never-expose note stays refused when reached by its slug.
+			assert.equal(
+				resolveResourceUri(dir, policy, "vault://note/brain/Private-Thing.md", "myvault"),
+				null,
+				"private note refused via slug",
+			);
+		});
+	});
+
 	test("a URI naming an out-of-scope note is refused even though it is well-formed", () => {
 		withVault((dir) => {
 			stocked(dir);
