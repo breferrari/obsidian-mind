@@ -482,16 +482,46 @@ export function parseMemoryRoot(manifestJson: string | null): string {
 }
 
 /**
- * Captures awaiting promotion. Two deliberate differences from the meetings
+ * A capture already promoted into `brain/`, and kept on purpose.
+ *
+ * THE FLAG HAS TO BE ABLE TO REACH ZERO. Promotion is **additive**: the entry
+ * stays, because `recall` reads only the memory root and never `brain/`, so
+ * deleting it would take the lesson away from every repo that cannot read
+ * `brain/` at all. Counting every file therefore counts a number that only ever
+ * grows, and a flag that cannot clear by doing the correct thing is precisely
+ * the permanently-unclearable failure #155 already fixed once for the meetings
+ * inbox.
+ *
+ * So promotion is recorded on the entry and a recorded entry stops being
+ * pressure. This is the only edit a tool may make to a capture: the body, the
+ * declared reach and the confidence are never touched.
+ */
+function isPromoted(root: string, rel: string): boolean {
+	let head: string;
+	try {
+		head = readFileSync(join(root, rel), "utf-8").slice(0, 2_000);
+	} catch {
+		return false;
+	}
+	const fm = head.match(/^---\n([\s\S]*?)\n---/);
+	return fm ? /^promoted:\s*\S/m.test(fm[1] ?? "") : false;
+}
+
+/**
+ * Captures awaiting review. Three deliberate differences from the meetings
  * inbox above.
  *
- * **No age threshold.** A capture is undrained because nobody has judged it
+ * **No age threshold.** A capture is unreviewed because nobody has judged it
  * yet, and that is true the moment it lands. Waiting for it to go stale is how
  * a real inbox reached eighteen entries in a single day with nothing saying so.
  *
  * **Recursive.** The server writes `<root>/<YYYY>/<MM>/<title>.md`, so a flat
  * listing of the root finds nothing at all and is indistinguishable from a
  * drained inbox. `walkMarkdown` already handles this.
+ *
+ * **Promotion-aware**, for the reason in `isPromoted`: without it the count can
+ * never fall, because the correct way to drain this inbox leaves every file
+ * exactly where it is.
  */
 function findMemoryInbox(root: string, relDir: string, nowMs: number): InboxPressure | null {
 	let count = 0;
@@ -500,6 +530,7 @@ function findMemoryInbox(root: string, relDir: string, nowMs: number): InboxPres
 		// Same reasoning as the meetings scaffold (#155): a shipped README is not
 		// a capture, and counting it makes the flag permanently unclearable.
 		if (/\/readme\.md$/i.test(rel)) continue;
+		if (isPromoted(root, rel)) continue;
 		let mtimeMs: number;
 		try {
 			mtimeMs = statSync(join(root, rel)).mtimeMs;
@@ -644,7 +675,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (memoryInbox !== null) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			`⚠️  ${memoryInbox.count} cross-repo memory capture(s) awaiting review (oldest ${memoryInbox.oldestDays}d). If you promote one into brain/, COPY it and leave the entry: recall reads only the memory root, so removing it takes the lesson away from every repo that cannot read brain/ at all.`,
+			`⚠️  ${memoryInbox.count} cross-repo memory capture(s) awaiting review (oldest ${memoryInbox.oldestDays}d). Promote a durable one by COPYING it into the right brain/ note and adding \`promoted: <note>\` to the capture's frontmatter — the entry stays, because recall reads only the memory root and deleting it takes the lesson away from every repo that cannot read brain/ at all. The marker is what lets this count fall.`,
 		);
 	}
 

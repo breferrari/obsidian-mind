@@ -308,6 +308,43 @@ describe("scanActiveHygiene — detectors", () => {
 		}
 	});
 
+	// The flag has to be able to reach zero. Promotion is additive, so the entry
+	// stays; without a marker the count could only ever grow, which is the
+	// permanently-unclearable failure #155 already fixed once.
+	test("a promoted capture stops counting, so the flag can clear", () => {
+		const solo = mkdtempSync(join(tmpdir(), "active-hygiene-memories-promoted-"));
+		try {
+			mkdirSync(join(solo, "memories/2026/07"), { recursive: true });
+			const rel = "memories/2026/07/a lesson.md";
+			writeFileSync(join(solo, rel), "---\nscope: general\n---\n\n# a lesson\n");
+			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox?.count, 1);
+
+			writeFileSync(
+				join(solo, rel),
+				'---\nscope: general\npromoted: "brain/Gotchas"\n---\n\n# a lesson\n',
+			);
+			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox, null);
+		} finally {
+			rmSync(solo, { recursive: true, force: true });
+		}
+	});
+
+	test("an empty or misplaced promoted marker does not silence a capture", () => {
+		const solo = mkdtempSync(join(tmpdir(), "active-hygiene-memories-badmark-"));
+		try {
+			mkdirSync(join(solo, "memories/2026/07"), { recursive: true });
+			// A bare key with no value is not a promotion record and must not hide
+			// a capture from review.
+			writeFileSync(join(solo, "memories/2026/07/x.md"), "---\npromoted:\n---\n\n# x\n");
+			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox?.count, 1);
+			// Nor may the word appearing in the BODY rather than the frontmatter.
+			writeFileSync(join(solo, "memories/2026/07/y.md"), "# y\n\npromoted: brain/Thing\n");
+			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox?.count, 2);
+		} finally {
+			rmSync(solo, { recursive: true, force: true });
+		}
+	});
+
 	test("the memory-inbox line says COPY, never delete", () => {
 		const lines = formatActiveHygiene({
 			completedInActive: [],
@@ -318,7 +355,8 @@ describe("scanActiveHygiene — detectors", () => {
 			memoryInbox: { count: 4, oldestDays: 2 },
 		});
 		const text = lines.join("\n");
-		assert.match(text, /COPY it and leave the entry/);
+		assert.match(text, /COPYING it/);
+		assert.match(text, /promoted: <note>/);
 		assert.doesNotMatch(text, /om-intake/);
 	});
 
