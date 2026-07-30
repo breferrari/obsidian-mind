@@ -304,6 +304,14 @@ Consult the record before changing:
 If that record and this repo disagree, the record holds the *why*. Reconcile
 before changing behaviour.
 
+**Say what came back, in whatever you write before implementing:** a plan, a
+design note, an issue comment. Name the recorded decisions the work rests on,
+anything you found that argues *against* the approach, and an explicit "nothing
+recorded on this" when the record is empty, which is a finding rather than a
+blank to skip. Consulting once at the start of a task is consulting at the
+moment you know least about what you will need; writing the result down moves it
+to the moment you commit, while a contradiction is still free to fix.
+
 ## Recording what you learn
 
 Two tools, and picking the wrong one is the common mistake. The test is whether
@@ -324,6 +332,8 @@ true.
 ```
 
 **Three to five triggers, and name specific nouns.** `Consult it before changing the storage format, ID semantics, or the CLI surface` works. `Check the vault for context` is exactly the advisory phrasing that gets skipped, because it gives the model nothing to match against the task in front of it.
+
+**Anchor the consultation to an artifact, not to a moment.** "Consult before changing X" fires once, at the start of a task, which is when the session knows least about what it will need. Requiring the *result* to appear in whatever the project writes before implementing turns consultation from something a session intends to do into something an artifact is incomplete without. Measured across a day of real use: captures ran roughly four times heavier than consultations, because `remember` fires on an **event** (you just learned something) while consulting fires on **intention**. Event-triggered behaviour happens; intention-triggered behaviour decays.
 
 > [!TIP]
 > **Do not lead with `recall`.** It returns *memories*, and the store is empty on a project's first session **by construction**: `remember` refuses when called from inside the vault, since a memory written there would be scoped to the vault and reach nobody. So memories only ever arrive from outside. A snippet that promises `recall` will return this project's decisions therefore returns nothing on the first run, and fails **silently as "no results"** rather than as an error.
