@@ -59,6 +59,7 @@ import {
 } from "./lib/qmd.ts";
 import {
 	formatActiveHygiene,
+	parseMemoryRoot,
 	parseOpenLoopConfig,
 	scanActiveHygiene,
 } from "./lib/active-hygiene.ts";
@@ -606,6 +607,7 @@ const hygieneLines = formatActiveHygiene(
 		Date.now(),
 		parseOpenLoopConfig(manifestJson),
 		infraRootFilenames,
+		parseMemoryRoot(manifestJson),
 	),
 );
 if (hygieneLines.length > 0) {

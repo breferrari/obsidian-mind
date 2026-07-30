@@ -105,6 +105,7 @@ export type ActiveHygieneReport = {
 	readonly oversizedNotes: readonly OversizedNote[];
 	readonly openLoops: readonly OpenLoop[];
 	readonly inboxPressure: InboxPressure | null;
+	readonly memoryInbox: InboxPressure | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -453,6 +454,66 @@ function findInboxPressure(root: string, nowMs: number): InboxPressure | null {
 }
 
 // ---------------------------------------------------------------------------
+// Cross-repo memory inbox (#171). `memories/YYYY/MM/` is written by the MCP
+// server on behalf of sessions in OTHER repos, and nothing has ever surfaced
+// it. The meetings inbox above is watched; this one was not, so it accumulates
+// in silence.
+// ---------------------------------------------------------------------------
+
+const MEMORY_ROOT_DEFAULT = "memories";
+
+/**
+ * Where the server writes cross-repo memories.
+ *
+ * NOT `mcp_inbox`, which is a different key for a different directory: the
+ * fallback where a `record_work` call from a repo with no matching project
+ * folder lands. Conflating the two is what left this unwatched, because the
+ * watched one is empty by design in most vaults.
+ */
+export function parseMemoryRoot(manifestJson: string | null): string {
+	if (manifestJson === null) return MEMORY_ROOT_DEFAULT;
+	try {
+		const declared = (JSON.parse(manifestJson) as Record<string, unknown>)["memory_root"];
+		if (typeof declared === "string" && /^[\w.-]+$/.test(declared)) return declared;
+	} catch {
+		/* malformed manifest → the default */
+	}
+	return MEMORY_ROOT_DEFAULT;
+}
+
+/**
+ * Captures awaiting promotion. Two deliberate differences from the meetings
+ * inbox above.
+ *
+ * **No age threshold.** A capture is undrained because nobody has judged it
+ * yet, and that is true the moment it lands. Waiting for it to go stale is how
+ * a real inbox reached eighteen entries in a single day with nothing saying so.
+ *
+ * **Recursive.** The server writes `<root>/<YYYY>/<MM>/<title>.md`, so a flat
+ * listing of the root finds nothing at all and is indistinguishable from a
+ * drained inbox. `walkMarkdown` already handles this.
+ */
+function findMemoryInbox(root: string, relDir: string, nowMs: number): InboxPressure | null {
+	let count = 0;
+	let oldestDays = 0;
+	for (const rel of walkMarkdown(root, relDir)) {
+		// Same reasoning as the meetings scaffold (#155): a shipped README is not
+		// a capture, and counting it makes the flag permanently unclearable.
+		if (/\/readme\.md$/i.test(rel)) continue;
+		let mtimeMs: number;
+		try {
+			mtimeMs = statSync(join(root, rel)).mtimeMs;
+		} catch {
+			continue;
+		}
+		count++;
+		const ageDays = Math.floor((nowMs - mtimeMs) / 86_400_000);
+		if (ageDays > oldestDays) oldestDays = ageDays;
+	}
+	return count > 0 ? { count, oldestDays } : null;
+}
+
+// ---------------------------------------------------------------------------
 // Write-time detectors — the same logic the scan uses, moved to the moment
 // of write so drift is caught at the keystroke instead of the next session
 // boundary. validate-write.ts calls these.
@@ -496,6 +557,7 @@ export function scanActiveHygiene(
 	nowMs: number = Date.now(),
 	openLoopConfig: OpenLoopConfig = parseOpenLoopConfig(null),
 	infraRootFilenames: readonly string[] = [],
+	memoryRoot: string = MEMORY_ROOT_DEFAULT,
 ): ActiveHygieneReport {
 	return {
 		completedInActive: findCompletedInActive(root),
@@ -503,6 +565,7 @@ export function scanActiveHygiene(
 		oversizedNotes: findOversizedNotes(root, infraRootFilenames),
 		openLoops: findOpenLoops(root, nowMs, openLoopConfig),
 		inboxPressure: findInboxPressure(root, nowMs),
+		memoryInbox: findMemoryInbox(root, memoryRoot, nowMs),
 	};
 }
 
@@ -517,13 +580,15 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		oversizedNotes,
 		openLoops,
 		inboxPressure,
+		memoryInbox,
 	} = report;
 	if (
 		completedInActive.length === 0 &&
 		ungroupedClusters.length === 0 &&
 		oversizedNotes.length === 0 &&
 		openLoops.length === 0 &&
-		inboxPressure === null
+		inboxPressure === null &&
+		memoryInbox === null
 	) {
 		return [];
 	}
@@ -570,6 +635,16 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		if (lines.length > 0) lines.push("");
 		lines.push(
 			`⚠️  ${inboxPressure.count} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days (oldest ${inboxPressure.oldestDays}d) — run /om-intake to drain the inbox.`,
+		);
+	}
+
+	// Count and oldest only, never the file list. This inbox is meant to hold
+	// captures between sessions, so enumerating it every session would train the
+	// reader to skip the whole block.
+	if (memoryInbox !== null) {
+		if (lines.length > 0) lines.push("");
+		lines.push(
+			`⚠️  ${memoryInbox.count} cross-repo memory capture(s) awaiting review (oldest ${memoryInbox.oldestDays}d). If you promote one into brain/, COPY it and leave the entry: recall reads only the memory root, so removing it takes the lesson away from every repo that cannot read brain/ at all.`,
 		);
 	}
 

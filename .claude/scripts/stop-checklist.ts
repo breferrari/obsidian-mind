@@ -19,6 +19,7 @@ import { readStdinJson } from "./lib/hook-io.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 import {
 	formatActiveHygiene,
+	parseMemoryRoot,
 	parseOpenLoopConfig,
 	scanActiveHygiene,
 } from "./lib/active-hygiene.ts";
@@ -66,6 +67,7 @@ const hygieneLines = formatActiveHygiene(
 		Date.now(),
 		parseOpenLoopConfig(manifestJson),
 		parseInfraRootFilenames(manifestJson),
+		parseMemoryRoot(manifestJson),
 	),
 );
 
