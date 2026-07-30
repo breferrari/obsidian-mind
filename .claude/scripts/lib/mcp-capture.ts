@@ -161,6 +161,34 @@ export function resolveDestination(
 	return { dir: join(vaultRoot, fallback), rel: fallback, project: null, routed: "fallback" };
 }
 
+/**
+ * Tool-call framing that a serialization failure can spill into a field value.
+ *
+ * Observed for real: a `record_work` call arrived whose `summary` ended with a
+ * closing tag followed by the entire `changes` array as literal text. The server
+ * accepted it verbatim, so the note carried raw markup, the changes section never
+ * rendered at all, and the corruption was only noticed because a human saw the
+ * tags rendering in Obsidian days later. Every automated signal said success: the
+ * call returned, the file was written, every field was a non-empty string.
+ *
+ * Deliberately narrow. `</summary>` alone is NOT matched, because
+ * `<details><summary>` is legitimate prose and notes routinely fold superseded
+ * plans with it. The three forms below never occur in real writing, so a match is
+ * a structural failure rather than a judgement call. That is why the caller is
+ * refused rather than warned: a field that has swallowed the next field cannot be
+ * repaired by guessing where it ended.
+ */
+const TOOL_MARKUP = /<parameter\s+name=|<\/?(?:antml:)?invoke\b|<\/?(?:antml:)?function_calls\b/i;
+
+/** The fields a malformed call can corrupt, named so the error can say which. */
+export function findToolMarkup(input: Record<string, unknown>): string | null {
+	for (const [key, value] of Object.entries(input)) {
+		const texts = Array.isArray(value) ? value.map((v) => String(v)) : [String(value ?? "")];
+		if (texts.some((t) => TOOL_MARKUP.test(t))) return key;
+	}
+	return null;
+}
+
 /** Render the note body. Pure, so the shape can be asserted without writing. */
 export function renderCapture(
 	input: CaptureInput,

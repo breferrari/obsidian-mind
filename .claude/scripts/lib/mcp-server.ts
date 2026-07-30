@@ -30,7 +30,7 @@ import { expandNote } from "./mcp-graph.ts";
 import { qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
 import { callerProject, callerProjectSource, isVaultItself, PROJECT_MARKER, sumAuditField, sanitize } from "./mcp-caller.ts";
 import { callerPlatforms, digestsFrom, resolvableNames } from "./mcp-memory-bridge.ts";
-import { captureNote } from "./mcp-capture.ts";
+import { captureNote, findToolMarkup } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
 import { recallFrom, readMemories, type MemoryEntry } from "./memory-recall.ts";
@@ -391,6 +391,19 @@ export function createHandlers(deps: ServerDeps): Handlers {
 	}
 
 	function callRecordWork(args: Record<string, unknown>): string {
+		// A field carrying tool-call framing means the call's serialization broke,
+		// not that the author wrote something odd. Refuse: writing it produces a
+		// corrupted note whose damage is invisible until a human reads the rendered
+		// markup, which is exactly how one shipped unnoticed.
+		const corrupted = findToolMarkup(args);
+		if (corrupted) {
+			return [
+				`Refused: the "${corrupted}" field contains tool-call markup, so this call's arguments did not serialize correctly.`,
+				"",
+				"Nothing was written. Re-send with each field as plain prose, and check that",
+				"a long list field was not folded into the preceding string.",
+			].join("\n");
+		}
 		const who = callerProject(session.roots);
 		const resolvable = resolvableNames(visibleFiles(ctx.vaultRoot, policy));
 		let r;
