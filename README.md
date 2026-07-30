@@ -245,23 +245,95 @@ obsidian-mind works with Claude Code, Codex CLI, and Gemini CLI. The vault conve
 
 Your vault normally only helps while you are sitting in it. The **`om` MCP server** changes that: a coding session in *any other repository* can search your notes, read them, follow the graph, and record what it learned back into the vault.
 
+### Step 1 — register the server once, for every repo
+
+```bash
+claude mcp add --scope user om node "/absolute/path/to/your-vault/.claude/scripts/om-mcp.mjs"
+```
+
+User scope is the right default here: it registers in your own config, so the server is available in **every directory on the machine** with nothing added to any repository. No env var is needed either, because the launcher resolves the vault from its own location.
+
+<details>
+<summary>Per-repo alternative, and one trap to avoid</summary>
+
+If you would rather a specific repo carry the wiring (so a teammate gets it on clone), put it in that project's `.mcp.json`:
+
 ```json
 {
   "mcpServers": {
     "om": {
       "command": "node",
-      "args": ["/path/to/your-vault/.claude/scripts/om-mcp.mjs"]
+      "args": ["/absolute/path/to/your-vault/.claude/scripts/om-mcp.mjs"]
     }
   }
 }
 ```
 
-That goes in the **consuming project's** `.mcp.json`. Then add a short section to that project's own `CLAUDE.md` pointing at the vault.
+Note the cost: that path is **absolute and machine-specific**, so committing it breaks every collaborator and every other machine of yours.
+
+**The trap.** Your vault's own `.mcp.json` uses a *relative* path (`node .claude/scripts/om-mcp.mjs`). That is correct in place, and it resolves against the current directory, so it works **only** inside the vault. It looks like a copyable example and it is not one.
+</details>
+
+### Step 2 — point the consuming project at the vault
+
+Add this to that project's own `CLAUDE.md`, filling in the triggers:
+
+```markdown
+## Where design decisions live
+
+Design rationale for this project is recorded outside this repo, reachable
+through the `om` MCP server.
+
+- **`search`** reaches the written record: why a choice was made, what was
+  rejected, what a constraint was set against. **Start here.**
+- **`expand`** shows a known note's links and backlinks, which is cheaper than
+  searching again for its neighbourhood.
+- **`recall`** returns short durable lessons scoped to this project. It is empty
+  until sessions put things in it, so early on it returns nothing, and that is
+  *not* evidence the record is missing.
+- **`health`** when something that should be there cannot be found. Every failure
+  in this layer looks identical from outside (no results), and this tells them
+  apart.
+
+Consult the record before changing:
+
+- <the storage format or schema>
+- <the ID or key semantics>
+- <the public surface: CLI flags, API shape, exported names>
+
+If that record and this repo disagree, the record holds the *why*. Reconcile
+before changing behaviour.
+
+## Recording what you learn
+
+Two tools, and picking the wrong one is the common mistake. The test is whether
+it would help someone working on a **different** project.
+
+- **`remember`** stores a durable lesson: a constraint you discovered, a gotcha
+  that cost time, a rule that generalises. Set `confidence`
+  (`verified` / `inferred` / `unverified`) honestly and supply `verification`
+  when you claim `verified`. For something specific to this project use
+  `scope: "project"` with `projects: ["<this-repo>"]`.
+- **`record_work`** files what happened *here*: changes, decisions and the
+  alternatives rejected, what was learned, what is still open, how it was
+  verified.
+
+A dependency limitation that would bite any project is a `remember`. "Landed the
+watch engine and here is what it cost" is a `record_work`. Do both when both are
+true.
+```
+
+**Three to five triggers, and name specific nouns.** `Consult it before changing the storage format, ID semantics, or the CLI surface` works. `Check the vault for context` is exactly the advisory phrasing that gets skipped, because it gives the model nothing to match against the task in front of it.
+
+> [!TIP]
+> **Do not lead with `recall`.** It returns *memories*, and the store is empty on a project's first session **by construction**: `remember` refuses when called from inside the vault, since a memory written there would be scoped to the vault and reach nobody. So memories only ever arrive from outside. A snippet that promises `recall` will return this project's decisions therefore returns nothing on the first run, and fails **silently as "no results"** rather than as an error.
 
 > [!IMPORTANT]
 > **Both steps are required, and the second is not paperwork.** Measured: with the server wired and no repo-side instruction, a session made **zero** vault calls and implemented a design the vault had recorded as explicitly rejected. With the instruction present, it refused and cited the note.
 >
 > A **prohibition** in the MCP `instructions` field propagates into the calling session reliably. A positive *"go consult the vault"* is advisory and gets skipped whenever a nearer source exists. The server can stop a session doing something; only the project's own law makes one go looking.
+>
+> That asymmetry decides *which side* a rule belongs on, and it matters most for anything you would rather not advertise. Writing "this repo deliberately excludes X" into a **public** repo announces the withholding and points at exactly what is being withheld. The same rule as a prohibition in `instructions` reaches every session invisibly, and the repo says nothing at all. Routing belongs repo-side because it has to; constraints belong server-side because they can.
 
 **What the session gets:** `search` (semantic + keyword), `expand` (a note's links and backlinks), `recall` (durable lessons scoped to that repo), `remember` (record a lesson), `record_work` (file what happened), `reason` (judgement across several notes), and `health` (is the wiring intact?). Plus your notes as readable resources.
 
@@ -274,6 +346,9 @@ That goes in the **consuming project's** `.mcp.json`. Then add a short section t
 **Which notes it serves.** Your vault, your notes, your session — the default is simply what your vault already declares as your content (`user_content_roots`), at the granularity you wrote it (`work/active/`, not all of `work/`). Set `mcp_exposed_roots` in `vault-manifest.json` only if this vault holds material that is **not yours to share** — employer-confidential notes, a client's data. A note tagged `private` is never served, and memories are never served as ordinary notes, since they carry their own scope.
 
 Every read is logged with the calling repo, so "what did that session actually see" is answerable afterwards.
+
+> [!NOTE]
+> **Resource enumeration is a snapshot; reads are live.** `resources/list` reflects the state when the server started, while a `resources/read` of a note created since resolves fine. So a session that enumerates first will not see notes written after it connected, and should not conclude they do not exist. `search` is the reliable discovery path.
 
 > [!NOTE]
 > Keeping vault material out of a public PR is the **contract's** job, not the exposure list's — a session can read your vault directly regardless. The prohibition injected into the calling session is the part that measurably holds.
