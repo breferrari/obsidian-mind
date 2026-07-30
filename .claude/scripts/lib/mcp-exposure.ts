@@ -353,6 +353,14 @@ export function vaultRelKeyRaw(vaultRoot: string, full: string): string {
  * Three tiers, each ending in the same strict resolver, so exposure, traversal,
  * extension, never-expose and realpath containment are re-run on whatever comes
  * out. Nothing is loosened; only the spelling is repaired.
+ *
+ * RETURNS A REALPATH. Every other path in this module is built by joining the
+ * unresolved vault root, so a caller stripping a vault-root prefix from THIS
+ * return value must strip with the RESOLVED root. On macOS `/var` is
+ * `/private/var`, the prefix does not match, and `vaultRelKeyRaw` hands back an
+ * absolute filesystem path rather than a relative one — which is how a local
+ * path reached a `vault://note/...` URI during this change. Caught by macOS CI;
+ * it cannot reproduce on Windows or Linux.
  */
 export function resolveResourceUri(
 	vaultRoot: string,
