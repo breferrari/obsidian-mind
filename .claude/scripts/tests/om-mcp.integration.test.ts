@@ -74,6 +74,12 @@ before(async () => {
 	put("brain/Gotchas.md", '---\ndate: 2026-07-26\ndescription: "things that bit us"\n---\n\n# Gotchas\n\nSee [[Patterns]].\n');
 	put("brain/Patterns.md", '---\ndate: 2026-07-26\ndescription: "how we do things"\n---\n\n# Patterns\n\nRelated: [[Gotchas]].\n');
 	put("reference/Arch.md", '---\ndate: 2026-07-26\ndescription: "architecture"\n---\n\n# Arch\n');
+	// A spaced filename, because that is what qmd slugifies and therefore the only
+	// fixture that exercises the resource-URI repair end to end.
+	put(
+		"reference/Design Notes.md",
+		'---\ndate: 2026-07-26\ndescription: "design notes"\n---\n\n# Design Notes\n',
+	);
 	put("work/Secret.md", '---\ndate: 2026-07-26\ndescription: "CONFIDENTIAL"\n---\n\n# Secret\n');
 	put("work/atlas.md", "---\ndate: 2026-07-26\nplatforms: [ios]\n---\n\n# atlas\n");
 
@@ -162,7 +168,7 @@ describe("the om server on the wire", () => {
 	test("the resource listing honours the policy — work/ never appears", async () => {
 		const r = await call("resources/list");
 		const uris = ((r.result?.resources ?? []) as { uri: string }[]).map((x) => x.uri);
-		assert.equal(uris.length, 3);
+		assert.equal(uris.length, 4); // brain x2, reference x2
 		assert.ok(!uris.some((u) => u.toLowerCase().includes("work")), uris.join(" "));
 		assert.ok(!uris.some((u) => u.toLowerCase().includes("secret")), uris.join(" "));
 	});
@@ -171,6 +177,51 @@ describe("the om server on the wire", () => {
 		const r = await call("resources/read", { uri: "vault://note/brain/Gotchas.md" });
 		const contents = (r.result?.contents ?? []) as { text?: string }[];
 		assert.match(String(contents[0]?.text), /# Gotchas/);
+	});
+
+	// A URI minted by `resources/list` must survive a round trip unchanged.
+	// `resources/read` returns the CANONICAL uri rather than echoing the request,
+	// so if the two ever encoded differently every read would silently hand back a
+	// uri the caller did not ask for. They are built the same way today; this is
+	// what keeps that true.
+	test("a listed URI reads back with the same URI", async () => {
+		const list = await call("resources/list");
+		const uri = ((list.result?.resources ?? []) as { uri: string }[]).find((x) =>
+			x.uri.includes("Design"),
+		)!.uri;
+		assert.match(uri, /%20/, "sanity: the listed uri is percent-encoded");
+
+		const r = await call("resources/read", { uri });
+		const contents = (r.result?.contents ?? []) as { uri?: string; text?: string }[];
+		assert.equal(contents[0]?.uri, uri, "the uri came back unchanged");
+		assert.match(String(contents[0]?.text), /# Design Notes/);
+	});
+
+	// qmd reports paths PREFIXED with the collection name and with spaces turned
+	// into dashes. Both forms are unit-tested against the resolver directly; these
+	// two go over the wire, because the resolver could be perfect while the server
+	// forgot to pass the collection through — every unit test would still pass and
+	// the feature would be dead in production.
+	test("a collection-prefixed URI resolves, so the collection reaches the resolver", async () => {
+		const r = await call("resources/read", {
+			uri: "vault://note/om-int-test/reference/Design%20Notes.md",
+		});
+		const contents = (r.result?.contents ?? []) as { uri?: string; text?: string }[];
+		assert.match(String(contents[0]?.text), /# Design Notes/, JSON.stringify(r.error ?? {}));
+		assert.equal(contents[0]?.uri, "vault://note/reference/Design%20Notes.md", "canonical uri returned");
+	});
+
+	test("a slugified URI resolves and comes back canonical", async () => {
+		const r = await call("resources/read", {
+			uri: "vault://note/om-int-test/reference/Design-Notes.md",
+		});
+		const contents = (r.result?.contents ?? []) as { uri?: string; text?: string }[];
+		assert.match(String(contents[0]?.text), /# Design Notes/, JSON.stringify(r.error ?? {}));
+		assert.equal(
+			contents[0]?.uri,
+			"vault://note/reference/Design%20Notes.md",
+			"the caller learns the uri that works directly",
+		);
 	});
 
 	test("an unserved note is refused, and the error keeps the URI intact", async () => {
