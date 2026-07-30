@@ -271,7 +271,7 @@ If you would rather a specific repo carry the wiring (so a teammate gets it on c
 
 Note the cost: that path is **absolute and machine-specific**, so committing it breaks every collaborator and every other machine of yours.
 
-**The trap.** Your vault's own `.mcp.json` uses a *relative* path (`node .claude/scripts/om-mcp.mjs`). That is correct in place, and it resolves against the current directory, so it works **only** inside the vault. It looks like a copyable example and it is not one.
+**Use an absolute path, and do not copy the relative one.** This vault's own `.mcp.json` registers `qmd` with a *relative* path (`.claude/scripts/qmd-mcp.mjs`). That is correct there, because a relative path resolves against the current working directory and a session in the vault is already in it. Reused for `om` in a consuming project, the same shape silently resolves against *that* project instead, and the server never starts.
 </details>
 
 ### Step 2 — point the consuming project at the vault
@@ -346,9 +346,6 @@ true.
 **Which notes it serves.** Your vault, your notes, your session — the default is simply what your vault already declares as your content (`user_content_roots`), at the granularity you wrote it (`work/active/`, not all of `work/`). Set `mcp_exposed_roots` in `vault-manifest.json` only if this vault holds material that is **not yours to share** — employer-confidential notes, a client's data. A note tagged `private` is never served, and memories are never served as ordinary notes, since they carry their own scope.
 
 Every read is logged with the calling repo, so "what did that session actually see" is answerable afterwards.
-
-> [!NOTE]
-> **Resource enumeration is a snapshot; reads are live.** `resources/list` reflects the state when the server started, while a `resources/read` of a note created since resolves fine. So a session that enumerates first will not see notes written after it connected, and should not conclude they do not exist. `search` is the reliable discovery path.
 
 > [!NOTE]
 > Keeping vault material out of a public PR is the **contract's** job, not the exposure list's — a session can read your vault directly regardless. The prohibition injected into the calling session is the part that measurably holds.
