@@ -306,6 +306,21 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			].join("\n");
 		}
 
+		// Same refusal as `record_work`, and it matters MORE here. A corrupted work
+		// note damages one project's record; a corrupted memory is served to every
+		// other repo through `recall`, so the damage travels. Checked before
+		// wikilink neutralisation, because a field that has swallowed the following
+		// field is not text worth cleaning up.
+		const corruptedMemory = findToolMarkup(args);
+		if (corruptedMemory) {
+			return [
+				`Refused: the "${corruptedMemory}" field contains tool-call markup, so this call's arguments did not serialize correctly.`,
+				"",
+				"Nothing was written. Re-send with each field as plain prose, and check that",
+				"a long list field was not folded into the preceding string.",
+			].join("\n");
+		}
+
 		const who = caller();
 		const resolvable = resolvableNames(visibleFiles(ctx.vaultRoot, policy));
 

@@ -64,4 +64,15 @@ describe("detecting a serialization failure in a capture field", () => {
 		});
 		assert.equal(found, "summary");
 	});
+
+	// `remember` shares the write path and the failure mode, and its blast radius
+	// is larger: a corrupted work note damages one project's record, while a
+	// corrupted memory is served to every other repo through `recall`.
+	test("a memory's fields are checked the same way, body included", () => {
+		const body = [
+			"The retry budget is per-attempt, not per-call.</summary>",
+			'<parameter name="verification">["ran the suite"]',
+		].join("\n");
+		assert.equal(findToolMarkup({ title: "retries", body }), "body");
+	});
 });
