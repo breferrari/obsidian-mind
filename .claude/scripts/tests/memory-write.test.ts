@@ -281,6 +281,29 @@ describe("epistemic contract", () => {
 		assert.ok(r.warnings.some((w) => /verified/i.test(w)));
 	});
 
+	test("general without generality warns but does not block", () => {
+		const r = validateMemory({ ...OK, scope: "general" }, ctx);
+		assert.equal(r.ok, true);
+		assert.ok(r.warnings.some((w) => /generality/i.test(w)));
+	});
+
+	test("a supplied generality silences the warning and is carried onto the value", () => {
+		const r = validateMemory({ ...OK, scope: "general", generality: "true of any language with a module system" }, ctx);
+		assert.equal(r.ok, true);
+		assert.ok(!r.warnings.some((w) => /generality/i.test(w)));
+		assert.match(String(r.value?.generality), /module system/);
+	});
+
+	// The warning keys on the NARROWED scope. A caller who claims `general` and
+	// names projects has been downgraded to `project` by their own admission, so
+	// asking them to justify a reach they did not end up claiming is noise.
+	test("general downgraded to project by named projects does not warn about generality", () => {
+		const r = validateMemory({ ...OK, scope: "general", projects: ["alpha"] }, ctx);
+		assert.equal(r.ok, true);
+		assert.equal(r.value?.scope, "project");
+		assert.ok(!r.warnings.some((w) => /generality/i.test(w)));
+	});
+
 	test("an oversized body warns about atomicity rather than failing", () => {
 		const r = validateMemory({ ...OK, body: "x. ".repeat(5000) }, ctx);
 		assert.equal(r.ok, true);

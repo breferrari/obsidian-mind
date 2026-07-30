@@ -313,7 +313,11 @@ it would help someone working on a **different** project.
   that cost time, a rule that generalises. Set `confidence`
   (`verified` / `inferred` / `unverified`) honestly and supply `verification`
   when you claim `verified`. For something specific to this project use
-  `scope: "project"` with `projects: ["<this-repo>"]`.
+  `scope: "project"` with `projects: ["<this-repo>"]`. Reach for
+  `scope: "platform"` before `"general"`: a dependency's quirk or a language's
+  rule is platform-level however hard-won, and `general` claims it would help
+  someone whose stack shares nothing with yours. When you do claim `general`,
+  supply `generality` saying why, the same way `verification` backs `verified`.
 - **`record_work`** files what happened *here*: changes, decisions and the
   alternatives rejected, what was learned, what is still open, how it was
   verified.

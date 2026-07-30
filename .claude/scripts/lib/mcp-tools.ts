@@ -191,7 +191,12 @@ export const TOOLS: readonly ToolDef[] = [
 					type: "string",
 					enum: ["general", "platform", "project"],
 					description:
-						"How far this reaches. 'project' = only projects you name. 'platform' = anything on the same platform. 'general' = everywhere, and it will be narrowed if you name projects.",
+						"How far this reaches. 'project' = only projects you name. 'platform' = anything on the same platform. 'general' = everywhere, and it will be narrowed if you name projects. Reach for 'platform' before 'general': a dependency's quirk, a language's rule or a toolchain's behaviour is 'platform', however hard-won. 'general' means it would help someone whose stack shares nothing with yours.",
+				},
+				generality: {
+					type: "string",
+					description:
+						"Why this reaches everywhere. Required in spirit whenever scope is 'general', the same way verification is for 'verified'.",
 				},
 				projects: {
 					type: "array",

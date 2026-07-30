@@ -59,6 +59,7 @@ export interface MemoryInput {
 	readonly confidence?: unknown;
 	readonly verification?: unknown;
 	readonly scope?: unknown;
+	readonly generality?: unknown;
 	readonly projects?: unknown;
 	readonly platforms?: unknown;
 }
@@ -70,6 +71,7 @@ export interface MemoryValue {
 	readonly claimed_confidence: Confidence | null;
 	readonly flags: string[];
 	readonly verification: string | null;
+	readonly generality: string | null;
 	readonly scope: Scope;
 	readonly projects: string[];
 	readonly platforms: string[];
@@ -467,6 +469,23 @@ export function validateMemory(
 		};
 	}
 
+	// OVER-CLAIMED REACH IS ANSWERED HERE, AND ONLY HERE.
+	//
+	// Sibling of the `verified`-without-`verification` warning above, and the same
+	// severity on purpose. Narrowing `general` by inspecting content was tried and
+	// reverted (see `narrowScope`): declared reach is the caller's to declare, and
+	// over-claiming is answered by warnings and by `origin` as evidence, never by
+	// rewriting what the caller said. This asks for the reasoning instead.
+	//
+	// Keyed on the NARROWED scope, not the claimed one. A caller who says
+	// `general` and names projects has already been downgraded to `project` by
+	// their own admission, and warning them about generality would be noise.
+	if (narrowed.scope === "general" && !input?.generality) {
+		warnings.push(
+			'scope is "general" but no generality was given. Say why it reaches everywhere: a dependency, language or toolchain lesson is "platform", however hard-won.',
+		);
+	}
+
 	const capped = flags.length && confidence === "verified";
 	return {
 		ok: true,
@@ -482,6 +501,7 @@ export function validateMemory(
 			claimed_confidence: capped ? "verified" : null,
 			flags: flags.map((f) => f.marker),
 			verification: input?.verification ? String(input.verification).trim() : null,
+			generality: input?.generality ? String(input.generality).trim() : null,
 			scope: narrowed.scope,
 			projects: narrowed.projects,
 			platforms: platformsGiven,
@@ -545,6 +565,9 @@ export function renderMemory(value: MemoryValue, links: readonly string[] = []):
 
 	const parts = [fm.join("\n"), `# ${value.title}`, "", value.body, ""];
 	if (value.verification) parts.push("## How this is known", "", value.verification, "");
+	// Rendered rather than kept in frontmatter: a reach claim is an argument, and a
+	// later reader has to be able to judge it the same way they judge the evidence.
+	if (value.generality) parts.push("## Why this reaches everywhere", "", value.generality, "");
 	// A note without links is a bug — the vault's own doctrine. Links are the only
 	// way a memory reaches the project it is about, since it does not live inside
 	// that project's folder.
