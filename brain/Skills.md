@@ -126,7 +126,7 @@ SessionStart hook runs `qmd --index <name> update` automatically, reading the in
 |------|---------|
 | `search` | semantic + keyword over the notes this vault serves |
 | `expand` | a note's links out and backlinks |
-| `recall` | durable lessons scoped to the calling repo, most specific first; `explain: true` reports what was withheld and why |
+| `recall` | durable lessons scoped to the calling repo, most specific first; `explain: true` reports what was withheld and why. A capture whose `promoted:` marker carries an anchor serves the promoted `brain/` block instead of the capture body, so you read the corrected version |
 | `remember` | record a lesson that generalises beyond this repo |
 | `record_work` | record what happened here, filed where it belongs |
 | `reason` | judgement across several notes, by reading the vault with a second Claude session |

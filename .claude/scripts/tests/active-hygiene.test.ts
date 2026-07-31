@@ -356,7 +356,11 @@ describe("scanActiveHygiene — detectors", () => {
 		});
 		const text = lines.join("\n");
 		assert.match(text, /COPYING it/);
-		assert.match(text, /promoted: <note>/);
+		// The ANCHORED form is what the prompt must teach: a bare marker clears
+		// this very count while serving nothing, so a warning that showed only
+		// the bare form would be steering the reader to the useless one.
+		assert.match(text, /promoted: "brain\/Note#\^om-a1b2c3"/);
+		assert.match(text, /a bare `promoted: <note>` clears this count but serves nothing/);
 		assert.doesNotMatch(text, /om-intake/);
 	});
 

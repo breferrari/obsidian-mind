@@ -80,6 +80,17 @@ before(async () => {
 		"reference/Design Notes.md",
 		'---\ndate: 2026-07-26\ndescription: "design notes"\n---\n\n# Design Notes\n',
 	);
+	// A promoted lesson, anchored, in an EXPOSED root — plus a corrected twin in
+	// an UNEXPOSED one, so the policy gate is exercised over the wire rather
+	// than only in the unit suite.
+	put(
+		"brain/Gotchas - Promoted.md",
+		'---\ndate: 2026-07-26\ndescription: "promoted lessons"\n---\n\n' +
+			"# Gotchas - Promoted\n\n" +
+			"- **The corrected version.** Swept after a later measurement proved the first wording wrong. ^om-corrected\n" +
+			"- **Another entry.** Unrelated to the one above.\n",
+	);
+	put("work/Confidential Promoted.md", "# Confidential\n\n- **Must not travel.** Private. ^om-private\n");
 	put("work/Secret.md", '---\ndate: 2026-07-26\ndescription: "CONFIDENTIAL"\n---\n\n# Secret\n');
 	put("work/atlas.md", "---\ndate: 2026-07-26\nplatforms: [ios]\n---\n\n# atlas\n");
 
@@ -168,9 +179,13 @@ describe("the om server on the wire", () => {
 	test("the resource listing honours the policy — work/ never appears", async () => {
 		const r = await call("resources/list");
 		const uris = ((r.result?.resources ?? []) as { uri: string }[]).map((x) => x.uri);
-		assert.equal(uris.length, 4); // brain x2, reference x2
+		assert.equal(uris.length, 5); // brain x3, reference x2
 		assert.ok(!uris.some((u) => u.toLowerCase().includes("work")), uris.join(" "));
 		assert.ok(!uris.some((u) => u.toLowerCase().includes("secret")), uris.join(" "));
+		// The promoted-target fixture in work/ is the one that matters here: it is
+		// reachable through a `promoted:` marker, and it must still be absent from
+		// every enumerating surface.
+		assert.ok(!uris.some((u) => u.toLowerCase().includes("confidential")), uris.join(" "));
 	});
 
 	test("an exposed note reads back", async () => {
@@ -361,6 +376,141 @@ describe("the om server on the wire", () => {
 			},
 		});
 		assert.match(textOf(dup), /near-identical memory already exists/);
+	});
+
+	/**
+	 * Promotion, over the wire.
+	 *
+	 * The unit suite proves the resolver. What only a live server proves is that
+	 * a foreign caller actually RECEIVES the corrected text — the surface a
+	 * promoted lesson is otherwise invisible on — and that the exposure policy
+	 * still holds when the read crosses out of the memory root for the first
+	 * time.
+	 */
+	describe("a promoted memory", () => {
+		const memory = (name: string, promoted: string, body: string): void =>
+			put(
+				`memories/2026/07/${name}.md`,
+				"---\n" +
+					`description: "${body}"\n` +
+					"tags: [memory]\n" +
+					"source: mcp-capture\n" +
+					`origin: "${CALLER}"\n` +
+					"scope: project\n" +
+					`projects: [${CALLER}]\n` +
+					"confidence: verified\n" +
+					`promoted: "${promoted}"\n` +
+					"---\n\n" +
+					`# ${name}\n\n${body}\n`,
+			);
+
+		test("the corrected text is served instead of the capture as first written", async () => {
+			memory("anchored-lesson", "brain/Gotchas - Promoted#^om-corrected", "THE STALE ORIGINAL WORDING");
+			const t = textOf(await call("tools/call", { name: "recall", arguments: { limit: 50 } }));
+			assert.match(t, /Swept after a later measurement/, "the promoted text must reach the caller");
+			assert.doesNotMatch(t, /THE STALE ORIGINAL WORDING/, "the superseded capture body must not be shown");
+			assert.match(t, /promoted text from brain\/Gotchas - Promoted\.md#\^om-corrected/);
+		});
+
+		test("a target outside the exposed roots is named but its content never travels", async () => {
+			memory("unexposed-lesson", "work/Confidential Promoted#^om-private", "CAPTURE BODY FOR UNEXPOSED");
+			const t = textOf(await call("tools/call", { name: "recall", arguments: { limit: 50 } }));
+			assert.doesNotMatch(t, /Must not travel/, "content outside the exposed roots must never be served");
+			assert.match(t, /outside the exposed roots/);
+			assert.match(t, /CAPTURE BODY FOR UNEXPOSED/, "the capture is still served");
+		});
+
+		test("a bare marker keeps the pre-existing behaviour", async () => {
+			memory("bare-marker", "brain/Gotchas - Promoted", "CAPTURE BODY FOR BARE");
+			const t = textOf(await call("tools/call", { name: "recall", arguments: { limit: 50 } }));
+			assert.match(t, /CAPTURE BODY FOR BARE/);
+			assert.match(t, /no anchor; capture body shown/);
+			assert.doesNotMatch(t, /Another entry\./, "a bare marker must not widen to the whole note");
+		});
+
+		test("a stale anchor degrades to the capture and says so", async () => {
+			memory("stale-anchor", "brain/Gotchas - Promoted#^om-gone", "CAPTURE BODY FOR STALE");
+			const t = textOf(await call("tools/call", { name: "recall", arguments: { limit: 50 } }));
+			assert.match(t, /CAPTURE BODY FOR STALE/);
+			assert.match(t, /anchor \^om-gone STALE/);
+			assert.doesNotMatch(t, /Another entry\./);
+		});
+
+		/**
+		 * The shapes that were served WRONG before the segmenter, over the wire.
+		 *
+		 * Each of these returned something a reader would not call the promoted
+		 * entry, while reporting success. They are here rather than only in the
+		 * unit suite because the property is what a foreign session RECEIVES.
+		 */
+		test("a multi-line bullet anchored at its end serves the whole bullet", async () => {
+			const N = String.fromCharCode(10);
+			put(
+				"brain/Multi.md",
+				"# M" + N + N + "- **The lesson subject.** First line of it." + N + "  and the second line that completes it. ^om-multi" + N,
+			);
+			memory("multiline-block", "brain/Multi#^om-multi", "STALE CAPTURE BODY");
+			const t = textOf(await call("tools/call", { name: "recall", arguments: { limit: 60 } }));
+			assert.match(t, /The lesson subject/, "the bullet's own subject must survive");
+			assert.match(t, /second line that completes it/);
+			assert.doesNotMatch(t, /STALE CAPTURE BODY/);
+			assert.doesNotMatch(t, /TRUNCATED/, "two of two lines is not a truncation");
+		});
+
+		test("an ordered-list item serves itself and not its siblings", async () => {
+			const N = String.fromCharCode(10);
+			put(
+				"brain/Ordered.md",
+				"# O" + N + N + "1. First lesson." + N + "2. Second lesson. ^om-two" + N + "3. Third lesson." + N + "4. Fourth lesson." + N,
+			);
+			memory("ordered-block", "brain/Ordered#^om-two", "CAPTURE FOR ORDERED");
+			const t = textOf(await call("tools/call", { name: "recall", arguments: { limit: 60 } }));
+			assert.match(t, /Second lesson/);
+			assert.doesNotMatch(t, /Third lesson/, "a sibling item is a different lesson");
+			assert.doesNotMatch(t, /Fourth lesson/);
+		});
+
+		test("an indented alone-id serves the paragraph above it, not the text below", async () => {
+			const N = String.fromCharCode(10);
+			put(
+				"brain/Indent.md",
+				"# I" + N + N + "  THE PROMOTED LESSON, corrected." + N + "  ^om-ind" + N + "  AN UNRELATED PARAGRAPH." + N,
+			);
+			memory("indented-alone", "brain/Indent#^om-ind", "CAPTURE FOR INDENT");
+			const t = textOf(await call("tools/call", { name: "recall", arguments: { limit: 60 } }));
+			assert.match(t, /THE PROMOTED LESSON/);
+			assert.doesNotMatch(t, /AN UNRELATED PARAGRAPH/);
+		});
+
+		test("a documentation decoy inside a fence never wins", async () => {
+			const N = String.fromCharCode(10);
+			put(
+				"brain/Decoy.md",
+				"# D" + N + N + "```md" + N + "- DOC EXAMPLE ^om-dec" + N + "```" + N + N + "- **The real entry.** ^om-dec" + N,
+			);
+			memory("fence-decoy", "brain/Decoy#^om-dec", "CAPTURE FOR DECOY");
+			const t = textOf(await call("tools/call", { name: "recall", arguments: { limit: 60 } }));
+			assert.match(t, /The real entry/);
+			assert.doesNotMatch(t, /DOC EXAMPLE/);
+		});
+
+		test("under load: many promoted memories stay correct and bounded", async () => {
+			for (let i = 0; i < 120; i++) {
+				memory(`bulk-${i}`, "brain/Gotchas - Promoted#^om-corrected", `BULK CAPTURE ${i}`);
+			}
+			const started = Date.now();
+			const t = textOf(await call("tools/call", { name: "recall", arguments: { limit: 60 } }));
+			const ms = Date.now() - started;
+
+			// The limit is honoured under load rather than the whole store spilling.
+			const served = t.match(/promoted text from brain\/Gotchas - Promoted/g) ?? [];
+			assert.ok(served.length > 0, "promoted text is served under load");
+			assert.ok(served.length <= 60, `limit honoured, got ${served.length}`);
+			// Every served entry shows the corrected text, so the note cache cannot
+			// have served one entry's content to another.
+			assert.doesNotMatch(t, /BULK CAPTURE \d+[\s\S]{0,80}THE STALE/);
+			assert.ok(ms < 20_000, `recall over 120+ promoted memories took ${ms}ms`);
+		});
 	});
 
 	test("ping works", async () => {

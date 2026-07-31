@@ -485,9 +485,10 @@ export function parseMemoryRoot(manifestJson: string | null): string {
  * A capture already promoted into `brain/`, and kept on purpose.
  *
  * THE FLAG HAS TO BE ABLE TO REACH ZERO. Promotion is **additive**: the entry
- * stays, because `recall` reads only the memory root and never `brain/`, so
- * deleting it would take the lesson away from every repo that cannot read
- * `brain/` at all. Counting every file therefore counts a number that only ever
+ * stays, because `recall` reaches `brain/` only THROUGH a capture — an anchored
+ * marker serves the promoted block, and there is no capture-independent path to
+ * it — so deleting the capture would take the lesson away from every repo that
+ * cannot read `brain/` at all. Counting every file therefore counts a number that only ever
  * grows, and a flag that cannot clear by doing the correct thing is precisely
  * the permanently-unclearable failure #155 already fixed once for the meetings
  * inbox.
@@ -675,7 +676,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (memoryInbox !== null) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			`⚠️  ${memoryInbox.count} cross-repo memory capture(s) awaiting review (oldest ${memoryInbox.oldestDays}d). Promote a durable one by COPYING it into the right brain/ note and adding \`promoted: <note>\` to the capture's frontmatter — the entry stays, because recall reads only the memory root and deleting it takes the lesson away from every repo that cannot read brain/ at all. The marker is what lets this count fall.`,
+			`⚠️  ${memoryInbox.count} cross-repo memory capture(s) awaiting review (oldest ${memoryInbox.oldestDays}d). Promote a durable one by COPYING it into the right brain/ note and adding \`promoted: "brain/Note#^om-a1b2c3"\` to the capture's frontmatter, pointing at the block you copied — the entry stays, because recall reaches brain/ only THROUGH a capture, so deleting it takes the lesson away from every repo that cannot read brain/ at all. The ANCHOR is what lets recall serve the corrected text; a bare \`promoted: <note>\` clears this count but serves nothing.`,
 		);
 	}
 

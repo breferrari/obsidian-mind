@@ -367,6 +367,8 @@ Your vault, your notes, your session. The default is the vault's own `user_conte
 
 `memories/` is never served as an ordinary note whatever the config says — memories carry their own scope, and the note surface would bypass it. A note tagged `private` in frontmatter is never served either.
 
+That holds on **every** surface, including the one that reads across both. `recall` serves a promoted block out of `brain/` when a capture's `promoted:` marker carries an anchor (`promoted: "brain/Gotchas - Engineering#^om-a1b2c3"`), so a foreign repo gets the corrected version rather than the capture as first written. It asks the same exposure predicate as everything else, so a withheld or `private` note is refused there too, and a marker with no anchor still serves nothing. Write anchors with `/om-tidy` — the block you point at is what a session in another repo reads.
+
 > [!note] Keeping vault material out of repos is the contract's job, not this list's.
 > A session can read the vault directly, so narrowing what the server serves prevents nothing on its own. What works is the prohibition injected into the calling session, plus `.claude/om-mcp-audit.jsonl` (gitignored), which records every read with the calling repo.
 

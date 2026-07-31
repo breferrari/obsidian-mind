@@ -34,6 +34,7 @@ import { captureNote, findToolMarkup } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
 import { recallFrom, readMemories, type MemoryEntry } from "./memory-recall.ts";
+import { resolvePromoted, type PromotedResolution, type NoteCache } from "./memory-promoted.ts";
 import { createMemoryIndex } from "./memory-index.ts";
 import { validateMemory, writeMemory, renderMemory, resolveLinks, neutralizeWikilinks } from "./memory-write.ts";
 import { findSimilar } from "./memory-similarity.ts";
@@ -129,6 +130,44 @@ export function reindexSync(indexName: string | null): boolean {
 		/* ranking quality is best-effort; retrieval already works without it */
 	}
 	return true;
+}
+
+/** How many promoted entries the audit line names before it summarises. */
+const AUDIT_PROMOTED_CAP = 25;
+/** How long any single frontmatter-derived string may be in the audit line. */
+const AUDIT_FIELD_CHARS = 300;
+
+/** A frontmatter-derived value, bounded for the audit log. */
+const auditField = (s: string): string =>
+	s.length <= AUDIT_FIELD_CHARS ? s : `${s.slice(0, AUDIT_FIELD_CHARS)}…[${s.length}]`;
+
+/**
+ * How a promotion reads on the facet line.
+ *
+ * Each status says something different to a caller deciding whether to trust
+ * the body above it, so they are worded apart rather than collapsed into one
+ * "promoted" flag: served means you are reading the corrected text, and the
+ * other four mean you are not, for reasons that differ in whether anyone can
+ * do anything about them.
+ */
+function promotedFacet(p: PromotedResolution): string {
+	switch (p.status) {
+		case "served":
+			// A block is addressed `#^id` and a heading `#Text`. Assuming the block
+			// form handed a heading promotion back as `Note.md#^Some Heading`, which
+			// is not a reference the caller can paste anywhere.
+			return `promoted text from ${p.note}#${p.kind === "block" ? "^" : ""}${p.anchor}${
+				p.truncated ? " (TRUNCATED to the served cap)" : ""
+			}`;
+		case "no-anchor":
+			return `promoted to ${p.note} (no anchor; capture body shown)`;
+		case "stale-anchor":
+			return `promoted to ${p.note}, anchor ${p.kind === "block" ? "^" : ""}${p.anchor} STALE (capture body shown)`;
+		case "not-exposed":
+			return `promoted to ${p.note}, outside the exposed roots (capture body shown)`;
+		case "unreadable":
+			return `promoted to ${p.note}, unreadable (capture body shown)`;
+	}
 }
 
 export function createHandlers(deps: ServerDeps): Handlers {
@@ -252,7 +291,56 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		}
 
 		const shown = visible.slice(0, Math.max(0, limit));
-		audit("recall", { query: query || null, returned: shown.length, project: who.project });
+
+		// Resolved BEFORE the audit line, because this is the only surface that
+		// reads outside its own root, and the audit log is the STATED mitigation
+		// for the exposure list not being a security boundary. "What did that
+		// session actually see" has to stay answerable, and a recall that served
+		// a `brain/` block while logging only a count does not answer it.
+		//
+		// One note cache per response, so twenty entries promoted into the same
+		// topic note read it once. The map dies with the call, so a correction
+		// made between two recalls is never served stale.
+		const noteCache: NoteCache = new Map();
+		const rows = shown.map((m) => {
+			const promo = resolvePromoted(ctx.vaultRoot, policy, m.facets.promoted, noteCache);
+			// A marker that exists but does not PARSE — a stray control character,
+			// say — resolves to null, which would otherwise render as "not promoted
+			// at all". Refusing to echo the string is right; refusing to mention
+			// that a corrected version exists is not.
+			//
+			// Computed from `promo` rather than by calling again. The second call
+			// looked free because the note cache is shared, but the cache holds
+			// LINES: the fence mask and the line scan are per call, and
+			// `resolveExposedNote` is not cached at all, so every promoted row paid
+			// a second realpath and a second `isPrivate` read. Measured at 25 rows
+			// over a 20k-line note: 1.27ms/row became 2.25ms/row.
+			return { m, promo, unparsed: Boolean(m.facets.promoted) && promo === null };
+		});
+		const promotions = rows.map((r) => r.promo).filter((p): p is PromotedResolution => p !== null);
+
+		audit("recall", {
+			query: query || null,
+			returned: shown.length,
+			project: who.project,
+			// Only when something was promoted, so an ordinary recall's audit line
+			// keeps its existing shape and stays greppable.
+			// Bounded, because the note path comes from frontmatter and the audit
+			// log is rotated by SIZE. A megabyte-long marker produced a megabyte
+			// audit entry, so ~10 such recalls would discard the history that is
+			// this design's stated mitigation — the log would erase its own
+			// evidence on the calls most worth having evidence of.
+			...(promotions.length
+				? {
+						promoted: promotions.slice(0, AUDIT_PROMOTED_CAP).map((p) =>
+							p.status === "served"
+								? { note: auditField(p.note), anchor: auditField(p.anchor), kind: p.kind, status: p.status }
+								: { note: auditField(p.note), status: p.status },
+						),
+						...(promotions.length > AUDIT_PROMOTED_CAP ? { promoted_omitted: promotions.length - AUDIT_PROMOTED_CAP } : {}),
+					}
+				: {}),
+		});
 
 		if (!shown.length) {
 			const why = who.project
@@ -261,7 +349,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			return `${why} Call health if you expected something here.`;
 		}
 
-		const lines = shown.map((m) => {
+		const lines = rows.map(({ m, promo, unparsed }) => {
 			const facets = [
 				m.facets.confidence,
 				m.facets.projects.length ? `projects: ${m.facets.projects.join(", ")}` : null,
@@ -272,36 +360,41 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				// quoting one memory out of five needs to know THIS one has a
 				// corrected twin — a footer applies to the response, not to the line
 				// being copied.
-				m.facets.promoted ? `promoted to ${m.facets.promoted}` : null,
+				promo ? promotedFacet(promo) : unparsed ? "promoted, but the marker is unreadable (capture body shown)" : null,
 				m.why ? `why: ${m.why}` : null,
 			].filter(Boolean);
+
+			// The promoted text REPLACES the capture body when it is servable,
+			// rather than joining it. Printing both would make the caller arbitrate
+			// between two versions of one lesson, which is the judgement this whole
+			// mechanism exists to make on their behalf.
+			const source = promo?.status === "served" ? promo.text : m.body;
+
 			// Body headings are demoted so the only `##` lines in the response are
 			// entry titles. A memory body legitimately contains its own `## How
 			// this is known`, and rendered at the same level it reads as a separate
 			// memory titled that — the reader cannot tell where one entry ends.
-			const body = m.body.replace(/^(#{1,4})\s/gm, (_, h: string) => `${"#".repeat(Math.min(h.length + 3, 6))} `);
+			const body = source.replace(/^(#{1,4})\s/gm, (_, h: string) => `${"#".repeat(Math.min(h.length + 3, 6))} `);
 			return `## ${m.title ?? "(untitled)"}\n${m.rel}\n(${facets.join(" · ")})\n\n${body}`;
 		});
 
-		// What a promoted entry costs the reader, said once, at the bottom.
+		// Said once, at the bottom, and only about what could NOT be served.
 		//
-		// `recall` reads only the memory root; `search` and `expand` see
-		// everything but. So a promoted lesson exists in two places and this
-		// caller can only reach one of them — the raw capture, which may predate a
-		// correction that was swept through the promoted version. Silence here
-		// would present the older text as the current answer.
-		//
-		// This does not serve the `brain/` note (an ordinary note declares no
-		// scope, so returning one would discard the boundary the memory layer
-		// enforces). It names it, which is what a caller needs to ask for it by
-		// path or to weigh what it just read.
-		const promoted = shown.filter((m) => m.facets.promoted);
-		if (promoted.length) {
+		// An entry whose promoted text was served needs no warning: the caller is
+		// already reading the corrected version, and the facet line says so. What
+		// still costs the reader something is the remainder — a bare marker, a
+		// stale anchor, a target outside the exposed roots — where the body above
+		// is the capture as first written and a correction exists that this
+		// surface cannot reach.
+		const unserved = promotions.filter((p) => p.status !== "served");
+		if (unserved.length) {
+			const reasons = [...new Set(unserved.map((p) => p.status))].join(", ");
 			lines.push(
-				`\n---\n${promoted.length} of these ${promoted.length === 1 ? "has" : "have"} been promoted into the vault's \`brain/\` notes, ` +
-					`named above. **The promoted note wins on any conflict** — it is the corrected, correction-swept version, ` +
-					`and what you are reading here is the capture as first written. This surface cannot serve it; ` +
-					`ask a vault session, or request the note by path, before relying on a detail that looks wrong.`,
+				`\n---\n${unserved.length} of these ${unserved.length === 1 ? "has" : "have"} been promoted into the vault's ` +
+					`\`brain/\` notes but could not be served here (${reasons}); the note is named on the entry. ` +
+					`**The promoted note wins on any conflict** — it is the corrected, correction-swept version, and what you ` +
+					`are reading is the capture as first written. Ask a vault session, or request the note by path, before ` +
+					`relying on a detail that looks wrong.`,
 			);
 		}
 
