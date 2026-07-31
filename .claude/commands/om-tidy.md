@@ -35,6 +35,8 @@ Work through the current hygiene flags in order:
 
    A **heading** anchor (`#Some Section`) works where a block id is overkill. It matches case-insensitively with whitespace collapsed, and returns the section body *without* the heading line, up to the next heading of the same or higher level.
 
+   Two limits worth knowing before you point at one. A **level-1** heading is refused — in this vault's shape the H1 is the note's own title, so `#Some Note` would address the whole note through an anchor that looks specific, and it reports as a stale anchor instead. And what an anchor serves is **capped**, at 40 lines or 8,000 characters, whichever bites first; the caller is told when it did. Point at an `##` or deeper, and at something that reads whole in well under a screenful.
+
    **The anchor is opt-in and deliberate.** A bare `promoted: brain/Note` still marks the capture and still clears the flag, but serves nothing — the caller is only told a corrected version exists and where. Two things to check before adding one:
 
    - **The block reads correctly on its own to someone outside this vault**, because that block, and nothing around it, is what they receive.

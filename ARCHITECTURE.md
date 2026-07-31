@@ -538,7 +538,8 @@ Since promotion is **additive** (the capture stays), the capture is still the re
 |---|---|
 | `promoted: brain/Note` (no anchor) | named, never served — the pre-existing behaviour |
 | `promoted: brain/Note#^om-id` | the block is served, and the facet line says so |
-| `promoted: brain/Note#Heading` | the section is served |
+| `promoted: brain/Note#Heading` | the section is served, up to the next heading of the same or higher level |
+| `promoted: brain/Note#TheH1` | refused — a level-1 heading is the note's own title, so it addresses the whole note |
 | anchor no longer resolves | capture body, marked `STALE` — never the whole note |
 | the policy withholds the note | capture body, marked withheld |
 

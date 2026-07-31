@@ -247,20 +247,26 @@ function capped(input: readonly string[], total = input.length): { text: string;
  */
 function fencedMask(lines: readonly string[]): boolean[] {
 	const mask: boolean[] = new Array(lines.length).fill(false);
-	let fence: { char: string; len: number } | null = null;
+	let fence: { char: string; len: number; quote: number } | null = null;
+	// How many `>` levels a line sits behind. A fence opened outside a quote is
+	// not closed by one inside it, which CommonMark forbids and which was a live
+	// way to end a doc-example block early and expose the decoy after it.
+	const depth = (line: string): number => (line.match(/^[\s]*((?:>[\s]?)*)/)?.[1]?.match(/>/g) ?? []).length;
+
 	for (let i = 0; i < lines.length; i++) {
-		const m = (lines[i] ?? "").match(FENCE);
+		const line = lines[i] ?? "";
+		const m = line.match(FENCE);
 		const run = m?.[1];
 		if (fence === null) {
 			if (run) {
-				fence = { char: run[0] ?? "`", len: run.length };
+				fence = { char: run[0] ?? "`", len: run.length, quote: depth(line) };
 				mask[i] = true;
 			}
 		} else {
 			mask[i] = true;
-			// A closing fence must be the same character AND at least as long, so
-			// a ``` inside a ```` block does not end it early.
-			if (run && run[0] === fence.char && run.length >= fence.len) fence = null;
+			// A closer must match the character, be at least as long, and sit at
+			// the same blockquote depth.
+			if (run && run[0] === fence.char && run.length >= fence.len && depth(line) === fence.quote) fence = null;
 		}
 	}
 	return mask;
@@ -282,13 +288,27 @@ export function blockAtLines(lines: readonly string[], id: string): { text: stri
 	const needle = `^${id}`;
 	const escaped = escapeRegex(id);
 	const trailing = new RegExp(`\\s\\^${escaped}\\s*$`);
-	const alone = new RegExp(`^\\s*\\^${escaped}\\s*$`);
+	// Indentation and blockquote scaffolding still count as "alone".
+	const alone = new RegExp(`^[\\s>|]*\\^${escaped}\\s*$`);
 	const fenced = fencedMask(lines);
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i] ?? "";
 		if (fenced[i] || !line.includes(needle)) continue;
-		if (trailing.test(line)) {
+		// `trailing` is GUARDED against the alone form, and that guard is the fix
+		// for two defects at once.
+		//
+		// `trailing` requires only whitespace before the caret, so an indented
+		// alone-id (`  ^om-id`) or a callout's (`> ^om-id`) satisfied it — and the
+		// forward walk then served the text that FOLLOWS the anchor instead of the
+		// paragraph it belongs to. A caller received neighbouring, unrelated prose
+		// labelled "promoted text from …", with nothing to signal it was wrong.
+		//
+		// It also left `out[0]` blank (the id was the whole line), which is how a
+		// block that dropped 20 of 60 lines came to report `truncated: false`:
+		// the blank filled a slot, the blank-edge strip removed it again, and the
+		// post-strip length then matched the cap exactly.
+		if (!alone.test(line) && trailing.test(line)) {
 			// The block is this line plus any lines that continue it: more-indented
 			// or lazily-continued text belonging to the same list item or paragraph.
 			const out = [line.replace(trailing, "")];

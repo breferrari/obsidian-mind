@@ -31,6 +31,7 @@ import { join, dirname } from "node:path";
 import {
 	parsePromotedMarker,
 	blockAt,
+	blockAtLines,
 	sectionAt,
 	resolvePromoted,
 	type NoteCache,
@@ -474,6 +475,62 @@ describe("resolving at scale", () => {
 			const ms = Date.now() - started;
 			assert.ok(ms < 5000, "50 resolutions over a ~1MB note took " + ms + "ms");
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Round-5: an alone-id that is indented or quoted
+// ---------------------------------------------------------------------------
+
+describe("an alone-id is recognised through its scaffolding", () => {
+	test("an INDENTED alone-id takes the paragraph above, not the text below", () => {
+		const md = [
+			"# Gotchas",
+			"",
+			"  THE PROMOTED LESSON, corrected and swept.",
+			"  ^om-lesson",
+			"  AN UNRELATED PARAGRAPH that follows it.",
+			"",
+		].join(NL);
+		const got = blockAt(md, "om-lesson") ?? "";
+		assert.match(got, /THE PROMOTED LESSON/);
+		assert.doesNotMatch(got, /UNRELATED/, "serving what follows the anchor is serving the wrong lesson");
+	});
+
+	test("a callout's quoted alone-id behaves the same", () => {
+		const md = ["# T", "", "> THE QUOTED LESSON.", "> ^om-call", "> SOMETHING ELSE.", ""].join(NL);
+		const got = blockAt(md, "om-call") ?? "";
+		assert.match(got, /THE QUOTED LESSON/);
+		assert.doesNotMatch(got, /SOMETHING ELSE/);
+	});
+
+	test("an indented alone-id over a long paragraph reports truncation honestly", () => {
+		// The blank `out[0]` this used to leave is how a 40-of-60 cut reported
+		// `truncated: false` — the worse direction of the flag being wrong.
+		const para = Array.from({ length: 60 }, (_, i) => "  line " + i).join(NL);
+		const md = "# T" + NL + NL + para + NL + "  ^om-x" + NL;
+		const lines = md.split(NL);
+		const r = blockAtLines(lines, "om-x");
+		assert.ok(r, "must resolve");
+		if (!r) return;
+		assert.equal(r.truncated, true, "20 of 60 lines dropped is not complete");
+		assert.match(r.text, /line 59/, "the end nearest the anchor must survive");
+	});
+
+	test("a blockquoted fence does not close an unquoted one", () => {
+		const md = [
+			"# T",
+			"",
+			"```md",
+			"- DOC EXAMPLE ^om-doc",
+			"> ```",
+			"- STILL INSIDE THE CODE BLOCK ^om-doc",
+			"```",
+			"",
+			"- **THE REAL ENTRY.** ^om-doc",
+			"",
+		].join(NL);
+		assert.equal(blockAt(md, "om-doc"), "- **THE REAL ENTRY.**");
 	});
 });
 
