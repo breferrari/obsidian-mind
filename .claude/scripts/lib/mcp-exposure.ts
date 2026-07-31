@@ -481,6 +481,39 @@ function resolveExactResourceUri(vaultRoot: string, policy: ExposurePolicy, uri:
 		return null;
 	}
 
+	return resolveExposedNote(vaultRoot, policy, rel);
+}
+
+/**
+ * Given a vault-relative path, the real file the policy serves — or null.
+ *
+ * The single answer to "may this path be read out of the vault", extracted from
+ * the resource resolver so that a surface which does not speak `vault://` URIs
+ * can ask the same question rather than re-deriving it.
+ *
+ * That re-derivation is the defect this module exists to prevent, and it has
+ * now happened twice. The symlink case is the worked example in
+ * `ARCHITECTURE.md`: the enumerator followed links while the URI resolver
+ * contained them, so the listing published a file that reading the same URI
+ * refused. The second was `recall` serving promoted `brain/` blocks through a
+ * hand-rolled root check that dropped `neverExpose`, dropped `isPrivate`, and
+ * compared the FIRST path segment against roots that are prefixes — so it
+ * served two classes of note every other surface withholds, while refusing most
+ * of the vault's own declared roots (`work/active/`, `perf/brag/`, `org/people/`
+ * are all multi-segment). Both were found only by reading the two predicates
+ * side by side, which is the argument for there being one.
+ *
+ * All four conditions live here, cheap string tests before syscalls:
+ *
+ *   1. traversal, absolute paths and non-`.md` — refused without touching disk;
+ *   2. `isExposedPath` — inside a declared root, matched on whole segments;
+ *   3. `neverExpose` — by filename, before and again after the link is followed;
+ *   4. realpath containment against the MATCHED root, then `isPrivate`.
+ *
+ * Returns a REALPATH. A caller stripping a vault-root prefix from it must strip
+ * with the resolved root — see the note on `resolveResourceUri`.
+ */
+export function resolveExposedNote(vaultRoot: string, policy: ExposurePolicy, rel: string): string | null {
 	// Traversal and absolute paths are refused before touching the filesystem.
 	if (rel.includes("..") || rel.startsWith("/") || /^[A-Za-z]:/.test(rel)) return null;
 	if (!rel.toLowerCase().endsWith(".md")) return null;
