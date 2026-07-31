@@ -31,6 +31,8 @@ import {
 import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
 import { vaultRelKey } from "../lib/mcp-qmd-client.ts";
 
+const NL = String.fromCharCode(10);
+
 const NOTE = (desc = "a note") => `---\ndate: 2026-07-26\ndescription: "${desc}"\n---\n\n# n\n\nbody\n`;
 const PRIVATE_TAG = "---\ndate: 2026-07-26\ntags:\n  - private\n---\n\n# secret\n\nbody\n";
 const PRIVATE_FLAG = "---\ndate: 2026-07-26\nprivate: true\n---\n\n# secret\n\nbody\n";
@@ -157,6 +159,47 @@ describe("resolving the policy", () => {
 			assert.ok(!p.roots.includes("work"));
 			assert.ok(!p.roots.includes("people"));
 			assert.ok(!p.roots.includes("journal"));
+		});
+	});
+
+	/**
+	 * Both directions, because fixing this in one direction caused the other.
+	 *
+	 * `readHead` stops at 1200 characters, so a `private:` past that point was
+	 * never seen and the note was served. The first fix withheld any note whose
+	 * frontmatter did not close inside the prefix — which failed closed and made
+	 * two ordinary public notes in a real vault vanish from `search`, `expand`
+	 * and the resource listing, silently, with the set growing as frontmatter
+	 * grows. The guard looks further now instead of guessing either way.
+	 */
+	test("a private marker past the head window still withholds", () => {
+		withVault((dir) => {
+			const filler = Array.from({ length: 120 }, (_, i) => "  - alias-" + i).join(NL);
+			const full = put(dir, "brain/Deep Private.md", "---" + NL + "aliases:" + NL + filler + NL + "private: true" + NL + "---" + NL + NL + "# d" + NL);
+			assert.ok(isPrivate(full), "the marker is past char 1200 but it is still a marker");
+		});
+	});
+
+	test("a public note with long frontmatter is STILL SERVED", () => {
+		withVault((dir) => {
+			const filler = Array.from({ length: 120 }, (_, i) => "  - alias-" + i).join(NL);
+			const full = put(dir, "brain/Deep Public.md", "---" + NL + "aliases:" + NL + filler + NL + "---" + NL + NL + "# d" + NL);
+			assert.ok(!isPrivate(full), "long frontmatter is not a privacy signal");
+		});
+	});
+
+	test("a note with no frontmatter is served, and a bare rule is not frontmatter", () => {
+		withVault((dir) => {
+			assert.ok(!isPrivate(put(dir, "brain/Plain.md", "# t" + NL + NL + "body" + NL)));
+			assert.ok(!isPrivate(put(dir, "brain/Rule.md", "# t" + NL + NL + "---" + NL + NL + "after" + NL)));
+		});
+	});
+
+	test("frontmatter that never closes is withheld", () => {
+		withVault((dir) => {
+			const filler = Array.from({ length: 5000 }, (_, i) => "  - alias-" + i).join(NL);
+			const full = put(dir, "brain/Runaway.md", "---" + NL + "aliases:" + NL + filler + NL);
+			assert.ok(isPrivate(full), "a block that never closes is not a block this can judge");
 		});
 	});
 

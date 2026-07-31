@@ -201,7 +201,44 @@ export function resolveExposure(
 export function isPrivate(path: string): boolean {
 	const head = readHead(path);
 	if (head === null) return true;
-	return /^\s*-?\s*private\s*$/m.test(head) || /^private:\s*true/m.test(head);
+	if (hasPrivateMarker(head)) return true;
+
+	// The marker may simply be past the cut.
+	//
+	// `readHead` stops at 1200 characters, which is a PREFIX of the frontmatter
+	// rather than the frontmatter. Measured on a real vault: two ordinary public
+	// notes carry enough `aliases:` that the closing `---` lands past character
+	// 1700, so a `private:` below that point would never be seen and the guard
+	// reads a clean "not private" off a block it did not finish.
+	//
+	// The answer is to look further, not to guess. Guessing PRIVATE fails closed
+	// and is worse than the bug: it silently removes ordinary notes from
+	// `search`, `expand` and the resource listing, with no message, and the set
+	// grows as frontmatter grows. Guessing PUBLIC is the bug. So when the block
+	// did not close inside the prefix, re-read enough to decide — and withhold
+	// only if even that does not close, which means the file is not really
+	// frontmatter-shaped.
+	if (!opensFrontmatter(head) || frontmatterClosed(head)) return false;
+
+	const deep = readHead(path, DEEP_HEAD_CHARS);
+	if (deep === null) return true;
+	if (hasPrivateMarker(deep)) return true;
+	return !frontmatterClosed(deep);
+}
+
+/** How far to look when the frontmatter did not close in the ordinary prefix. */
+const DEEP_HEAD_CHARS = 64_000;
+
+const hasPrivateMarker = (head: string): boolean =>
+	/^\s*-?\s*private\s*$/m.test(head) || /^private:\s*true/m.test(head);
+
+/** Does this text open a frontmatter block? A BOM may precede the fence. */
+const opensFrontmatter = (head: string): boolean => /^﻿?---[ \t]*\r?\n/.test(head);
+
+/** Is there a closing `---` after the opening one? */
+function frontmatterClosed(head: string): boolean {
+	if (!opensFrontmatter(head)) return false;
+	return /^---[ \t]*(\r?\n|$)/m.test(head.slice(head.indexOf("\n") + 1));
 }
 
 /** Pull the frontmatter `description:` so a resource list is self-describing. */
