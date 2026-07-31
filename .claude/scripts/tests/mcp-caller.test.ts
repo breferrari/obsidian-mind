@@ -284,8 +284,29 @@ describe("the audit log", () => {
 
 	test("an unwritable log NEVER breaks the caller", () => {
 		// A control that can take the server down is a liability, not a control.
-		const audit = createAuditor(join("Z:", "definitely", "not", "here.jsonl"), () => "x");
-		assert.doesNotThrow(() => audit("search", { query: "q" }));
+		withDir((dir) => {
+			// The unwritable path is one whose PARENT is a regular file. The auditor
+			// mkdir -p's that parent, and a file cannot become a directory on any
+			// platform, so the failure path is the one taken EVERYWHERE.
+			//
+			// Why not a drive letter: this asserted against `Z:/definitely/not/` for
+			// four releases. `join` builds that from a drive letter only on Windows;
+			// on POSIX it is an ordinary RELATIVE directory, so the Linux runner
+			// created it, wrote the log, and passed by exercising the SUCCESS path.
+			// It also shipped — `zip -r .` packaged the residue into the v8.1.1 and
+			// v8.3.0 vault zips. A fixture that means different things on different
+			// platforms tests the property it names on neither.
+			const occupied = join(dir, "occupied");
+			writeFileSync(occupied, "");
+			const logPath = join(occupied, "here.jsonl");
+
+			const audit = createAuditor(logPath, () => "x");
+			assert.doesNotThrow(() => audit("search", { query: "q" }));
+
+			// The teeth. Without this the test also passes when the write SUCCEEDS,
+			// which is exactly how the drive-letter version passed on Linux.
+			assert.equal(existsSync(logPath), false, "the log must not have been written");
+		});
 	});
 
 	test("the log rotates instead of growing without bound", () => {

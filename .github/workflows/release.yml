@@ -180,7 +180,21 @@ jobs:
         run: |
           ZIP_NAME="obsidian-mind-${VERSION}.zip"
 
-          zip -r "$ZIP_NAME" . \
+          # Zip the TAGGED TREE, never the working tree. `zip -r .` packaged
+          # whatever earlier steps had left lying around, and a denylist cannot
+          # enumerate residue nobody has created yet: v8.1.1 and v8.3.0 both
+          # shipped `Z:/definitely/not/here.jsonl`, an audit-log fixture written
+          # by a test whose "unwritable" path is a drive letter on Windows and an
+          # ordinary relative directory on the Linux runner. Exporting the tag can
+          # only contain what was committed, which closes the class rather than
+          # this one instance. Verified against v8.3.0: that residue was the SOLE
+          # difference between the shipped zip and the tag, so nothing is lost.
+          EXPORT="$RUNNER_TEMP/vault-export"
+          rm -rf "$EXPORT" && mkdir -p "$EXPORT"
+          git archive "$VERSION" | tar -x -C "$EXPORT"
+          cd "$EXPORT"
+
+          zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" . \
             -x ".git/*" \
             -x ".github/*" \
             -x ".claude/scripts/tests/*" \

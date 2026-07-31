@@ -42,3 +42,20 @@ jobs:
         working-directory: .claude/scripts
         run: npm test
 
+      # A test that writes outside its temp dir is a bug wherever it lands, but
+      # the release job is where it becomes the user's problem: it zipped the
+      # working tree, so residue shipped inside the vault (v8.1.1 and v8.3.0 both
+      # carried `Z:/definitely/not/here.jsonl`). The zip now comes from the tag,
+      # which makes residue harmless — this makes it VISIBLE, at the source, on
+      # the OS that produced it. Untracked output from a test run is never
+      # expected; node_modules and the CI-only typecheck deps are gitignored.
+      - name: No test wrote outside its temp dir
+        shell: bash
+        run: |
+          residue=$(git status --porcelain --untracked-files=all)
+          if [ -n "$residue" ]; then
+            echo "::error::the test run left files behind in the working tree"
+            echo "$residue"
+            exit 1
+          fi
+
