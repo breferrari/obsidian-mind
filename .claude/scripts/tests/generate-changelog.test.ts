@@ -15,6 +15,7 @@ import {
 	pickMarkers,
 	findLatestOpenFingerprint,
 	bumpShardYamlVersion,
+	insertChangelogSection,
 } from "../../../.github/scripts/generate-changelog.ts";
 
 describe("classifyCommit", () => {
@@ -299,6 +300,62 @@ describe("bumpShardYamlVersion", () => {
 		assert.match(out, /^version: 6\.0\.0$/m);
 		assert.match(out, /^  - version: 5\.0\.0$/m);
 		assert.match(out, /note: keep this nested version untouched/);
+	});
+});
+
+describe("insertChangelogSection", () => {
+	test("inserts exactly one blank line after the header on first use", () => {
+		const content = "# Changelog\n";
+		const section = "## v1.0.0 — 2026-01-01\n\n### Added\n- first release\n";
+		const out = insertChangelogSection(content, section, "v1.0.0");
+		assert.equal(
+			out,
+			"# Changelog\n\n## v1.0.0 — 2026-01-01\n\n### Added\n- first release\n\n",
+		);
+	});
+
+	test("does not accumulate blank lines across repeated releases", () => {
+		// Regression test: prependToChangelog used to compute the post-header
+		// insertion point correctly but then slice from index 0 up to that
+		// point — which *keeps* every blank line already separating the
+		// header from the first entry — before adding one more of its own.
+		// Each simulated release used to grow the gap by one blank line.
+		let content = "# Changelog\n";
+		for (let i = 1; i <= 5; i++) {
+			const version = `v1.${i}.0`;
+			const section = `## ${version} — 2026-01-0${i}\n\n### Added\n- release ${i}\n`;
+			content = insertChangelogSection(content, section, version);
+		}
+		assert.match(content, /^# Changelog\n\n## v1\.5\.0/);
+		assert.doesNotMatch(content, /\n{3,}## v1\.5\.0/);
+	});
+
+	test("replaces an existing version's section in place instead of duplicating it", () => {
+		const content = [
+			"# Changelog",
+			"",
+			"## v2.0.0 — 2026-02-01",
+			"",
+			"### Added",
+			"- old entry",
+			"",
+			"## v1.0.0 — 2026-01-01",
+			"",
+			"### Added",
+			"- first release",
+			"",
+		].join("\n");
+		const section = "## v2.0.0 — 2026-02-02\n\n### Added\n- corrected entry\n";
+		const out = insertChangelogSection(content, section, "v2.0.0");
+		assert.match(out, /- corrected entry/);
+		assert.doesNotMatch(out, /- old entry/);
+		assert.match(out, /- first release/);
+		assert.equal((out.match(/## v2\.0\.0/g) ?? []).length, 1);
+	});
+
+	test("falls back to prepending a fresh header when none exists", () => {
+		const out = insertChangelogSection("", "## v1.0.0 — 2026-01-01\n", "v1.0.0");
+		assert.equal(out, "# Changelog\n\n## v1.0.0 — 2026-01-01\n\n");
 	});
 });
 

@@ -125,39 +125,62 @@ export function generateSection(version: string, commits: readonly string[]): st
 	return lines.join("\n");
 }
 
-function prependToChangelog(section: string, version: string): void {
-	const content = readFileSync("CHANGELOG.md", { encoding: "utf-8" });
+/**
+ * Insert a version section into changelog `content`, or replace it in place
+ * if that version's heading already exists. Pure string transform so the
+ * blank-line handling can be regression-tested without touching disk.
+ */
+export function insertChangelogSection(
+	content: string,
+	section: string,
+	version: string,
+): string {
 	const versionPattern = new RegExp(`^## ${escapeRegex(version)} — .*$`, "m");
+	// The trailing alternative must mean true end-of-string. A bare `$` would
+	// do that too under a non-multiline regex, but this pattern needs the `m`
+	// flag for `^`, and `m` makes `$` match end-of-*line* as well — which let
+	// the lazy `[\s\S]*?` stop right after the heading, leaving the rest of
+	// the section's old body behind on replace.
 	const existingPattern = new RegExp(
-		`^## ${escapeRegex(version)} — [\\s\\S]*?(?=\\n## [^\\n]|$)`,
+		`^## ${escapeRegex(version)} — [\\s\\S]*?(?=\\n## [^\\n]|(?![\\s\\S]))`,
 		"m",
 	);
 
-	let newContent: string;
 	if (versionPattern.test(content)) {
-		newContent = content.replace(existingPattern, section.trimEnd());
-	} else {
-		const header = "# Changelog";
-		const idx = content.indexOf(header);
-		if (idx === -1) {
-			newContent = `${header}\n\n${section}\n${content}`;
-		} else {
-			let insertAt = idx + header.length;
-			while (
-				insertAt < content.length &&
-				(content[insertAt] === "\n" || content[insertAt] === "\r")
-			) {
-				insertAt += 1;
-			}
-			newContent =
-				content.slice(0, insertAt) +
-				"\n" +
-				section +
-				"\n" +
-				content.slice(insertAt);
-		}
+		return content.replace(existingPattern, section.trimEnd());
 	}
 
+	const header = "# Changelog";
+	const idx = content.indexOf(header);
+	if (idx === -1) {
+		return `${header}\n\n${section}\n${content}`;
+	}
+
+	// Find where the existing entries start, skipping past any blank lines
+	// already separating them from the header...
+	let entriesStart = idx + header.length;
+	while (
+		entriesStart < content.length &&
+		(content[entriesStart] === "\n" || content[entriesStart] === "\r")
+	) {
+		entriesStart += 1;
+	}
+	// ...but slice from right after the header itself, not from entriesStart,
+	// so those skipped blank lines are dropped rather than kept. Re-running
+	// this on an already-generated file must always land on exactly one
+	// blank line, never grow it by one per release.
+	return (
+		content.slice(0, idx + header.length) +
+		"\n\n" +
+		section +
+		"\n" +
+		content.slice(entriesStart)
+	);
+}
+
+function prependToChangelog(section: string, version: string): void {
+	const content = readFileSync("CHANGELOG.md", { encoding: "utf-8" });
+	const newContent = insertChangelogSection(content, section, version);
 	writeFileSync("CHANGELOG.md", newContent, { encoding: "utf-8" });
 }
 
