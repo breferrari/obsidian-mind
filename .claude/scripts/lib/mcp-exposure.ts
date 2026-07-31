@@ -96,6 +96,39 @@ function cleanRoots(value: unknown): string[] {
 }
 
 /**
+ * Is this path's filename withheld by name, whatever folder it sits in?
+ *
+ * Compares case-insensitively on BOTH sides, and does so here rather than
+ * relying on the set having been lowercased when it was built. That
+ * distinction is the whole fix: the admit side (`isExposedPath`,
+ * `matchedRoot`) has always lowercased, the withhold side was exact-case, and
+ * on any case-insensitive filesystem the asymmetry served the file. With
+ * `mcp_never_expose: ["SOUL.md"]`, `brain/SOUL.md` was refused and
+ * `brain/soul.md` returned 44KB — the listing withheld it while the reader
+ * served it, which is the two-surfaces-disagree defect this module exists to
+ * prevent, inverted. `realpathSync` on Windows does not canonicalise case, so
+ * the post-realpath re-check saw the caller's spelling too.
+ *
+ * Normalising only in `resolveExposure` would leave a policy built any other
+ * way failing OPEN — and every test builds one by hand. A guard whose
+ * correctness depends on its constructor is the same split invariant in a new
+ * place, so the comparison owns it. The set holds at most a handful of names,
+ * so the scan is free.
+ *
+ * Separators are normalised before the basename is taken: a URI or marker can
+ * arrive with backslashes, and `basename("brain\\SOUL.md")` on POSIX returns
+ * the whole string rather than the filename.
+ */
+export function isNeverExposed(policy: ExposurePolicy, path: string): boolean {
+	const name = basename(String(path).replace(/\\/g, "/")).toLowerCase();
+	if (!name) return false;
+	for (const entry of policy.neverExpose) {
+		if (entry.toLowerCase() === name) return true;
+	}
+	return false;
+}
+
+/**
  * Memories are never served as ordinary notes, whatever the config says. They
  * carry their own declared scope, evaluated per caller; reaching them through
  * the note surface would bypass it.
@@ -130,9 +163,12 @@ export function resolveExposure(
 	memoryRoot = "memories",
 ): ExposurePolicy {
 	// Filenames, not folder names — spaces and dots are legitimate here.
+	// Lowercased on the way in as well, though `isNeverExposed` no longer relies
+	// on it: the comparison owns the case rule, so a policy built any other way
+	// cannot fail open. See that function for what the asymmetry cost.
 	const never = new Set(
 		Array.isArray(manifest?.mcp_never_expose)
-			? manifest.mcp_never_expose.filter((s): s is string => typeof s === "string")
+			? manifest.mcp_never_expose.filter((s): s is string => typeof s === "string").map((s) => s.toLowerCase())
 			: [],
 	);
 
@@ -265,7 +301,7 @@ export function visibleFiles(vaultRoot: string, policy: ExposurePolicy): Visible
 				continue;
 			}
 			if (!f.endsWith(".md")) continue;
-			if (policy.neverExpose.has(f)) continue;
+			if (isNeverExposed(policy, f)) continue;
 			if (isPrivate(full)) continue;
 			files.push({ full, label: basename(f, ".md"), scope });
 		}
@@ -340,27 +376,24 @@ export function vaultRelKeyRaw(vaultRoot: string, full: string): string {
  * as not-found — to this server a URI it does not serve is simply not a
  * resource.
  *
- * `collection` is optional, and exists because a path a caller reads out of a
- * `search` result is not a path this resolver would otherwise accept. qmd reports
- * paths **prefixed with the collection name** and with **spaces replaced by
- * dashes**, in directory names as well as filenames. So a note at
- * `projects/notes/2026-01-02 Some Title.md` comes back as
- * `myvault/projects/notes/2026-01-02-Some-Title.md`, and pasting that into a
- * resource URI produced a bare not-found the caller had no way to diagnose.
- * `expand` already tolerated the prefix, which left this the only surface
- * rejecting the form the server's own search hands out.
- *
- * Three tiers, each ending in the same strict resolver, so exposure, traversal,
- * extension, never-expose and realpath containment are re-run on whatever comes
- * out. Nothing is loosened; only the spelling is repaired.
+ * `collection` is optional and exists for one measured reason: `search` reports
+ * qmd's COLLECTION-PREFIXED paths (`vigil-mind/projects/x.md`), so a caller that
+ * pastes one straight into a resource URI gets a not-found it cannot diagnose.
+ * That happened on vigia's first session, which burned a round trip guessing the
+ * right form. `expand` already tolerated the prefix, leaving this the only
+ * surface that rejected what the server's own search hands out. When supplied,
+ * an exactly-matching leading segment is dropped and resolution is retried ONCE
+ * against the remainder — which then runs every check below unchanged, so
+ * exposure, traversal, extension, never-expose and realpath containment all
+ * still apply. Nothing is loosened.
  *
  * RETURNS A REALPATH. Every other path in this module is built by joining the
  * unresolved vault root, so a caller stripping a vault-root prefix from THIS
  * return value must strip with the RESOLVED root. On macOS `/var` is
  * `/private/var`, the prefix does not match, and `vaultRelKeyRaw` hands back an
- * absolute filesystem path rather than a relative one — which is how a local
- * path reached a `vault://note/...` URI during this change. Caught by macOS CI;
- * it cannot reproduce on Windows or Linux.
+ * absolute filesystem path instead of a relative one — which is how a local path
+ * reached a `vault://note/...` URI. Found by macOS CI; it cannot reproduce on
+ * Windows or Linux.
  */
 export function resolveResourceUri(
 	vaultRoot: string,
@@ -382,7 +415,9 @@ export function resolveResourceUri(
 		}
 	}
 
-	// Tier 3: de-slugify against the real tree.
+	// Tier 3: de-slugify. qmd reports paths with spaces replaced by dashes, in
+	// directory names as well as filenames, so a path copied from a search result
+	// names a file that does not exist. Map it back by walking the real tree.
 	const m = bare.match(/^vault:\/\/note\/(.+)$/);
 	if (!m?.[1]) return null;
 	let slug: string;
@@ -398,21 +433,19 @@ export function resolveResourceUri(
 
 	const real = unslugPath(vaultRoot, slug);
 	if (!real) return null;
-	return resolveExactResourceUri(
-		vaultRoot,
-		policy,
-		`vault://note/${real.split("/").map(encodeURIComponent).join("/")}`,
-	);
+	// Re-enter the strict resolver so the recovered path is policy-checked like
+	// any other. Nothing here grants access; it only repairs the spelling.
+	return resolveExactResourceUri(vaultRoot, policy, `vault://note/${real.split("/").map(encodeURIComponent).join("/")}`);
 }
 
 /**
- * Walk `slug` against the real tree, accepting a segment whose spaces became
- * dashes. Returns the true vault-relative path, or null.
+ * Walk `slug` against the real tree, accepting a segment whose spaces were
+ * replaced by dashes. Returns the true vault-relative path, or null.
  *
- * Refuses when a segment is AMBIGUOUS. If both `A B.md` and `A-B.md` exist, the
+ * Refuses when a segment is AMBIGUOUS — if both `A B.md` and `A-B.md` exist, the
  * slug `A-B.md` cannot say which was meant, and guessing would silently serve
- * the wrong note — worse than a not-found. Bounded work: one `readdir` per
- * segment, and only after exact resolution has already failed.
+ * the wrong note. Bounded: one readdir per segment, and it only runs after exact
+ * resolution has already failed.
  */
 function unslugPath(vaultRoot: string, slug: string): string | null {
 	const parts = slug.split("/").filter(Boolean);
@@ -433,7 +466,7 @@ function unslugPath(vaultRoot: string, slug: string): string | null {
 	return acc;
 }
 
-/** The strict resolver. `resolveResourceUri` is this plus two repair attempts. */
+/** The strict resolver. `resolveResourceUri` is this plus one prefix retry. */
 function resolveExactResourceUri(vaultRoot: string, policy: ExposurePolicy, uri: string): string | null {
 	const m = String(uri).match(/^vault:\/\/note\/(.+)$/);
 	if (!m?.[1]) return null;
@@ -452,7 +485,9 @@ function resolveExactResourceUri(vaultRoot: string, policy: ExposurePolicy, uri:
 	if (rel.includes("..") || rel.startsWith("/") || /^[A-Za-z]:/.test(rel)) return null;
 	if (!rel.toLowerCase().endsWith(".md")) return null;
 	if (!isExposedPath(policy, rel)) return null;
-	if (policy.neverExpose.has(basename(rel))) return null;
+	// Separators normalised before taking the basename: `brain\SOUL.md` must
+	// yield `soul.md`, not the whole string.
+	if (isNeverExposed(policy, rel)) return null;
 
 	// Containment must survive SYMLINKS, not just `..`. `resolve` collapses dot
 	// segments but happily returns a path whose real target is outside the vault,
@@ -473,7 +508,7 @@ function resolveExactResourceUri(vaultRoot: string, policy: ExposurePolicy, uri:
 		return null; // missing, or a broken link
 	}
 	if (full !== rootReal && !full.startsWith(rootReal + sep)) return null;
-	if (policy.neverExpose.has(basename(full))) return null;
+	if (isNeverExposed(policy, full)) return null;
 	if (isPrivate(full)) return null;
 	return full;
 }

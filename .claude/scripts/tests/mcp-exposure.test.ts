@@ -26,7 +26,9 @@ import {
 	listResources,
 	resolveResourceUri,
 	vaultRelKeyRaw,
+	isNeverExposed,
 } from "../lib/mcp-exposure.ts";
+import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
 import { vaultRelKey } from "../lib/mcp-qmd-client.ts";
 
 const NOTE = (desc = "a note") => `---\ndate: 2026-07-26\ndescription: "${desc}"\n---\n\n# n\n\nbody\n`;
@@ -161,8 +163,70 @@ describe("resolving the policy", () => {
 	test("never-expose keeps filenames with spaces and dots, which the root rule would reject", () => {
 		withVault((dir) => {
 			const p = resolveExposure(dir, { mcp_never_expose: ["North Star.md", "SOUL.md"] });
-			assert.ok(p.neverExpose.has("North Star.md"));
-			assert.ok(p.neverExpose.has("SOUL.md"));
+			// Asserted through the predicate rather than on the set's own spelling:
+			// the set's internal case is an implementation detail, and a test that
+			// pins it breaks on the very normalisation that closes the bypass below.
+			assert.ok(isNeverExposed(p, "brain/North Star.md"));
+			assert.ok(isNeverExposed(p, "brain/SOUL.md"));
+		});
+	});
+
+	/**
+	 * The bypass, and the shape of it.
+	 *
+	 * The admit side has always compared case-insensitively; the withhold side
+	 * was exact-case. On any case-insensitive filesystem that asymmetry served
+	 * the file: `mcp_never_expose: ["SOUL.md"]` refused `brain/SOUL.md` and
+	 * returned 44KB for `brain/soul.md`. The listing withheld it while the reader
+	 * served it — the two-surfaces-disagree defect, inverted — and `realpathSync`
+	 * on Windows does not canonicalise case, so the post-realpath re-check saw
+	 * the caller's spelling too.
+	 */
+	test("never-expose withholds every case spelling, not the one that was typed", () => {
+		withVault((dir) => {
+			const p = resolveExposure(dir, { mcp_never_expose: ["SOUL.md"] });
+			for (const spelling of ["SOUL.md", "soul.md", "Soul.md", "SoUl.MD", "sOuL.Md"]) {
+				assert.ok(isNeverExposed(p, `brain/${spelling}`), spelling);
+			}
+		});
+	});
+
+	test("never-expose does not depend on how the policy was constructed", () => {
+		// Every test — and any caller assembling one by hand — builds a policy
+		// literal. Normalising only in `resolveExposure` would leave those failing
+		// OPEN, which is the same split invariant the bypass came from.
+		const handBuilt: ExposurePolicy = {
+			roots: ["brain"],
+			neverExpose: new Set(["SOUL.md"]),
+			source: "manifest",
+			memoryRoot: "memories",
+		};
+		assert.ok(isNeverExposed(handBuilt, "brain/soul.md"));
+		assert.ok(isNeverExposed(handBuilt, "brain/SOUL.md"));
+	});
+
+	/**
+	 * PLATFORM-DEPENDENT, and worth saying so rather than letting it read as
+	 * universal coverage. On Windows `path.basename` is the win32 implementation
+	 * and already splits backslashes, so this assertion passes with or without
+	 * the normalisation — mutation-checked, and the mutant survives here. It has
+	 * teeth only on POSIX, where a backslash is an ordinary filename character
+	 * and `basename("brain\\SOUL.md")` returns the whole string. Linux CI is what
+	 * enforces it.
+	 */
+	test("never-expose normalises separators before taking the basename", () => {
+		withVault((dir) => {
+			const p = resolveExposure(dir, { mcp_never_expose: ["SOUL.md"] });
+			assert.ok(isNeverExposed(p, String.raw`brain\SOUL.md`), "a backslash path must still yield the filename");
+		});
+	});
+
+	test("a path that is not withheld stays servable", () => {
+		withVault((dir) => {
+			const p = resolveExposure(dir, { mcp_never_expose: ["SOUL.md"] });
+			assert.ok(!isNeverExposed(p, "brain/Gotchas.md"));
+			assert.ok(!isNeverExposed(p, "brain/SOULFUL.md"), "a prefix is not a match");
+			assert.ok(!isNeverExposed(p, ""));
 		});
 	});
 
@@ -404,13 +468,18 @@ describe("resolving a resource URI", () => {
 		});
 	});
 
-	// qmd reports paths PREFIXED with the collection name and with spaces replaced
-	// by dashes, in directory names as well as filenames. So a path read out of a
-	// `search` result names a file that does not exist, and pasting it into a
-	// resource URI produced a bare not-found. Both repairs re-enter the strict
-	// resolver, so these also pin that nothing was loosened.
+	test("a URI naming an out-of-scope note is refused even though it is well-formed", () => {
+		withVault((dir) => {
+			stocked(dir);
+			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
+			assert.equal(resolveResourceUri(dir, policy, "vault://note/work/1-1/Sarah.md"), null);
+		});
+	});
 
-	test("a collection-prefixed URI resolves once the collection is known", () => {
+	// `search` reports qmd's collection-prefixed paths, so a caller that pastes one
+	// into a resource URI used to get an undiagnosable not-found. Observed for real
+	// on vigia's first session, which burned a round trip guessing the right form.
+	test("a collection-prefixed URI resolves when the collection is supplied", () => {
 		withVault((dir) => {
 			stocked(dir);
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
@@ -421,20 +490,24 @@ describe("resolving a resource URI", () => {
 			assert.equal(
 				resolveResourceUri(dir, policy, prefixed, "myvault"),
 				resolveResourceUri(dir, policy, uri),
-				"same file once the collection is known",
+				"resolves to the same file once the collection is known",
 			);
 		});
 	});
 
-	test("a slugified path resolves back to the real file, directory names included", () => {
+	// The prefix was only half of it. qmd replaces spaces with dashes in directory
+	// names as well as filenames, so a path copied out of a search result names a
+	// file that does not exist. This is what actually denied vigia's first read.
+	test("a slugified path resolves back to the real file, directories included", () => {
 		withVault((dir) => {
 			stocked(dir);
-			put(dir, "reference/Deep Folder/A Long Note.md", NOTE("the real one"));
+			put(dir, "reference/Deep Folder/A Long Note.md", NOTE("real one"));
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain", "reference"] });
 
 			const truth = resolveResourceUri(dir, policy, "vault://note/reference/Deep Folder/A Long Note.md");
 			assert.ok(truth, "sanity: the true path resolves");
 
+			// Slug in the filename, slug in the directory, and both behind the prefix.
 			for (const uri of [
 				"vault://note/reference/Deep Folder/A-Long-Note.md",
 				"vault://note/reference/Deep-Folder/A-Long-Note.md",
@@ -447,12 +520,13 @@ describe("resolving a resource URI", () => {
 
 	test("an ambiguous slug is refused rather than guessed", () => {
 		withVault((dir) => {
-			// Two sibling directories that slugify to the same thing, with the note in
-			// only one. The exact path cannot resolve, so repair runs and finds the
-			// segment matches both. Serving a note from a directory the caller did not
-			// name would be worse than a not-found.
+			// Two sibling directories that slugify to the same thing, with the note
+			// present in only one. The exact path cannot resolve (the file is not in
+			// `Deep-Folder`), so repair runs and finds the segment matches both.
+			// Guessing would silently serve a note from a directory the caller did
+			// not name, so it refuses.
 			put(dir, "reference/Deep Folder/A Long Note.md", NOTE("the real one"));
-			put(dir, "reference/Deep-Folder/Other Note.md", NOTE("a decoy"));
+			put(dir, "reference/Deep-Folder/Something Else.md", NOTE("a decoy"));
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["reference"] });
 
 			assert.equal(
@@ -460,47 +534,51 @@ describe("resolving a resource URI", () => {
 				null,
 				"ambiguous directory segment must not be guessed",
 			);
+			// Unambiguous still works, so the guard has not disabled repair.
 			assert.ok(
 				resolveResourceUri(dir, policy, "vault://note/reference/Deep Folder/A-Long-Note.md", "myvault"),
-				"unambiguous repair still works",
 			);
 		});
 	});
 
-	test("repair loosens nothing: scope, traversal and never-expose still decide", () => {
+	test("de-slugging loosens nothing: an out-of-scope note stays out of scope", () => {
 		withVault((dir) => {
 			stocked(dir);
-			put(dir, "work/1-1/Some Person.md", NOTE("a 1:1 note"));
+			put(dir, "work/1-1/Sarah Jones.md", NOTE("a 1:1 note"));
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
-
 			for (const uri of [
-				// out of scope, reached by slug and by prefix
-				"vault://note/work/1-1/Some-Person.md",
-				"vault://note/myvault/work/1-1/Some-Person.md",
-				"vault://note/myvault/work/1-1/Some Person.md",
-				// traversal, behind both repairs
-				"vault://note/myvault/brain/../work/1-1/Some-Person.md",
-				// only the exact collection name is stripped, and only once
-				"vault://note/other/brain/Gotchas.md",
-				"vault://note/myvault/myvault/brain/Gotchas.md",
+				"vault://note/work/1-1/Sarah-Jones.md",
+				"vault://note/myvault/work/1-1/Sarah-Jones.md",
+				"vault://note/myvault/brain/../work/1-1/Sarah-Jones.md",
 			]) {
 				assert.equal(resolveResourceUri(dir, policy, uri, "myvault"), null, uri);
 			}
-
-			// A never-expose note stays refused when reached by its slug.
-			assert.equal(
-				resolveResourceUri(dir, policy, "vault://note/brain/Private-Thing.md", "myvault"),
-				null,
-				"private note refused via slug",
-			);
+			// A never-expose note is still refused when reached by its slug.
+			assert.equal(resolveResourceUri(dir, policy, "vault://note/brain/Private-Thing.md", "myvault"), null);
 		});
 	});
 
-	test("a URI naming an out-of-scope note is refused even though it is well-formed", () => {
+	test("the prefix retry loosens nothing: policy still decides after stripping", () => {
 		withVault((dir) => {
 			stocked(dir);
 			const policy = resolveExposure(dir, { mcp_exposed_roots: ["brain"] });
-			assert.equal(resolveResourceUri(dir, policy, "vault://note/work/1-1/Sarah.md"), null);
+
+			// Out of scope stays out of scope, prefixed or not.
+			assert.equal(
+				resolveResourceUri(dir, policy, "vault://note/myvault/work/1-1/Sarah.md", "myvault"),
+				null,
+			);
+			// Traversal is still refused when it arrives behind the prefix.
+			assert.equal(
+				resolveResourceUri(dir, policy, "vault://note/myvault/brain/../work/1-1/Sarah.md", "myvault"),
+				null,
+			);
+			// Only the exact collection name is stripped, and only once.
+			assert.equal(resolveResourceUri(dir, policy, "vault://note/other/brain/Gotchas.md", "myvault"), null);
+			assert.equal(
+				resolveResourceUri(dir, policy, "vault://note/myvault/myvault/brain/Gotchas.md", "myvault"),
+				null,
+			);
 		});
 	});
 
