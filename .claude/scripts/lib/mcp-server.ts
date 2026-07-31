@@ -34,7 +34,7 @@ import { captureNote, findToolMarkup } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
 import { recallFrom, readMemories, type MemoryEntry } from "./memory-recall.ts";
-import { resolvePromoted, type PromotedResolution } from "./memory-promoted.ts";
+import { resolvePromoted, type PromotedResolution, type NoteCache } from "./memory-promoted.ts";
 import { createMemoryIndex } from "./memory-index.ts";
 import { validateMemory, writeMemory, renderMemory, resolveLinks, neutralizeWikilinks } from "./memory-write.ts";
 import { findSimilar } from "./memory-similarity.ts";
@@ -144,7 +144,10 @@ export function reindexSync(indexName: string | null): boolean {
 function promotedFacet(p: PromotedResolution): string {
 	switch (p.status) {
 		case "served":
-			return `promoted text from ${p.note}#^${p.anchor}`;
+			// A block is addressed `#^id` and a heading `#Text`. Assuming the block
+			// form handed a heading promotion back as `Note.md#^Some Heading`, which
+			// is not a reference the caller can paste anywhere.
+			return `promoted text from ${p.note}#${p.kind === "block" ? "^" : ""}${p.anchor}`;
 		case "no-anchor":
 			return `promoted to ${p.note} (no anchor; capture body shown)`;
 		case "stale-anchor":
@@ -277,7 +280,39 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		}
 
 		const shown = visible.slice(0, Math.max(0, limit));
-		audit("recall", { query: query || null, returned: shown.length, project: who.project });
+
+		// Resolved BEFORE the audit line, because this is the only surface that
+		// reads outside its own root, and the audit log is the STATED mitigation
+		// for the exposure list not being a security boundary. "What did that
+		// session actually see" has to stay answerable, and a recall that served
+		// a `brain/` block while logging only a count does not answer it.
+		//
+		// One note cache per response, so twenty entries promoted into the same
+		// topic note read it once. The map dies with the call, so a correction
+		// made between two recalls is never served stale.
+		const noteCache: NoteCache = new Map();
+		const rows = shown.map((m) => ({
+			m,
+			promo: resolvePromoted(ctx.vaultRoot, policy, m.facets.promoted, noteCache),
+		}));
+		const promotions = rows.map((r) => r.promo).filter((p): p is PromotedResolution => p !== null);
+
+		audit("recall", {
+			query: query || null,
+			returned: shown.length,
+			project: who.project,
+			// Only when something was promoted, so an ordinary recall's audit line
+			// keeps its existing shape and stays greppable.
+			...(promotions.length
+				? {
+						promoted: promotions.map((p) =>
+							p.status === "served"
+								? { note: p.note, anchor: p.anchor, kind: p.kind, status: p.status }
+								: { note: p.note, status: p.status },
+						),
+					}
+				: {}),
+		});
 
 		if (!shown.length) {
 			const why = who.project
@@ -286,21 +321,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			return `${why} Call health if you expected something here.`;
 		}
 
-		// Resolved once per entry, because the render needs both the facet line
-		// and the body and re-reading the target for each would double the I/O on
-		// the hot path of every recall.
-		const promotions = new Map<string, PromotedResolution>();
-		// One note cache per response. Twenty entries promoted into the same topic
-		// note read it once, and the map dies with the call so a correction made
-		// between two recalls is never served stale.
-		const noteCache = new Map<string, string | null>();
-		for (const m of shown) {
-			const r = resolvePromoted(ctx.vaultRoot, policy, m.facets.promoted, noteCache);
-			if (r) promotions.set(m.rel, r);
-		}
-
-		const lines = shown.map((m) => {
-			const promo = promotions.get(m.rel);
+		const lines = rows.map(({ m, promo }) => {
 			const facets = [
 				m.facets.confidence,
 				m.facets.projects.length ? `projects: ${m.facets.projects.join(", ")}` : null,
@@ -337,7 +358,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		// stale anchor, a target outside the exposed roots — where the body above
 		// is the capture as first written and a correction exists that this
 		// surface cannot reach.
-		const unserved = [...promotions.values()].filter((p) => p.status !== "served");
+		const unserved = promotions.filter((p) => p.status !== "served");
 		if (unserved.length) {
 			const reasons = [...new Set(unserved.map((p) => p.status))].join(", ");
 			lines.push(

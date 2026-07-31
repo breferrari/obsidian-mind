@@ -10,26 +10,38 @@
  *   - a stale anchor DEGRADES to the capture rather than widening to the whole
  *     note — returning a `Gotchas` note because one bullet was promoted is the
  *     failure this mechanism exists to avoid.
+ *
+ * > **The fixture policy is deliberately realistic, and the first version was
+ * > not.** It used `["brain", "projects"]`, and every test passed against an
+ * > exposure check that compared only the FIRST path segment — so the suite
+ * > could not see that the shipping `vault-manifest.json` declares
+ * > `work/active/`, `perf/brag/` and `org/people/`, none of which a
+ * > first-segment match can ever admit. A fixture that does not model the
+ * > production shape cannot fail on it. `POLICY` below therefore carries a
+ * > multi-segment root, a `neverExpose` entry, and the suite exercises a
+ * > `private`-tagged note and a symlink.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
 import {
 	parsePromotedMarker,
-	isExposed,
 	blockAt,
 	sectionAt,
 	resolvePromoted,
+	type NoteCache,
 } from "../lib/memory-promoted.ts";
 import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
 
 const POLICY: ExposurePolicy = {
-	roots: ["brain", "projects"],
-	neverExpose: new Set(),
+	// `work/active` is the shape that matters: multi-segment, as every root in
+	// the shipping manifest is.
+	roots: ["brain", "work/active"],
+	neverExpose: new Set(["Withheld.md"]),
 	source: "manifest",
 	memoryRoot: "memories",
 };
@@ -43,7 +55,8 @@ function withVault(fn: (dir: string) => void): void {
 	}
 }
 
-function write(dir: string, rel: string, body: string): void {
+/** Named `put` to match the six other suites that define the same helper. */
+function put(dir: string, rel: string, body: string): void {
 	const full = join(dir, rel);
 	mkdirSync(dirname(full), { recursive: true });
 	writeFileSync(full, body, "utf8");
@@ -110,31 +123,123 @@ describe("parsing a promoted marker", () => {
 	});
 });
 
-describe("the exposure policy still bounds the read", () => {
-	test("an exposed root is allowed", () => {
-		withVault((d) => assert.equal(isExposed(d, POLICY, "brain/Gotchas.md"), true));
+// ---------------------------------------------------------------------------
+// The policy, asked rather than re-derived
+// ---------------------------------------------------------------------------
+
+describe("the exposure policy bounds the read", () => {
+	/**
+	 * Every case here failed, in one direction or the other, against the
+	 * hand-rolled check this module used to carry. They are the regression suite
+	 * for asking `resolveExposedNote` instead of re-deriving it.
+	 */
+	test("a multi-segment root is served — a first-segment match never admits it", () => {
+		withVault((d) => {
+			put(d, "work/active/Note.md", "# N\n\n- **Promoted.** Corrected. ^om-x\n");
+			assert.equal(
+				resolvePromoted(d, POLICY, "work/active/Note#^om-x")?.status,
+				"served",
+				"every root in the shipping manifest is this shape",
+			);
+		});
+	});
+
+	test("a sibling of an exposed multi-segment root is refused", () => {
+		withVault((d) => {
+			put(d, "work/secrets/Note.md", "# N\n\n- private ^om-x\n");
+			assert.equal(resolvePromoted(d, POLICY, "work/secrets/Note#^om-x")?.status, "not-exposed");
+		});
+	});
+
+	test("a filename in neverExpose is refused", () => {
+		withVault((d) => {
+			put(d, "brain/Withheld.md", "# W\n\n- **Withheld.** Must not travel. ^om-x\n");
+			const r = resolvePromoted(d, POLICY, "brain/Withheld#^om-x");
+			assert.equal(r?.status, "not-exposed");
+			assert.ok(!(r && "text" in r), "no content may cross the policy");
+		});
+	});
+
+	test("a note tagged private in frontmatter is refused", () => {
+		withVault((d) => {
+			put(d, "brain/Personal.md", "---\nprivate: true\n---\n\n# P\n\n- **Private.** ^om-x\n");
+			const r = resolvePromoted(d, POLICY, "brain/Personal#^om-x");
+			assert.equal(r?.status, "not-exposed");
+			assert.ok(!(r && "text" in r));
+		});
 	});
 
 	test("an unexposed root is refused", () => {
 		withVault((d) => {
-			for (const p of ["people/Someone.md", "work/career/Thing.md", "perf/Brag Doc.md"]) {
-				assert.equal(isExposed(d, POLICY, p), false, p);
-			}
+			put(d, "people/Someone.md", "# S\n\n- private ^om-x\n");
+			assert.equal(resolvePromoted(d, POLICY, "people/Someone#^om-x")?.status, "not-exposed");
 		});
 	});
 
 	test("the memory root is refused even though it is where recall reads", () => {
-		withVault((d) => assert.equal(isExposed(d, POLICY, "memories/2026/07/x.md"), false));
+		withVault((d) => {
+			put(d, "memories/2026/07/x.md", "# X\n\n- a capture ^om-x\n");
+			assert.equal(resolvePromoted(d, POLICY, "memories/2026/07/x#^om-x")?.status, "not-exposed");
+		});
 	});
 
 	test("a traversal out of an exposed root is refused", () => {
 		withVault((d) => {
-			for (const p of ["brain/../people/Someone.md", "brain/../../etc/passwd", "brain/./../work/x.md"]) {
-				assert.equal(isExposed(d, POLICY, p), false, p);
+			put(d, "people/Someone.md", "# S\n\n- private ^om-x\n");
+			for (const p of [
+				"brain/../people/Someone#^om-x",
+				"brain/../../etc/passwd#^om-x",
+				"brain/./../people/Someone#^om-x",
+			]) {
+				assert.notEqual(resolvePromoted(d, POLICY, p)?.status, "served", p);
 			}
 		});
 	});
+
+	test("a symlink out of an exposed root is contained", (t) => {
+		withVault((d) => {
+			put(d, "outside/Target.md", "# T\n\n- **Outside the vault.** ^om-x\n");
+			mkdirSync(join(d, "brain"), { recursive: true });
+			try {
+				symlinkSync(join(d, "outside", "Target.md"), join(d, "brain", "Link.md"), "file");
+			} catch {
+				// Windows without Developer Mode cannot create symlinks unprivileged.
+				t.skip("symlink creation not permitted on this host");
+				return;
+			}
+			assert.notEqual(
+				resolvePromoted(d, POLICY, "brain/Link#^om-x")?.status,
+				"served",
+				"resolve() alone does not follow links; realpath containment must",
+			);
+		});
+	});
+
+	test("an absolute or UNC path is refused", () => {
+		withVault((d) => {
+			const hostile = [
+				"/etc/passwd#^x",
+				String.raw`C:\Windows\win.ini#^x`,
+				String.raw`\\host\share\x#^x`,
+				"//host/share/x#^x",
+			];
+			for (const p of hostile) {
+				assert.notEqual(resolvePromoted(d, POLICY, p)?.status, "served", p);
+			}
+		});
+	});
+
+	test("a root that merely PREFIXES an exposed one is refused", () => {
+		withVault((d) => {
+			put(d, "brainstorm/Secret.md", "# S\n\n- leak ^om-x\n");
+			assert.equal(resolvePromoted(d, POLICY, "brainstorm/Secret#^om-x")?.status, "not-exposed");
+		});
+	});
 });
+
+// ---------------------------------------------------------------------------
+// Addressing
+// ---------------------------------------------------------------------------
 
 describe("locating a block", () => {
 	test("an id at the end of a line returns that line without the id", () => {
@@ -165,6 +270,21 @@ describe("locating a block", () => {
 		const md = "# T\n\n- an entry ^om-a.c\n- another ^om-abc\n";
 		assert.match(blockAt(md, "om-a.c") ?? "", /an entry/);
 	});
+
+	test("an id that is a prefix of another does not match the longer one", () => {
+		assert.equal(blockAt("# T\n\n- long ^om-abcdef\n", "om-abc"), null);
+	});
+
+	test("a duplicated id returns the first, deterministically", () => {
+		assert.equal(blockAt("# T\n\n- first ^om-dup\n- second ^om-dup\n", "om-dup"), "- first");
+	});
+
+	test("a pathological id cannot hang the matcher", () => {
+		const evil = "(a+)+".repeat(50);
+		const started = Date.now();
+		assert.equal(blockAt("# T\n\n- entry ^om-x\n", evil), null);
+		assert.ok(Date.now() - started < 1000, "must not backtrack");
+	});
 });
 
 describe("locating a section", () => {
@@ -184,6 +304,10 @@ describe("locating a section", () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// Resolution
+// ---------------------------------------------------------------------------
+
 describe("resolving a marker end to end", () => {
 	test("no marker at all is null, which is not the same as unservable", () => {
 		withVault((d) => assert.equal(resolvePromoted(d, POLICY, undefined), null));
@@ -191,146 +315,79 @@ describe("resolving a marker end to end", () => {
 
 	test("an anchored marker in an exposed root serves the promoted text", () => {
 		withVault((d) => {
-			write(d, "brain/Gotchas - Engineering.md", NOTE);
+			put(d, "brain/Gotchas - Engineering.md", NOTE);
 			const r = resolvePromoted(d, POLICY, "brain/Gotchas - Engineering#^om-a1b2c3");
 			assert.equal(r?.status, "served");
 			assert.equal(r?.status === "served" && r.text, "- **The promoted one.** The corrected text, swept.");
 		});
 	});
 
+	/** The renderer spells the anchor back, and the two forms differ. */
+	test("the served resolution carries which kind of anchor it was", () => {
+		withVault((d) => {
+			put(d, "brain/Gotchas - Engineering.md", NOTE);
+			const block = resolvePromoted(d, POLICY, "brain/Gotchas - Engineering#^om-a1b2c3");
+			const heading = resolvePromoted(d, POLICY, "brain/Gotchas - Engineering#How this is known");
+			assert.equal(block?.status === "served" && block.kind, "block");
+			assert.equal(heading?.status === "served" && heading.kind, "heading");
+		});
+	});
+
 	/** The opt-in property, and the reason every already-promoted capture is safe. */
 	test("a bare marker is named but never served, even when the note exists", () => {
 		withVault((d) => {
-			write(d, "brain/Gotchas - Engineering.md", NOTE);
+			put(d, "brain/Gotchas - Engineering.md", NOTE);
 			assert.equal(resolvePromoted(d, POLICY, "brain/Gotchas - Engineering")?.status, "no-anchor");
-		});
-	});
-
-	test("an anchored marker outside the exposed roots is refused, not served", () => {
-		withVault((d) => {
-			write(d, "people/Someone.md", "# S\n\n- private ^om-x\n");
-			const r = resolvePromoted(d, POLICY, "people/Someone#^om-x");
-			assert.equal(r?.status, "not-exposed");
-			assert.ok(!(r && "text" in r), "no content may cross the policy");
-		});
-	});
-
-	test("a traversal dressed as an exposed root is refused", () => {
-		withVault((d) => {
-			write(d, "people/Someone.md", "# S\n\n- private ^om-x\n");
-			assert.equal(resolvePromoted(d, POLICY, "brain/../people/Someone#^om-x")?.status, "not-exposed");
 		});
 	});
 
 	test("a stale anchor degrades to the capture rather than widening to the note", () => {
 		withVault((d) => {
-			write(d, "brain/Gotchas - Engineering.md", NOTE);
+			put(d, "brain/Gotchas - Engineering.md", NOTE);
 			const r = resolvePromoted(d, POLICY, "brain/Gotchas - Engineering#^om-gone");
 			assert.equal(r?.status, "stale-anchor");
 			assert.ok(!(r && "text" in r), "a stale pointer must never serve the whole note");
 		});
 	});
 
-	test("a missing note is unreadable rather than a crash", () => {
-		withVault((d) => assert.equal(resolvePromoted(d, POLICY, "brain/Nope#^om-x")?.status, "unreadable"));
-	});
-});
-
-// ---------------------------------------------------------------------------
-// Adversarial: things that should not serve, crash, or hang
-// ---------------------------------------------------------------------------
-
-describe("trying to break the resolver", () => {
-	test("an absolute path and a UNC path are refused", () => {
+	test("a missing note is unreadable, and told apart from a withheld one", () => {
 		withVault((d) => {
-			const hostile = [
-				"/etc/passwd#^x",
-				String.raw`C:\Windows\win.ini#^x`,
-				String.raw`\\host\share\x#^x`,
-				"//host/share/x#^x",
-			];
-			for (const p of hostile) {
-				const r = resolvePromoted(d, POLICY, p);
-				assert.notEqual(r?.status, "served", p);
-			}
+			put(d, "brain/Withheld.md", "# W\n\n- x ^om-x\n");
+			assert.equal(resolvePromoted(d, POLICY, "brain/Nope#^om-x")?.status, "unreadable");
+			assert.equal(resolvePromoted(d, POLICY, "brain/Withheld#^om-x")?.status, "not-exposed");
 		});
 	});
 
-	test("a root that merely PREFIXES an exposed one is refused", () => {
-		// "brainstorm" starts with "brain" — a startsWith check on the raw string
-		// would let it through, and it is a different folder.
-		withVault((d) => {
-			write(d, "brainstorm/Secret.md", "# S\n\n- leak ^om-x\n");
-			assert.equal(resolvePromoted(d, POLICY, "brainstorm/Secret#^om-x")?.status, "not-exposed");
-		});
-	});
-
-	test("case variation cannot smuggle a root past the check", () => {
-		withVault((d) => {
-			write(d, "brain/Gotchas - Engineering.md", NOTE);
-			// Case-insensitive is deliberate: on Windows and macOS the filesystem
-			// is too, so a case-sensitive check would refuse a legitimate marker
-			// while the file resolved anyway.
-			assert.equal(resolvePromoted(d, POLICY, "BRAIN/Gotchas - Engineering#^om-a1b2c3")?.status, "served");
-			assert.equal(resolvePromoted(d, POLICY, "PEOPLE/Someone#^om-x")?.status, "not-exposed");
-		});
-	});
-
-	test("a hash inside a filename does not become an anchor boundary error", () => {
-		withVault((d) => {
-			write(d, "brain/C# notes.md", "# T\n\n- entry ^om-cs\n");
-			// The FIRST hash splits, so this note is addressed as `brain/C` — which
-			// does not exist. Refusing is correct; silently reading a neighbouring
-			// file would not be. Documented so the behaviour is chosen, not luck.
-			assert.equal(resolvePromoted(d, POLICY, "brain/C# notes#^om-cs")?.status, "unreadable");
-		});
-	});
-
-	test("a directory named like a note is unreadable rather than a crash", () => {
+	test("a directory named like a note does not serve", () => {
 		withVault((d) => {
 			mkdirSync(join(d, "brain", "Folder.md"), { recursive: true });
-			assert.equal(resolvePromoted(d, POLICY, "brain/Folder#^om-x")?.status, "unreadable");
+			assert.notEqual(resolvePromoted(d, POLICY, "brain/Folder#^om-x")?.status, "served");
 		});
 	});
 
 	test("a note that is entirely frontmatter yields no block", () => {
 		withVault((d) => {
-			write(d, "brain/Empty.md", "---\ndescription: 'x'\n---\n");
+			put(d, "brain/Empty.md", "---\ndescription: 'x'\n---\n");
 			assert.equal(resolvePromoted(d, POLICY, "brain/Empty#^om-x")?.status, "stale-anchor");
 		});
 	});
 
-	test("a duplicated block id returns the first, deterministically", () => {
+	test("a hash inside a filename does not become an anchor boundary error", () => {
 		withVault((d) => {
-			write(d, "brain/Dup.md", "# T\n\n- first ^om-dup\n- second ^om-dup\n");
-			const r = resolvePromoted(d, POLICY, "brain/Dup#^om-dup");
-			assert.equal(r?.status === "served" && r.text, "- first");
+			put(d, "brain/C# notes.md", "# T\n\n- entry ^om-cs\n");
+			// The FIRST hash splits, so this is addressed as `brain/C` — which does
+			// not exist. Refusing is correct; silently reading a neighbouring file
+			// would not be. Documented so the behaviour is chosen, not luck.
+			assert.equal(resolvePromoted(d, POLICY, "brain/C# notes#^om-cs")?.status, "unreadable");
 		});
-	});
-
-	test("a pathological id cannot hang the matcher", () => {
-		// Regex metacharacters are escaped, so this is a literal search rather
-		// than a catastrophic backtrack.
-		const evil = "(a+)+".repeat(50);
-		const md = `# T\n\n- entry ^om-x\n`;
-		const started = Date.now();
-		assert.equal(blockAt(md, evil), null);
-		assert.ok(Date.now() - started < 1000, "must not backtrack");
 	});
 
 	test("CRLF line endings resolve the same as LF", () => {
 		withVault((d) => {
-			write(d, "brain/Crlf.md", NOTE.replace(/\n/g, "\r\n"));
+			put(d, "brain/Crlf.md", NOTE.replace(/\n/g, "\r\n"));
 			const r = resolvePromoted(d, POLICY, "brain/Crlf#^om-a1b2c3");
 			assert.equal(r?.status, "served");
 			assert.match(r?.status === "served" ? r.text : "", /The promoted one/);
-		});
-	});
-
-	test("an id that is a prefix of another does not match the longer one", () => {
-		withVault((d) => {
-			write(d, "brain/Pfx.md", "# T\n\n- long ^om-abcdef\n");
-			assert.equal(resolvePromoted(d, POLICY, "brain/Pfx#^om-abc")?.status, "stale-anchor");
 		});
 	});
 });
@@ -342,8 +399,8 @@ describe("trying to break the resolver", () => {
 describe("resolving at scale", () => {
 	test("many entries pointing at one note read it once", () => {
 		withVault((d) => {
-			write(d, "brain/Big.md", NOTE);
-			const cache = new Map<string, string | null>();
+			put(d, "brain/Big.md", NOTE);
+			const cache: NoteCache = new Map();
 			for (let i = 0; i < 500; i++) {
 				assert.equal(resolvePromoted(d, POLICY, "brain/Big#^om-a1b2c3", cache)?.status, "served");
 			}
@@ -355,26 +412,29 @@ describe("resolving at scale", () => {
 		// Deterministic proof, no timing: the file does not exist, so a resolution
 		// that succeeds can only have come from the cache.
 		withVault((d) => {
-			const cache = new Map<string, string | null>([["brain/Ghost.md", NOTE]]);
+			const cache: NoteCache = new Map([["brain/Ghost.md", NOTE.split("\n")]]);
 			assert.equal(resolvePromoted(d, POLICY, "brain/Ghost#^om-a1b2c3", cache)?.status, "served");
 			assert.equal(resolvePromoted(d, POLICY, "brain/Ghost#^om-a1b2c3")?.status, "unreadable", "without the cache");
 		});
 	});
 
-	test("an unreadable note is cached too, so it is stat-ed once", () => {
+	test("a withheld note is cached as unservable, so the policy is asked once", () => {
 		withVault((d) => {
-			const cache = new Map<string, string | null>();
-			for (let i = 0; i < 100; i++) resolvePromoted(d, POLICY, "brain/Missing#^om-x", cache);
+			put(d, "brain/Withheld.md", "# W\n\n- x ^om-x\n");
+			const cache: NoteCache = new Map();
+			for (let i = 0; i < 100; i++) {
+				assert.equal(resolvePromoted(d, POLICY, "brain/Withheld#^om-x", cache)?.status, "not-exposed");
+			}
 			assert.equal(cache.size, 1);
-			assert.equal(cache.get("brain/Missing.md"), null);
+			assert.equal(cache.get("brain/Withheld.md"), null);
 		});
 	});
 
 	test("a large note with a deep anchor stays well inside a frame", () => {
 		withVault((d) => {
 			const filler = Array.from({ length: 20_000 }, (_, i) => `- filler entry ${i} with some prose after it`).join("\n");
-			write(d, "brain/Huge.md", `---\ndescription: 'x'\n---\n\n# Huge\n\n${filler}\n- **The one.** Corrected. ^om-deep\n`);
-			const cache = new Map<string, string | null>();
+			put(d, "brain/Huge.md", `---\ndescription: 'x'\n---\n\n# Huge\n\n${filler}\n- **The one.** Corrected. ^om-deep\n`);
+			const cache: NoteCache = new Map();
 			const started = Date.now();
 			for (let i = 0; i < 50; i++) {
 				assert.equal(resolvePromoted(d, POLICY, "brain/Huge#^om-deep", cache)?.status, "served");

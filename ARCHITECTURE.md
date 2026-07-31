@@ -519,6 +519,28 @@ Every read surface resolves through `visibleFiles`. `search` filters its hits ag
 
 The symlink case is that defect in its most recent form, and worth keeping as the worked example: `resolveResourceUri` did realpath containment from the start, while the enumerator followed links silently. So the resource *listing* published an out-of-vault file's description and `expand` returned its body, while reading the very same URI was refused. Both ends now contain against the **matched declared root** — not the first path segment, since roots are prefixes and `work/active/` and `work/1-1/` share one.
 
+That defect recurred once more, which is why the shared predicate is now named rather than merely described. `recall` gained the ability to serve a **promoted block** out of `brain/` (below), and shipped with its own root check: it dropped `neverExpose`, dropped `isPrivate`, and compared the first path segment against roots that are prefixes. So it served two classes of note every other surface withholds, while refusing most of the vault's own declared roots. Every test passed — the fixture policy was `["brain", "projects"]`, a shape no real policy has. **`resolveExposedNote` is now the single answer to "may this path be read out of the vault"**, and `resolveResourceUri` and the promoted path both call it. Adding a fourth read surface means calling it too, not re-deriving it.
+
+### Serving a promoted block through `recall`
+
+`recall` reads the memory root and `search`/`expand` read everything but, so the two are disjoint. A lesson promoted from a capture into a `brain/` topic note therefore exists twice, and a foreign repo can only reach the capture — the version as first written, which may predate a correction swept through the promoted one.
+
+Since promotion is **additive** (the capture stays), the capture is still the reach record and is already correct. So visibility is computed exactly as before, from the capture's `scope`/`projects`/`platforms`, and only the *content* changes: when the capture's `promoted:` marker carries an anchor, `recall` serves the promoted text instead of the capture body.
+
+| condition | behaviour |
+|---|---|
+| `promoted: brain/Note` (no anchor) | named, never served — the pre-existing behaviour |
+| `promoted: brain/Note#^om-id` | the block is served, and the facet line says so |
+| `promoted: brain/Note#Heading` | the section is served |
+| anchor no longer resolves | capture body, marked `STALE` — never the whole note |
+| the policy withholds the note | capture body, marked withheld |
+
+Three things bound it. **Serving is opt-in**: only an anchored marker serves, and anchors are written at promotion time, so pointing at a block is a deliberate act rather than an automatic consequence of the marker existing. **The policy still decides**, via `resolveExposedNote` — a `private`-tagged or never-exposed note is refused here exactly as everywhere else. **It degrades rather than widens**: a stale anchor returns the reason, because serving a whole `Gotchas` note because one bullet in it was promoted is worse than serving nothing.
+
+The audit line carries the promoted notes and their statuses. This is the only surface that reads outside its own root, and the audit log is the stated mitigation for the exposure list not being a security boundary — a recall that served a `brain/` block while logging only a count would leave "what did that session actually see" unanswerable.
+
+**The residual risk, recorded rather than solved:** a promoted block can say more than the capture it came from. The capture's `scope` was declared for its own text, and once merged into a topic note the block sits beside other material. Opt-in-by-anchor is the mitigation, not a proof.
+
 ### A `search` call, end to end
 
 ```mermaid
