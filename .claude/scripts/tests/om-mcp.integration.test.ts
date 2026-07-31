@@ -437,6 +437,38 @@ describe("the om server on the wire", () => {
 		});
 
 		/**
+		 * The decay has to reach the party that can fix it (#183).
+		 *
+		 * `recall` has reported `stale-anchor` since v8.3.0, and it reports it to a
+		 * FOREIGN repo — which cannot see `brain/` at all and so cannot re-point
+		 * the marker. A vault session drops a `^om-…` id, every recall elsewhere
+		 * silently downgrades to the raw capture, and nothing in the vault says so.
+		 * `health` is the surface a vault session reads, so it is where this lands.
+		 */
+		test("health warns about the broken promotion, and never about a bare one", async () => {
+			memory("health-stale", "brain/Gotchas - Promoted#^om-gone", "CAPTURE BODY FOR STALE");
+			memory("health-bare", "brain/Gotchas - Promoted", "CAPTURE BODY FOR BARE");
+			memory("health-ok", "brain/Gotchas - Promoted#^om-corrected", "STALE ORIGINAL");
+
+			const t = textOf(await call("tools/call", { name: "health", arguments: {} }));
+
+			assert.match(t, /Warnings:/);
+			assert.match(t, /health-stale/, "the CAPTURE is named — it is the file to edit");
+			assert.match(t, /anchor no longer resolves/);
+			assert.doesNotMatch(
+				t,
+				/health-bare/,
+				"a bare marker is a legitimate promotion, never a warning",
+			);
+
+			// Counted rather than warned, so a store where nothing is servable is
+			// distinguishable from one where everything is — the hygiene flag falls
+			// either way, which is what made the difference invisible.
+			assert.match(t, /Promotions: \d+ servable, \d+ named only/);
+			assert.match(t, /add an anchor/);
+		});
+
+		/**
 		 * The shapes that were served WRONG before the segmenter, over the wire.
 		 *
 		 * Each of these returned something a reader would not call the promoted

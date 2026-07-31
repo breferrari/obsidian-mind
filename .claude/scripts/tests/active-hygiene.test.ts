@@ -329,6 +329,75 @@ describe("scanActiveHygiene — detectors", () => {
 		}
 	});
 
+	/**
+	 * The gradient the count creates (#183).
+	 *
+	 * Clearing the flag and SERVING the lesson are different achievements, and a
+	 * bare marker buys the first for less work than the second. Hygiene reports
+	 * the split so the cheaper form is visible — but it must never gate on it, or
+	 * the flag stops being able to reach zero.
+	 */
+	test("a bare marker is counted as named-only, and never revives the flag", () => {
+		const solo = mkdtempSync(join(tmpdir(), "active-hygiene-memories-namedonly-"));
+		try {
+			mkdirSync(join(solo, "memories/2026/07"), { recursive: true });
+			writeFileSync(
+				join(solo, "memories/2026/07/bare.md"),
+				'---\nscope: general\npromoted: "brain/Gotchas"\n---\n\n# bare\n',
+			);
+			writeFileSync(
+				join(solo, "memories/2026/07/anchored.md"),
+				'---\nscope: general\npromoted: "brain/Gotchas#^om-a1b2c3"\n---\n\n# anchored\n',
+			);
+
+			// Both are promoted, so there is no pressure at all — the flag reaches
+			// zero exactly as before, which is the invariant #155 established.
+			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox, null);
+
+			// Add one UNpromoted capture: the flag fires, and the split rides on it
+			// as a detail rather than as a second warning of its own.
+			writeFileSync(join(solo, "memories/2026/07/fresh.md"), "---\nscope: general\n---\n\n# fresh\n");
+			const inbox = scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox;
+			assert.equal(inbox?.count, 1, "only the unpromoted capture is pressure");
+			assert.equal(inbox?.namedOnly, 1, "the bare marker counts, the anchored one does not");
+
+			const text = formatActiveHygiene(scanActiveHygiene(solo, NOW, DEFAULTS)).join("\n");
+			assert.match(text, /1 already-promoted capture\(s\) here carry a bare marker/);
+		} finally {
+			rmSync(solo, { recursive: true, force: true });
+		}
+	});
+
+	test("quoting does not change the verdict — the writer stamps a YAML scalar", () => {
+		// The capture writer emits `promoted: 'brain/X#^id'`, and hand-promotion
+		// writes all three forms below. The count must not depend on which.
+		//
+		// This does NOT prove the quote stripping in `promotionOf`: an unstripped
+		// `"brain/G#^om-a1"` still splits at the `#` and still reads as anchored,
+		// so the verdict is identical either way. The stripping is there so the
+		// returned ref's `note` is a real path rather than `"brain/G` — which no
+		// caller reads today and every caller would assume tomorrow. What this
+		// guards is the count, across the forms actually written.
+		const solo = mkdtempSync(join(tmpdir(), "active-hygiene-memories-quoted-"));
+		try {
+			mkdirSync(join(solo, "memories/2026/07"), { recursive: true });
+			writeFileSync(join(solo, "memories/2026/07/x.md"), "---\nscope: general\n---\n\n# x\n");
+			for (const marker of ["'brain/G#^om-a1'", '"brain/G#^om-a1"', "brain/G#^om-a1"]) {
+				writeFileSync(
+					join(solo, "memories/2026/07/q.md"),
+					`---\nscope: general\npromoted: ${marker}\n---\n\n# q\n`,
+				);
+				assert.equal(
+					scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox?.namedOnly,
+					0,
+					`anchored, however quoted: ${marker}`,
+				);
+			}
+		} finally {
+			rmSync(solo, { recursive: true, force: true });
+		}
+	});
+
 	test("an empty or misplaced promoted marker does not silence a capture", () => {
 		const solo = mkdtempSync(join(tmpdir(), "active-hygiene-memories-badmark-"));
 		try {
@@ -352,7 +421,7 @@ describe("scanActiveHygiene — detectors", () => {
 			oversizedNotes: [],
 			openLoops: [],
 			inboxPressure: null,
-			memoryInbox: { count: 4, oldestDays: 2 },
+			memoryInbox: { count: 4, oldestDays: 2, namedOnly: 0 },
 		});
 		const text = lines.join("\n");
 		assert.match(text, /COPYING it/);

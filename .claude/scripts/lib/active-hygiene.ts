@@ -39,6 +39,7 @@
 import { readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import { escapeRegex } from "./regex.ts";
+import { parsePromotedMarker, type PromotedRef } from "./memory-promoted.ts";
 import {
 	extractFrontmatterField,
 	isInfraFilename,
@@ -98,6 +99,18 @@ export type InboxPressure = {
 	readonly oldestDays: number;
 };
 
+/**
+ * The memory inbox additionally reports how many promotions are DECORATIVE.
+ *
+ * A separate type rather than an optional field on `InboxPressure`: the
+ * meetings inbox has no promotion concept, and an optional field shared by two
+ * producers is how one of them silently stops populating it.
+ */
+export type MemoryInboxPressure = InboxPressure & {
+	/** Promoted captures whose marker carries no anchor, so nothing is servable. */
+	readonly namedOnly: number;
+};
+
 export type ActiveHygieneReport = {
 	// Vault-relative paths (e.g. "work/active/Foo.md").
 	readonly completedInActive: readonly string[];
@@ -105,7 +118,7 @@ export type ActiveHygieneReport = {
 	readonly oversizedNotes: readonly OversizedNote[];
 	readonly openLoops: readonly OpenLoop[];
 	readonly inboxPressure: InboxPressure | null;
-	readonly memoryInbox: InboxPressure | null;
+	readonly memoryInbox: MemoryInboxPressure | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -497,15 +510,29 @@ export function parseMemoryRoot(manifestJson: string | null): string {
  * pressure. This is the only edit a tool may make to a capture: the body, the
  * declared reach and the confidence are never touched.
  */
-function isPromoted(root: string, rel: string): boolean {
+function promotionOf(root: string, rel: string): PromotedRef | null {
 	let head: string;
 	try {
 		head = readFileSync(join(root, rel), "utf-8").slice(0, 2_000);
 	} catch {
-		return false;
+		return null;
 	}
 	const fm = head.match(/^---\n([\s\S]*?)\n---/);
-	return fm ? /^promoted:\s*\S/m.test(fm[1] ?? "") : false;
+	if (!fm) return null;
+	// `parsePromotedMarker`, not a local regex. This was the third independent
+	// parser of one format — `facetsOf` and `parsePromotedMarker` being the other
+	// two — and the local one answered only "is there a marker", which is why the
+	// count could not tell a servable promotion from a decorative one. (#183)
+	const line = (fm[1] ?? "").match(/^promoted:\s*(.+)$/m);
+	return line ? parsePromotedMarker(unquoteScalar(line[1]!.trim())) : null;
+}
+
+/** Undo the quoting the capture writer applies, so the parser sees the path. */
+function unquoteScalar(s: string): string {
+	if (s.length >= 2 && ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))) {
+		return s.slice(1, -1);
+	}
+	return s;
 }
 
 /**
@@ -524,14 +551,23 @@ function isPromoted(root: string, rel: string): boolean {
  * never fall, because the correct way to drain this inbox leaves every file
  * exactly where it is.
  */
-function findMemoryInbox(root: string, relDir: string, nowMs: number): InboxPressure | null {
+function findMemoryInbox(root: string, relDir: string, nowMs: number): MemoryInboxPressure | null {
 	let count = 0;
 	let oldestDays = 0;
+	let namedOnly = 0;
 	for (const rel of walkMarkdown(root, relDir)) {
 		// Same reasoning as the meetings scaffold (#155): a shipped README is not
 		// a capture, and counting it makes the flag permanently unclearable.
 		if (/\/readme\.md$/i.test(rel)) continue;
-		if (isPromoted(root, rel)) continue;
+		const promoted = promotionOf(root, rel);
+		if (promoted) {
+			// Counted, never demanded. The inbox flag still falls on a bare marker —
+			// forcing an anchor to clear hygiene would push anchors onto captures
+			// whose promoted block is not fit to leave the vault. Reporting the split
+			// makes the difference legible without making it mandatory. (#183)
+			if (promoted.anchor === null) namedOnly++;
+			continue;
+		}
 		let mtimeMs: number;
 		try {
 			mtimeMs = statSync(join(root, rel)).mtimeMs;
@@ -542,7 +578,13 @@ function findMemoryInbox(root: string, relDir: string, nowMs: number): InboxPres
 		const ageDays = Math.floor((nowMs - mtimeMs) / 86_400_000);
 		if (ageDays > oldestDays) oldestDays = ageDays;
 	}
-	return count > 0 ? { count, oldestDays } : null;
+	// `count > 0` ALONE, deliberately. `namedOnly` never revives the flag: a store
+	// whose captures are all promoted with bare markers is correctly drained, and
+	// gating on it would rebuild the permanently-unclearable inbox that #155 fixed
+	// and that the note on `promotionOf` exists to prevent. The split is a DETAIL
+	// of a flag already firing; `health` reports it unconditionally, because health
+	// is a report rather than a pressure. (#183)
+	return count > 0 ? { count, oldestDays, namedOnly } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -678,6 +720,14 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		lines.push(
 			`⚠️  ${memoryInbox.count} cross-repo memory capture(s) awaiting review (oldest ${memoryInbox.oldestDays}d). Promote a durable one by COPYING it into the right brain/ note and adding \`promoted: "brain/Note#^om-a1b2c3"\` to the capture's frontmatter, pointing at the block you copied — the entry stays, because recall reaches brain/ only THROUGH a capture, so deleting it takes the lesson away from every repo that cannot read brain/ at all. The ANCHOR is what lets recall serve the corrected text; a bare \`promoted: <note>\` clears this count but serves nothing.`,
 		);
+		// Evidence for the sentence above, from this vault rather than in the
+		// abstract. Told once the flag is already firing — it never raises one of
+		// its own, because a bare marker is a legitimate promotion. (#183)
+		if (memoryInbox.namedOnly > 0) {
+			lines.push(
+				`   ${memoryInbox.namedOnly} already-promoted capture(s) here carry a bare marker, so recall serves none of them. Re-point one by adding the anchor of the block you copied.`,
+			);
+		}
 	}
 
 	return lines;

@@ -26,6 +26,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { MEMORY_ROOT, MEMORY_SOURCE } from "./memory-write.ts";
+import { parsePromotedMarker, type PromotedRef } from "./memory-promoted.ts";
 
 // Re-exported so a reader can take the marker from the module it reads with,
 // while the writer that stamps it stays the one place it is defined.
@@ -52,14 +53,28 @@ export interface Facets {
 	 * which may predate a correction the promoted version has already had swept
 	 * through it.
 	 *
-	 * Serving the `brain/` note through `recall` is the real fix and is not this:
-	 * an ordinary note declares no `scope` or `projects`, so returning one would
-	 * either discard the boundary the memory layer exists to enforce or require
-	 * reach metadata to survive promotion. That work is tracked, and until it
-	 * lands the honest interim is to say the corrected version exists and name
-	 * it, rather than to serve a raw capture as though nothing had superseded it.
+	 * Since v8.3.0 an ANCHORED marker closes that gap: `resolvePromotedRef` serves
+	 * the promoted block itself, through the capture that still declares the
+	 * reach. A bare `promoted: <note>` keeps the older behaviour of naming the
+	 * corrected version without serving it, which stays legitimate — serving is a
+	 * separate and deliberate act, and requiring an anchor would push one onto
+	 * captures whose promoted block is not fit to leave the vault.
+	 *
+	 * **Parsed here so the marker format has ONE definition.** It had three — this
+	 * field as a raw string, `parsePromotedMarker`, and a regex in
+	 * `active-hygiene.ts` — and three parsers for one format drift the moment any
+	 * one of them is edited. (#183)
 	 */
-	readonly promoted: string | null;
+	readonly promoted: PromotedRef | null;
+	/**
+	 * The marker exactly as written, kept because `null` above is ambiguous.
+	 *
+	 * A capture with NO marker and a capture whose marker the parser REJECTED — a
+	 * stray control character, a non-string — both parse to `null`, and only the
+	 * second is a defect worth reporting. After the parse there is nothing left to
+	 * tell them apart, so the raw string is carried alongside.
+	 */
+	readonly promotedRaw: string | null;
 }
 
 export interface Caller {
@@ -137,7 +152,8 @@ export function facetsOf(fm: Record<string, unknown> | null | undefined): Facets
 		session: str(fm?.session),
 		superseded_by: list(fm?.superseded_by),
 		source: str(fm?.source),
-		promoted: str(fm?.promoted),
+		promoted: parsePromotedMarker(fm?.promoted),
+		promotedRaw: str(fm?.promoted),
 	};
 }
 

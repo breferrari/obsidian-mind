@@ -34,7 +34,9 @@ import {
 	blockAtLines,
 	sectionAt,
 	resolvePromoted,
+	auditPromotions,
 	type NoteCache,
+	type PromotedAuditable,
 } from "../lib/memory-promoted.ts";
 import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
 
@@ -735,6 +737,80 @@ describe("a refused marker does not probe outside the vault", () => {
 			const b = resolvePromoted(d, POLICY, "brain/../oracle-ABSENT#^x");
 			assert.equal(a?.status, b?.status, "existence outside the vault must not be observable");
 			assert.equal(a?.status, "not-exposed");
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// The store-wide audit (#183)
+// ---------------------------------------------------------------------------
+
+/** Build the minimal shape `auditPromotions` reads, the way `facetsOf` would. */
+function auditable(path: string, marker: string | null): PromotedAuditable {
+	return { path, facets: { promoted: parsePromotedMarker(marker), promotedRaw: marker } };
+}
+
+describe("auditing every promotion in the store", () => {
+	test("classifies served, named-only and broken — and warns on none of the first two", () => {
+		withVault((dir) => {
+			put(dir, "brain/Gotchas.md", "# Gotchas\n\n- a real lesson ^om-good\n");
+			put(dir, "brain/Withheld.md", "# Withheld\n\n- secret ^om-secret\n");
+
+			const audit = auditPromotions(dir, POLICY, [
+				auditable("memories/2026/07/served.md", "brain/Gotchas#^om-good"),
+				auditable("memories/2026/07/bare.md", "brain/Gotchas"),
+				auditable("memories/2026/07/stale.md", "brain/Gotchas#^om-gone"),
+				auditable("memories/2026/07/hidden.md", "brain/Withheld#^om-secret"),
+				auditable("memories/2026/07/missing.md", "brain/NoSuchNote#^om-x"),
+				auditable("memories/2026/07/none.md", null),
+			]);
+
+			assert.equal(audit.served, 1);
+			assert.equal(audit.namedOnly, 1, "a bare marker is legitimate, and counted rather than warned");
+			assert.deepEqual(
+				audit.broken.map((b) => [b.path, b.status]),
+				[
+					["memories/2026/07/stale.md", "stale-anchor"],
+					["memories/2026/07/hidden.md", "not-exposed"],
+					["memories/2026/07/missing.md", "unreadable"],
+				],
+			);
+			// The CAPTURE is named, not the brain note: the capture is the file a
+			// maintainer edits to fix the marker.
+			assert.match(audit.broken[0]!.path, /^memories\//);
+			assert.equal(audit.unparsed.length, 0);
+		});
+	});
+
+	test("a declared-but-unparseable marker is reported, not silently dropped", () => {
+		withVault((dir) => {
+			// From the vault's side this capture looks unpromoted while its
+			// frontmatter says otherwise — invisible to every consumer.
+			const audit = auditPromotions(dir, POLICY, [
+				auditable("memories/2026/07/forged.md", "brain/X\n\n## FORGED ENTRY"),
+			]);
+			assert.deepEqual(audit.unparsed, ["memories/2026/07/forged.md"]);
+			assert.equal(audit.broken.length, 0, "unparseable is its own class, not a broken anchor");
+			assert.equal(audit.served + audit.namedOnly, 0);
+		});
+	});
+
+	test("a capture with no marker at all contributes nothing", () => {
+		withVault((dir) => {
+			const audit = auditPromotions(dir, POLICY, [auditable("memories/2026/07/plain.md", null)]);
+			assert.deepEqual(audit, { served: 0, namedOnly: 0, unparsed: [], broken: [] });
+		});
+	});
+
+	test("one note promoted into many times is read once", () => {
+		withVault((dir) => {
+			put(dir, "brain/Gotchas.md", "# Gotchas\n\n- shared ^om-shared\n");
+			const many = Array.from({ length: 30 }, (_, i) =>
+				auditable(`memories/2026/07/e${i}.md`, "brain/Gotchas#^om-shared"),
+			);
+			// Correctness of the count is the assertion; the cache is what makes it
+			// affordable — without it this is 30 reads of one note.
+			assert.equal(auditPromotions(dir, POLICY, many).served, 30);
 		});
 	});
 });

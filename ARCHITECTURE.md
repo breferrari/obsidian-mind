@@ -551,6 +551,18 @@ The audit line carries the promoted notes and their statuses. This is the only s
 
 **The residual risk, recorded rather than solved:** a promoted block can say more than the capture it came from. The capture's `scope` was declared for its own text, and once merged into a topic note the block sits beside other material. Opt-in-by-anchor is the mitigation, not a proof.
 
+#### The incentive gradient, and who hears about decay
+
+Opt-in has a cost that took a real vault to notice: **the cheapest way to clear the memory-inbox flag is the form that serves nothing.** Any non-empty `promoted:` drains the count, so a bare marker buys the same hygiene outcome as an anchored one for strictly less work. In a real store, 35 of 37 captures carried a marker and none carried an anchor — the serving path above was dead in production while every flag read as clean.
+
+The fix is not to require an anchor. A bare marker is a *legitimate* promotion — it records that the lesson was copied — and forcing an anchor to clear hygiene would push anchors onto captures whose promoted block is not fit to leave the vault, which is the exact disclosure risk the paragraph above is careful about. So the gradient is made **visible** rather than mandatory:
+
+- `health` reports `Promotions: N servable, M named only`, unconditionally. Without it a store where nothing is servable is indistinguishable from one where everything is, because the flag falls either way.
+- `health` warns on genuinely **broken** promotions — a stale anchor, a withheld or missing target — and names the *capture* to edit rather than the `brain/` note, because the capture is the file that carries the marker.
+- The hygiene line repeats the split only when the inbox flag is *already* firing. It never raises a flag of its own: `namedOnly` cannot revive the count, or the inbox stops being able to reach zero — the permanently-unclearable failure that additive promotion was designed around.
+
+The diagnostic itself already existed; only `recall` consumed it, which put it in front of a foreign repo — the one party that cannot see `brain/` and therefore cannot fix anything. `health` is the surface a vault session reads, so it is where the report belongs.
+
 ### A `search` call, end to end
 
 ```mermaid
@@ -821,6 +833,8 @@ Every failure in this layer presents identically as **"no results"**. That is wh
 | a pinned `reason.model` is ignored | answers come from another model, silently | the answer names the model that actually ran, and flags the mismatch |
 | a reasoning spawn ends early | would otherwise read as a complete answer | refused by name, with the turn count, the terminal reason and the evidence |
 | a reasoning spawn hits the 300s timeout | looks identical to a spawn that never started | the kill signal is read, so the terminal reason is `timeout`, in the message and the log |
+| a promoted anchor goes stale | recall quietly serves the raw capture instead of the corrected text | `health` names the CAPTURE to edit, and why |
+| every promotion is decorative | the inbox flag clears and nothing is servable | `health` reports servable vs named-only; hygiene repeats it once the flag is already firing |
 | the server exits mid-spawn | a session runs on with no bound and no audit line | shutdown kills every in-flight spawn |
 | a promoted anchor no longer resolves | the capture body is served, silently older than the vault's own text | the facet line marks the anchor `STALE`; the audit line records `stale-anchor` |
 | a promoted note is outside the exposed roots, `private`, or withheld by name | the capture body is served rather than the correction | the facet line says it is withheld; the audit line records `not-exposed` |

@@ -472,7 +472,22 @@ export function resolvePromoted(
 	raw: unknown,
 	cache: NoteCache = new Map(),
 ): PromotedResolution | null {
-	const ref = parsePromotedMarker(raw);
+	return resolvePromotedRef(vaultRoot, policy, parsePromotedMarker(raw), cache);
+}
+
+/**
+ * The same resolution, for a caller holding an already-parsed marker.
+ *
+ * `facetsOf` parses at read time so the marker format has ONE definition (see
+ * `Facets.promoted`). Re-deriving the ref here would restore the second one that
+ * change exists to remove, and the two would drift the moment either is edited.
+ */
+export function resolvePromotedRef(
+	vaultRoot: string,
+	policy: ExposurePolicy,
+	ref: PromotedRef | null,
+	cache: NoteCache = new Map(),
+): PromotedResolution | null {
 	if (!ref) return null;
 	if (ref.anchor === null) return { status: "no-anchor", note: ref.note };
 
@@ -542,4 +557,81 @@ export function resolvePromoted(
 		text: hit.text,
 		truncated: hit.truncated,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Store-wide audit
+// ---------------------------------------------------------------------------
+
+/** One capture, as much of it as an audit needs. Structural on purpose: */
+/* importing MemoryEntry would make memory-recall → memory-promoted a cycle. */
+export interface PromotedAuditable {
+	readonly path: string;
+	readonly facets: { readonly promoted: PromotedRef | null; readonly promotedRaw: string | null };
+}
+
+/** A promotion that names a note but cannot serve it. */
+export interface BrokenPromotion {
+	/** Store-relative path of the CAPTURE, which is the file to edit. */
+	readonly path: string;
+	readonly note: string;
+	readonly status: "stale-anchor" | "not-exposed" | "unreadable";
+}
+
+export interface PromotionAudit {
+	/** Markers that resolve to text. */
+	readonly served: number;
+	/** Bare `promoted: <note>` — legitimate, and deliberately not a warning. */
+	readonly namedOnly: number;
+	/** Present in frontmatter, rejected by the parser. */
+	readonly unparsed: readonly string[];
+	readonly broken: readonly BrokenPromotion[];
+}
+
+/**
+ * Resolve every promotion in the store, so the party that can FIX a broken one
+ * is the party that hears about it.
+ *
+ * The diagnostic already existed and only the recall renderer consumed it, which
+ * put it in front of the one reader who cannot act: a foreign repo sees
+ * `stale-anchor` and cannot see `brain/` at all. Meanwhile a vault session edits
+ * a topic note, drops a `^om-…` id, and every recall elsewhere silently
+ * downgrades to the raw capture body with nobody in the vault told. (#183)
+ *
+ * A bare marker is NOT broken. Promotion is additive and serving is a separate,
+ * deliberate act — treating "named only" as a defect would push anchors onto
+ * captures whose promoted block is not fit to leave the vault, which is the
+ * disclosure risk the opt-in design is careful about. It is counted, not warned.
+ */
+export function auditPromotions(
+	vaultRoot: string,
+	policy: ExposurePolicy,
+	entries: readonly PromotedAuditable[],
+): PromotionAudit {
+	// One cache for the whole sweep: a store with forty captures promoted into
+	// six topic notes reads six files, not forty. Scoped to this call for the
+	// same reason the recall cache is — a correction between two health calls
+	// must never be served from the earlier one.
+	const cache: NoteCache = new Map();
+	const broken: BrokenPromotion[] = [];
+	const unparsed: string[] = [];
+	let served = 0;
+	let namedOnly = 0;
+
+	for (const e of entries) {
+		if (e.facets.promoted === null) {
+			// Declared but unparseable — a control character, a non-string. Worth
+			// naming: the marker is invisible to every consumer, so from the vault's
+			// side the capture looks unpromoted while the frontmatter says otherwise.
+			if (e.facets.promotedRaw !== null) unparsed.push(e.path);
+			continue;
+		}
+		const r = resolvePromotedRef(vaultRoot, policy, e.facets.promoted, cache);
+		if (r === null) continue;
+		if (r.status === "served") served++;
+		else if (r.status === "no-anchor") namedOnly++;
+		else broken.push({ path: e.path, note: r.note, status: r.status });
+	}
+
+	return { served, namedOnly, unparsed, broken };
 }

@@ -333,12 +333,36 @@ describe("reader robustness", () => {
 
 describe("a promoted capture says so", () => {
 	test("the marker is parsed off frontmatter", () => {
-		assert.equal(facetsOf({ promoted: "brain/Gotchas - Engineering" }).promoted, "brain/Gotchas - Engineering");
+		// Parsed at read time so the format has ONE definition (#183). `.md` is
+		// appended because what the marker addresses is a file.
+		assert.deepEqual(facetsOf({ promoted: "brain/Gotchas - Engineering" }).promoted, {
+			note: "brain/Gotchas - Engineering.md",
+			anchor: null,
+			kind: "note",
+		});
+		assert.deepEqual(facetsOf({ promoted: "brain/Gotchas#^om-a1b2c3" }).promoted, {
+			note: "brain/Gotchas.md",
+			anchor: "om-a1b2c3",
+			kind: "block",
+		});
+	});
+
+	test("the raw marker is kept, because a null parse is ambiguous", () => {
+		// Absent and REJECTED both parse to null, and only the second is a defect.
+		// Without the raw string nothing downstream can tell them apart, which is
+		// what `health` needs in order to report an unparseable marker at all.
+		assert.equal(facetsOf({}).promotedRaw, null);
+		assert.equal(facetsOf({ promoted: "brain/X" }).promotedRaw, "brain/X");
+
+		const rejected = facetsOf({ promoted: "brain/X\n\n## FORGED" });
+		assert.equal(rejected.promoted, null, "a newline is a forged response, not a path");
+		assert.equal(rejected.promotedRaw, "brain/X\n\n## FORGED", "but it WAS declared");
 	});
 
 	test("an unpromoted capture reports null rather than a falsy string", () => {
 		assert.equal(facetsOf({}).promoted, null);
 		assert.equal(facetsOf({ promoted: 123 }).promoted, null, "a non-string marker is not a note name");
+		assert.equal(facetsOf({ promoted: 123 }).promotedRaw, null, "and it is not a declaration either");
 	});
 
 	/**

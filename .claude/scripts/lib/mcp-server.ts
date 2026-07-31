@@ -34,7 +34,12 @@ import { captureNote, findToolMarkup } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
 import { recallFrom, readMemories, type MemoryEntry } from "./memory-recall.ts";
-import { resolvePromoted, type PromotedResolution, type NoteCache } from "./memory-promoted.ts";
+import {
+	resolvePromotedRef,
+	auditPromotions,
+	type PromotedResolution,
+	type NoteCache,
+} from "./memory-promoted.ts";
 import { createMemoryIndex } from "./memory-index.ts";
 import { validateMemory, writeMemory, renderMemory, resolveLinks, neutralizeWikilinks } from "./memory-write.ts";
 import { findSimilar } from "./memory-similarity.ts";
@@ -303,7 +308,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		// made between two recalls is never served stale.
 		const noteCache: NoteCache = new Map();
 		const rows = shown.map((m) => {
-			const promo = resolvePromoted(ctx.vaultRoot, policy, m.facets.promoted, noteCache);
+			const promo = resolvePromotedRef(ctx.vaultRoot, policy, m.facets.promoted, noteCache);
 			// A marker that exists but does not PARSE — a stray control character,
 			// say — resolves to null, which would otherwise render as "not promoted
 			// at all". Refusing to echo the string is right; refusing to mention
@@ -315,7 +320,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			// `resolveExposedNote` is not cached at all, so every promoted row paid
 			// a second realpath and a second `isPrivate` read. Measured at 25 rows
 			// over a 20k-line note: 1.27ms/row became 2.25ms/row.
-			return { m, promo, unparsed: Boolean(m.facets.promoted) && promo === null };
+			return { m, promo, unparsed: m.facets.promotedRaw !== null && promo === null };
 		});
 		const promotions = rows.map((r) => r.promo).filter((p): p is PromotedResolution => p !== null);
 
@@ -693,7 +698,17 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		// health when a memory is missing, so this is routinely the FIRST call a
 		// server serves — and "3 memories / 0 entries held" reads as a parse
 		// failure when nothing is wrong.
-		const parsed = storeEntries().length;
+		const entries = storeEntries();
+		const parsed = entries.length;
+		// Resolved HERE because this is the only surface a vault session reads.
+		// `recall` has had the diagnostic since v8.3.0 and shows it to a foreign
+		// repo, which cannot see `brain/` at all and so cannot fix a stale anchor
+		// — the report was reaching the one party powerless to act on it. (#183)
+		const promo = auditPromotions(
+			ctx.vaultRoot,
+			policy,
+			entries.map((m) => ({ path: m.rel, facets: m.facets })),
+		);
 		const names = new Set(visibleFiles(ctx.vaultRoot, policy).map((f) => f.label));
 		if (who.project) names.add(who.project);
 		const h = health(ctx.vaultRoot, ctx.manifest, {
@@ -726,8 +741,40 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			// Reporting the day's usage is what stands in for a limit: the answer to
 			// "where did that go" has to exist somewhere, and this is where.
 			`Reasoning today: ${reasonUsage(ctx.vaultRoot, ctx.manifest, now().toISOString().slice(0, 10), sumAuditField)}`,
+			// Stated whenever anything is promoted, because "named only" is the
+			// DEFAULT outcome of promoting by hand and is otherwise invisible: the
+			// hygiene flag falls either way, so without this line a store where no
+			// promotion serves anything looks identical to one where they all do.
+			...(promo.served + promo.namedOnly > 0
+				? [
+						`Promotions: ${promo.served} servable, ${promo.namedOnly} named only${
+							promo.namedOnly > 0 ? " (add an anchor — `promoted: \"brain/Note#^om-a1b2c3\"` — to serve the corrected text)" : ""
+						}`,
+					]
+				: []),
 			"",
-			h.warnings.length ? `Warnings:\n${h.warnings.map((w) => `- ${w}`).join("\n")}` : "No warnings.",
+			(() => {
+				// A broken promotion is a warning; a bare marker never is. Serving is a
+				// separate, deliberate act, and demanding an anchor would push one onto
+				// captures whose promoted block is not fit to leave the vault.
+				const mine = [
+					...promo.broken.map(
+						(b) =>
+							`promotion in ${b.path} names ${b.note} but ${
+								b.status === "stale-anchor"
+									? "its anchor no longer resolves — the block was renamed, moved or removed"
+									: b.status === "not-exposed"
+										? "that note is outside the exposed roots"
+										: "that note is missing or unreadable"
+							}. recall falls back to the raw capture body.`,
+					),
+					...promo.unparsed.map(
+						(p) => `promotion marker in ${p} could not be parsed — it is invisible to every consumer.`,
+					),
+				];
+				const all = [...h.warnings, ...mine];
+				return all.length ? `Warnings:\n${all.map((w) => `- ${w}`).join("\n")}` : "No warnings.";
+			})(),
 			...(h.notes.length ? ["", `Notes:\n${h.notes.map((n) => `- ${n}`).join("\n")}`] : []),
 		].join("\n");
 	}
