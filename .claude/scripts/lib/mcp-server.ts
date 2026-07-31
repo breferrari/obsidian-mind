@@ -132,6 +132,15 @@ export function reindexSync(indexName: string | null): boolean {
 	return true;
 }
 
+/** How many promoted entries the audit line names before it summarises. */
+const AUDIT_PROMOTED_CAP = 25;
+/** How long any single frontmatter-derived string may be in the audit line. */
+const AUDIT_FIELD_CHARS = 300;
+
+/** A frontmatter-derived value, bounded for the audit log. */
+const auditField = (s: string): string =>
+	s.length <= AUDIT_FIELD_CHARS ? s : `${s.slice(0, AUDIT_FIELD_CHARS)}…[${s.length}]`;
+
 /**
  * How a promotion reads on the facet line.
  *
@@ -147,7 +156,9 @@ function promotedFacet(p: PromotedResolution): string {
 			// A block is addressed `#^id` and a heading `#Text`. Assuming the block
 			// form handed a heading promotion back as `Note.md#^Some Heading`, which
 			// is not a reference the caller can paste anywhere.
-			return `promoted text from ${p.note}#${p.kind === "block" ? "^" : ""}${p.anchor}`;
+			return `promoted text from ${p.note}#${p.kind === "block" ? "^" : ""}${p.anchor}${
+				p.truncated ? " (TRUNCATED to the served-lines cap)" : ""
+			}`;
 		case "no-anchor":
 			return `promoted to ${p.note} (no anchor; capture body shown)`;
 		case "stale-anchor":
@@ -303,13 +314,19 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			project: who.project,
 			// Only when something was promoted, so an ordinary recall's audit line
 			// keeps its existing shape and stays greppable.
+			// Bounded, because the note path comes from frontmatter and the audit
+			// log is rotated by SIZE. A megabyte-long marker produced a megabyte
+			// audit entry, so ~10 such recalls would discard the history that is
+			// this design's stated mitigation — the log would erase its own
+			// evidence on the calls most worth having evidence of.
 			...(promotions.length
 				? {
-						promoted: promotions.map((p) =>
+						promoted: promotions.slice(0, AUDIT_PROMOTED_CAP).map((p) =>
 							p.status === "served"
-								? { note: p.note, anchor: p.anchor, kind: p.kind, status: p.status }
-								: { note: p.note, status: p.status },
+								? { note: auditField(p.note), anchor: auditField(p.anchor), kind: p.kind, status: p.status }
+								: { note: auditField(p.note), status: p.status },
 						),
+						...(promotions.length > AUDIT_PROMOTED_CAP ? { promoted_omitted: promotions.length - AUDIT_PROMOTED_CAP } : {}),
 					}
 				: {}),
 		});
