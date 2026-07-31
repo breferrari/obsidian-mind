@@ -266,7 +266,7 @@ function containedIn(rootReal: string, path: string): boolean {
 }
 
 /** The declared root that admits `rel`, at the granularity the manifest wrote it. */
-function matchedRoot(policy: ExposurePolicy, rel: string): string | null {
+export function matchedRoot(policy: ExposurePolicy, rel: string): string | null {
 	const lower = rel.replace(/\\/g, "/").toLowerCase();
 	return (
 		policy.roots.find((r) => {

@@ -22,7 +22,7 @@
 import { existsSync, readdirSync, mkdirSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
-import type { ExposurePolicy } from "./mcp-exposure.ts";
+import { type ExposurePolicy, isExposedPath, matchedRoot } from "./mcp-exposure.ts";
 import { claimFile } from "./atomic-write.ts";
 
 const SLUG_MAX = 60;
@@ -184,9 +184,16 @@ export function resolveDestination(
 ): Destination {
 	if (typeof folder === "string" && folder.trim()) {
 		const rel = folder.trim().replace(/^[\\/]+|[\\/]+$/g, "");
-		const root = rel.split(/[\\/]/)[0] ?? "";
-		if (!policy.roots.some((r) => r.toLowerCase() === root.toLowerCase())) {
-			throw new Error(`refused: "${root}" is not an exposed root (allowed: ${policy.roots.join(", ")})`);
+		// `isExposedPath` rather than a first-segment match, because roots are
+		// path PREFIXES. The old form compared `rel.split("/")[0]` against the
+		// root list, so a vault declaring `work/active` — which is the shape
+		// almost every root in the shipped manifest has — refused
+		// `folder: "work/active"` with the message *"'work' is not an exposed
+		// root (allowed: brain, work/active)"*, naming the root it had just
+		// refused. On a default install that is every root a user would file
+		// into, and the `inbox/` fallback hid it as a routing quirk.
+		if (!isExposedPath(policy, rel)) {
+			throw new Error(`refused: "${rel}" is not inside an exposed root (allowed: ${policy.roots.join(", ")})`);
 		}
 		// No traversal segments at all. Checking containment against the VAULT is
 		// not enough: `brain/../work` passes the root check on its first segment
@@ -196,8 +203,10 @@ export function resolveDestination(
 			throw new Error(`refused: "${folder}" contains a traversal segment`);
 		}
 		const dir = resolve(join(vaultRoot, rel));
-		// Containment against the DECLARED ROOT, not merely the vault: roots are
-		// per-folder, so "inside the vault" is the wrong question.
+		// Containment against the MATCHED declared root, not merely the vault and
+		// not the first path segment: roots are prefixes, so a vault serving
+		// `work/active/` and not `work/1-1/` must be contained against the former.
+		const root = matchedRoot(policy, rel) ?? "";
 		const rootDir = resolve(join(vaultRoot, root));
 		if (dir !== rootDir && !dir.startsWith(rootDir + sep)) {
 			throw new Error(`refused: "${folder}" escapes the "${root}" root`);

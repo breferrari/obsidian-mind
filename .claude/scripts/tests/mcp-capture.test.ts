@@ -114,8 +114,35 @@ describe("resolving the destination", () => {
 		// The exposed roots bound writing as well as reading: a note lands in a
 		// folder the vault declared, or the call is refused.
 		withVault((dir) => {
-			assert.throws(() => resolveDestination(dir, POLICY, {}, "atlas", "work/career", "note"), /not an exposed root/);
-			assert.throws(() => resolveDestination(dir, POLICY, {}, "atlas", "people", "note"), /not an exposed root/);
+			assert.throws(() => resolveDestination(dir, POLICY, {}, "atlas", "work/career", "note"), /not inside an exposed root/);
+			assert.throws(() => resolveDestination(dir, POLICY, {}, "atlas", "people", "note"), /not inside an exposed root/);
+		});
+	});
+
+	/**
+	 * The fixture that was missing, and the reason the bug lived.
+	 *
+	 * Every existing case used `["brain", "projects"]` — single-segment — which
+	 * cannot tell a first-segment match from a prefix match. The shipped manifest
+	 * declares `work/active/`, `perf/brag/`, `org/people/`: on a default install
+	 * the old check refused every root a user would actually file into, with the
+	 * message *"'work' is not an exposed root (allowed: brain, work/active)"*,
+	 * naming the root it had just refused. The `inbox/` fallback hid it.
+	 */
+	test("a multi-segment root is honoured, and its siblings are not", () => {
+		withVault((dir) => {
+			const multi: ExposurePolicy = {
+				roots: ["brain", "work/active", "perf/brag"],
+				neverExpose: new Set(),
+				source: "manifest",
+				memoryRoot: "memories",
+			};
+			for (const ok of ["work/active", "work/active/notes", "perf/brag", "brain"]) {
+				assert.equal(resolveDestination(dir, multi, {}, "atlas", ok, "note").rel, ok, ok);
+			}
+			for (const no of ["work/secrets", "work", "people", "perf"]) {
+				assert.throws(() => resolveDestination(dir, multi, {}, "atlas", no, "note"), /refused/, no);
+			}
 		});
 	});
 
@@ -293,7 +320,7 @@ describe("writing a capture", () => {
 		withVault((dir) => {
 			assert.throws(
 				() => captureNote(dir, POLICY, {}, "atlas", { ...BASIC, folder: "work/secret" }, new Set()),
-				/not an exposed root/,
+				/not inside an exposed root/,
 			);
 			assert.equal(readdirSync(dir).length, 0, "a refusal must not create the folder either");
 		});

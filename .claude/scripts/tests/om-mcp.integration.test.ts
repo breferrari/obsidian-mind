@@ -337,7 +337,7 @@ describe("the om server on the wire", () => {
 			name: "record_work",
 			arguments: { title: "sneak", summary: "should not land", folder: "work" },
 		});
-		assert.match(textOf(denied), /Not recorded:.*not an exposed root/);
+		assert.match(textOf(denied), /Not recorded:.*not inside an exposed root/);
 		assert.ok(!existsSync(join(vault, "work", "sneak.md")));
 	});
 
