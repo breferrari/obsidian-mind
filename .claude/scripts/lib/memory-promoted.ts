@@ -335,7 +335,6 @@ export function resolvePromoted(
 	if (!ref) return null;
 	if (ref.anchor === null) return { status: "no-anchor", note: ref.note };
 
-	const key = ref.note.toLowerCase();
 
 	// Withheld and missing are told apart for the message only: a reader can act
 	// on a marker pointing somewhere the policy withholds, and cannot act on one
@@ -357,18 +356,38 @@ export function resolvePromoted(
 			: { status: "unreadable", note: ref.note };
 	};
 
-	let lines: string[] | null;
-	if (cache.has(key)) {
-		lines = cache.get(key) ?? null;
-	} else {
-		// The policy decides, once per distinct note rather than once per entry.
-		const full = resolveExposedNote(vaultRoot, policy, ref.note);
+	// The policy is asked every time; only the READ is cached. It is a few
+	// syscalls against a read-and-split of a note that can be 82KB, and it is
+	// what produces the cache key — see below.
+	const full = resolveExposedNote(vaultRoot, policy, ref.note);
+	if (full === null) return refused();
+
+	// KEYED ON THE REALPATH, which is the file's identity, rather than on the
+	// marker string.
+	//
+	// Keying on a lowercased marker was correct on Windows and macOS and wrong
+	// on Linux, where `brain/Foo.md` and `brain/foo.md` are two different files:
+	// the lowercased key conflated them, so one note's content could be served
+	// for the other. That is worse than the duplicate read the lowercasing was
+	// there to avoid, and only the Linux leg of CI could see it — both local
+	// platforms are case-insensitive.
+	//
+	// A realpath is not a canonical identity either — `realpathSync` on Windows
+	// echoes the caller's case rather than the name on disk, so two spellings of
+	// one file still produce two entries there. That is a duplicate READ, which
+	// is a cost; it is not two answers, which would be a bug. The property that
+	// matters is the one the key now guarantees on every platform: **one key is
+	// one file**, so no entry can ever serve another file's content. Collapsing
+	// the remaining duplicate would need a `dev`+`ino` identity, and `ino` is not
+	// dependable on Windows — not worth trading a correctness guarantee for.
+	let lines = cache.get(full);
+	if (lines === undefined) {
 		try {
-			lines = full === null ? null : bodyLines(readFileSync(full, "utf8"));
+			lines = bodyLines(readFileSync(full, "utf8"));
 		} catch {
 			lines = null;
 		}
-		cache.set(key, lines);
+		cache.set(full, lines);
 	}
 	if (lines === null) return refused();
 

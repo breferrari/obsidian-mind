@@ -404,71 +404,73 @@ describe("resolving at scale", () => {
 			for (let i = 0; i < 500; i++) {
 				assert.equal(resolvePromoted(d, POLICY, "brain/Big#^om-a1b2c3", cache)?.status, "served");
 			}
-			assert.equal(cache.size, 1, "the cache key is the note, so one entry for 500 resolutions");
-		});
-	});
-
-	test("the cache is consulted rather than the disk", () => {
-		// Deterministic proof, no timing: the file does not exist, so a resolution
-		// that succeeds can only have come from the cache.
-		withVault((d) => {
-			// The key is lowercased, because the filesystems this runs on are.
-			const cache: NoteCache = new Map([["brain/ghost.md", NOTE.split("\n")]]);
-			assert.equal(resolvePromoted(d, POLICY, "brain/Ghost#^om-a1b2c3", cache)?.status, "served");
-			assert.equal(resolvePromoted(d, POLICY, "brain/Ghost#^om-a1b2c3")?.status, "unreadable", "without the cache");
-		});
-	});
-
-	test("a withheld note is cached as unservable, so the policy is asked once", () => {
-		withVault((d) => {
-			put(d, "brain/Withheld.md", "# W\n\n- x ^om-x\n");
-			const cache: NoteCache = new Map();
-			for (let i = 0; i < 100; i++) {
-				assert.equal(resolvePromoted(d, POLICY, "brain/Withheld#^om-x", cache)?.status, "not-exposed");
-			}
-			assert.equal(cache.size, 1);
-			assert.equal(cache.get("brain/withheld.md"), null);
+			assert.equal(cache.size, 1, "the cache key is the file, so one entry for 500 resolutions");
 		});
 	});
 
 	/**
-	 * Case-variant spellings are ONE file on Windows and macOS. Keying the cache
-	 * case-sensitively meant a second read per spelling and — the part that
-	 * matters — two contradictory verdicts for one file inside one response:
-	 * `brain/soul.md` cached `served` beside `brain/SOUL.md` cached `null`.
+	 * Case-variant spellings are one file on Windows and macOS and TWO on Linux,
+	 * so the property is identity rather than spelling.
+	 *
+	 * The first version keyed the cache on a LOWERCASED MARKER. That was right on
+	 * both local platforms and wrong on Linux, where it conflated two genuinely
+	 * different files — one note's content servable under another's key. Only the
+	 * Linux leg of CI could see it. The key is the resolved realpath now.
 	 */
-	test("case-variant markers to one file share one cache entry", () => {
+	test("markers resolving to one file share one cache entry", () => {
 		withVault((d) => {
 			put(d, "brain/Big.md", NOTE);
 			const cache: NoteCache = new Map();
-			for (const spelling of ["brain/Big", "brain/big", "brain/BIG.md", "brain/Big.MD"]) {
-				resolvePromoted(d, POLICY, `${spelling}#^om-a1b2c3`, cache);
+			// Two spellings of the same path, differing only in the optional suffix.
+			for (const marker of ["brain/Big", "brain/Big.md"]) {
+				assert.equal(resolvePromoted(d, POLICY, marker + "#^om-a1b2c3", cache)?.status, "served");
 			}
-			assert.equal(cache.size, 1, `one file, one entry — got ${[...cache.keys()].join(", ")}`);
+			assert.equal(cache.size, 1, "one file, one entry — got " + [...cache.keys()].join(", "));
 		});
 	});
 
-	test("one call never caches contradictory verdicts for one file", () => {
+	test("a case variant never serves another file's content", () => {
 		withVault((d) => {
-			put(d, "brain/Withheld.md", "# W\n\n- x ^om-x\n");
+			put(d, "brain/Big.md", NOTE);
 			const cache: NoteCache = new Map();
-			const a = resolvePromoted(d, POLICY, "brain/Withheld#^om-x", cache);
-			const b = resolvePromoted(d, POLICY, "brain/withheld#^om-x", cache);
-			assert.equal(a?.status, b?.status, "one file cannot be both servable and not in one response");
+			const exact = resolvePromoted(d, POLICY, "brain/Big#^om-a1b2c3", cache);
+			const variant = resolvePromoted(d, POLICY, "brain/big#^om-a1b2c3", cache);
+			assert.equal(exact?.status, "served");
+			// Case-sensitive filesystem: a different path, correctly unresolved.
+			if (variant?.status !== "served") return;
+			// Case-insensitive: the same file, so the same text. NOT necessarily one
+			// entry — `realpathSync` on Windows echoes the caller's case rather
+			// than the name on disk, so two spellings key separately there. That
+			// is a duplicate read, not two answers; the invariant worth asserting
+			// is that no key ever serves another file's content.
+			assert.equal(variant.text, exact.status === "served" ? exact.text : null);
+		});
+	});
+
+	test("a withheld note reports the same verdict however often it is asked", () => {
+		withVault((d) => {
+			put(d, "brain/Withheld.md", "# W" + String.fromCharCode(10) + String.fromCharCode(10) + "- x ^om-x" + String.fromCharCode(10));
+			const cache: NoteCache = new Map();
+			const first = resolvePromoted(d, POLICY, "brain/Withheld#^om-x", cache);
+			const again = resolvePromoted(d, POLICY, "brain/Withheld#^om-x", cache);
+			assert.equal(first?.status, "not-exposed");
+			assert.equal(again?.status, first?.status, "the cache must not change the answer");
+			assert.equal(cache.size, 0, "a note the policy refuses is never read, so never cached");
 		});
 	});
 
 	test("a large note with a deep anchor stays well inside a frame", () => {
 		withVault((d) => {
-			const filler = Array.from({ length: 20_000 }, (_, i) => `- filler entry ${i} with some prose after it`).join("\n");
-			put(d, "brain/Huge.md", `---\ndescription: 'x'\n---\n\n# Huge\n\n${filler}\n- **The one.** Corrected. ^om-deep\n`);
+			const filler = Array.from({ length: 20_000 }, (_, i) => "- filler entry " + i + " with some prose after it").join(String.fromCharCode(10));
+			const nl = String.fromCharCode(10);
+			put(d, "brain/Huge.md", "---" + nl + "description: 'x'" + nl + "---" + nl + nl + "# Huge" + nl + nl + filler + nl + "- **The one.** Corrected. ^om-deep" + nl);
 			const cache: NoteCache = new Map();
 			const started = Date.now();
 			for (let i = 0; i < 50; i++) {
 				assert.equal(resolvePromoted(d, POLICY, "brain/Huge#^om-deep", cache)?.status, "served");
 			}
 			const ms = Date.now() - started;
-			assert.ok(ms < 5000, `50 resolutions over a ~1MB note took ${ms}ms`);
+			assert.ok(ms < 5000, "50 resolutions over a ~1MB note took " + ms + "ms");
 		});
 	});
 });
