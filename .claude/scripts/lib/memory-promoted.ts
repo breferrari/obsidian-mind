@@ -58,6 +58,18 @@ import { escapeRegex } from "./regex.ts";
  */
 const MAX_SERVED_LINES = 40;
 
+/**
+ * And the same bound in BYTES, because lines are not a size.
+ *
+ * One bullet of 240,000 characters is a single line, so it passed the line cap
+ * untouched and was reported as complete. This repo's own note-size rule says
+ * the unit is "bytes, not lines — giant single-line entries hide in low line
+ * counts", and that is exactly what happened here. The capture body this text
+ * REPLACES is warned at 8,000 characters, so without a byte bound the
+ * substitution could be thirty times the thing it substitutes.
+ */
+const MAX_SERVED_CHARS = 8_000;
+
 /** A parsed `promoted:` marker. */
 export type PromotedRef =
 	/** A bare note reference. Named to the caller, never served. */
@@ -86,8 +98,20 @@ export type PromotedResolution =
 	| { readonly status: "no-anchor"; readonly note: string }
 	/** The policy does not serve this note. Named, never served. */
 	| { readonly status: "not-exposed"; readonly note: string }
-	/** The anchor no longer resolves — the block was renamed, moved or removed. */
-	| { readonly status: "stale-anchor"; readonly note: string; readonly anchor: string }
+	/**
+	 * The anchor no longer resolves — the block was renamed, moved or removed.
+	 *
+	 * Carries `kind` for the same reason `served` does: the renderer spells the
+	 * anchor back to the caller, and a heading is `#Text` rather than `#^Text`.
+	 * The served branch was fixed for this and the stale branch was not, so the
+	 * reference a caller was told to go and check did not resolve.
+	 */
+	| {
+			readonly status: "stale-anchor";
+			readonly note: string;
+			readonly anchor: string;
+			readonly kind: "block" | "heading";
+	  }
 	/** The note is gone or unreadable. */
 	| { readonly status: "unreadable"; readonly note: string };
 
@@ -101,9 +125,9 @@ export type PromotedResolution =
  * servable, remembered for the rest of the call so a withheld or missing note
  * is not re-checked per memory.
  *
- * Keyed case-INSENSITIVELY: `brain/Note` and `brain/note` are one file on the
- * filesystems this runs on, and separate keys meant a second read and — worse —
- * two contradictory verdicts for one file inside a single response.
+ * Keyed on the RESOLVED PATH, so one key is one file on every platform. A
+ * lowercased marker was tried first and conflated two genuinely different files
+ * on Linux, where case matters — a duplicate read traded for content crossing.
  */
 export type NoteCache = Map<string, string[] | null>;
 
@@ -111,7 +135,7 @@ export type NoteCache = Map<string, string[] | null>;
 const BLOCK_BOUNDARY = /^\s*[-*+]\s|^\s*#{1,6}\s/;
 
 /** A fenced code block delimiter — ``` or ~~~, any length, any info string. */
-const FENCE = /^\s*(`{3,}|~{3,})/;
+const FENCE = /^\s*(?:>\s?)*(`{3,}|~{3,})/;
 
 /**
  * Newlines, carriage returns, escapes and the rest of C0/C1.
@@ -182,10 +206,33 @@ function bodyLines(md: string): string[] {
 }
 
 /** Cap a run of lines, reporting whether anything was dropped. */
-function capped(lines: readonly string[]): { text: string; truncated: boolean } {
-	const truncated = lines.length > MAX_SERVED_LINES;
-	const kept = truncated ? lines.slice(0, MAX_SERVED_LINES) : lines;
-	return { text: kept.join("\n").trim(), truncated };
+function capped(input: readonly string[], total = input.length): { text: string; truncated: boolean } {
+	// Blank edges are stripped BEFORE the cap rather than trimmed after it.
+	// Counting them toward the budget and then trimming them away meant a
+	// section of 39 content lines reported TRUNCATED with nothing real dropped:
+	// the blank after a heading ate a slot and the trailing blank tripped the
+	// flag. That teaches a caller to distrust a complete answer, and it made
+	// the effective cap 39 rather than 40.
+	let from = 0;
+	let to = input.length;
+	while (from < to && !(input[from] ?? "").trim()) from++;
+	while (to > from && !(input[to - 1] ?? "").trim()) to--;
+	const lines = input.slice(from, to);
+	// A caller that already sliced (the backward walk keeps its tail) reports
+	// the loss it took, so truncation stays honest.
+	const preSliced = total - input.length;
+
+	const kept = lines.length > MAX_SERVED_LINES ? lines.slice(0, MAX_SERVED_LINES) : lines;
+	let truncated = preSliced > 0 || lines.length > kept.length;
+	let text = kept.join("\n").trim();
+	// Lines are not a size. One bullet of 240,000 characters is a single line and
+	// sailed through the line cap reported as complete, while the capture body it
+	// REPLACES is warned at 8,000 characters.
+	if (text.length > MAX_SERVED_CHARS) {
+		text = `${text.slice(0, MAX_SERVED_CHARS).trimEnd()}…`;
+		truncated = true;
+	}
+	return { text, truncated };
 }
 
 /**
@@ -200,17 +247,20 @@ function capped(lines: readonly string[]): { text: string; truncated: boolean } 
  */
 function fencedMask(lines: readonly string[]): boolean[] {
 	const mask: boolean[] = new Array(lines.length).fill(false);
-	let fence: string | null = null;
+	let fence: { char: string; len: number } | null = null;
 	for (let i = 0; i < lines.length; i++) {
 		const m = (lines[i] ?? "").match(FENCE);
+		const run = m?.[1];
 		if (fence === null) {
-			if (m?.[1]) {
-				fence = m[1][0] ?? "`";
+			if (run) {
+				fence = { char: run[0] ?? "`", len: run.length };
 				mask[i] = true;
 			}
 		} else {
 			mask[i] = true;
-			if (m?.[1] && m[1][0] === fence) fence = null;
+			// A closing fence must be the same character AND at least as long, so
+			// a ``` inside a ```` block does not end it early.
+			if (run && run[0] === fence.char && run.length >= fence.len) fence = null;
 		}
 	}
 	return mask;
@@ -259,7 +309,11 @@ export function blockAtLines(lines: readonly string[], id: string): { text: stri
 				out.unshift(prev);
 				if (BLOCK_BOUNDARY.test(prev)) break;
 			}
-			const c = capped(out);
+			// Keep the TAIL. `capped` slices from the front, and the front of a
+			// backward walk is the far end of the paragraph — so capping here
+			// dropped the line the id is actually attached to and served a middle
+			// slice as though it were the entry.
+			const c = capped(out.length > MAX_SERVED_LINES ? out.slice(-MAX_SERVED_LINES) : out, out.length);
 			return c.text ? c : null;
 		}
 	}
@@ -289,7 +343,10 @@ export function sectionAtLines(lines: readonly string[], heading: string): { tex
 		if (text !== want) continue;
 
 		const level = (m[1] ?? "").length;
-		if (level === 1) return null; // the note's own title is not a section
+		// Skipped rather than fatal: a note can carry both `# Alpha` and
+		// `## Alpha`, and taking the first text match then refusing on level made
+		// the legitimate H2 unreachable — behaviour that depended on document order.
+		if (level === 1) continue;
 		const out: string[] = [];
 		for (let j = i + 1; j < lines.length; j++) {
 			const next = lines[j] ?? "";
@@ -348,7 +405,7 @@ export function resolvePromoted(
 	// `unreadable` when it did not, and both answers reached the caller and the
 	// audit log.
 	const refused = (): PromotedResolution => {
-		if (ref.note.includes("..") || !isExposedPath(policy, ref.note)) {
+		if (ref.note.split(/[\/]/).includes("..") || !isExposedPath(policy, ref.note)) {
 			return { status: "not-exposed", note: ref.note };
 		}
 		return existsSync(join(vaultRoot, ref.note))
@@ -392,7 +449,7 @@ export function resolvePromoted(
 	if (lines === null) return refused();
 
 	const hit = ref.kind === "block" ? blockAtLines(lines, ref.anchor) : sectionAtLines(lines, ref.anchor);
-	if (!hit) return { status: "stale-anchor", note: ref.note, anchor: ref.anchor };
+	if (!hit) return { status: "stale-anchor", note: ref.note, anchor: ref.anchor, kind: ref.kind };
 	return {
 		status: "served",
 		note: ref.note,

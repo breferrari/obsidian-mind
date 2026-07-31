@@ -62,6 +62,8 @@ function put(dir: string, rel: string, body: string): void {
 	writeFileSync(full, body, "utf8");
 }
 
+const NL = String.fromCharCode(10);
+
 const NOTE = `---
 description: "a topic note"
 ---
@@ -472,6 +474,61 @@ describe("resolving at scale", () => {
 			const ms = Date.now() - started;
 			assert.ok(ms < 5000, "50 resolutions over a ~1MB note took " + ms + "ms");
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Round-4: regressions in the round-3 repairs
+// ---------------------------------------------------------------------------
+
+describe("the bounds hold in bytes, not only in lines", () => {
+	test("one enormous line is capped and reported as truncated", () => {
+		withVault((d) => {
+			const giant = "- **The entry.** " + "prose ".repeat(40_000) + "^om-giant";
+			put(d, "brain/Giant.md", "# T" + NL + NL + giant + NL);
+			const r = resolvePromoted(d, POLICY, "brain/Giant#^om-giant");
+			assert.equal(r?.status, "served");
+			if (r?.status !== "served") return;
+			assert.ok(r.text.length <= 8_100, "a single line is not a size — got " + r.text.length + " chars");
+			assert.equal(r.truncated, true);
+		});
+	});
+
+	test("a complete section is NOT reported as truncated", () => {
+		withVault((d) => {
+			for (const n of [38, 39]) {
+				const body = Array.from({ length: n }, (_, i) => "- line " + i).join(NL);
+				put(d, "brain/Exact" + n + ".md", "# T" + NL + NL + "## S" + NL + NL + body + NL);
+				const r = resolvePromoted(d, POLICY, "brain/Exact" + n + "#S");
+				assert.equal(r?.status, "served", String(n));
+				if (r?.status !== "served") continue;
+				assert.equal(r.truncated, false, n + " content lines fit, so nothing was dropped");
+			}
+		});
+	});
+});
+
+describe("markdown structure, round two", () => {
+	test("a fence inside a blockquote still masks its decoy", () => {
+		const md = ["# T", "", "> ```md", "> - DECOY ^om-y", "> ```", "", "- **real** ^om-y", ""].join(NL);
+		assert.equal(blockAt(md, "om-y"), "- **real**");
+	});
+
+	test("a shorter inner fence does not close a longer outer one", () => {
+		const md = ["# T", "", "````md", "```", "- DECOY ^om-z", "```", "````", "", "- **real** ^om-z", ""].join(NL);
+		assert.equal(blockAt(md, "om-z"), "- **real**");
+	});
+
+	test("an H2 sharing the H1's text is reachable", () => {
+		const md = ["# Alpha", "", "intro", "", "## Alpha", "", "the real section", "", "## Next", ""].join(NL);
+		assert.match(sectionAt(md, "Alpha") ?? "", /the real section/);
+	});
+
+	test("an alone-id block keeps the lines next to its anchor", () => {
+		const para = Array.from({ length: 60 }, (_, i) => "line " + i).join(NL);
+		const md = "# T" + NL + NL + para + NL + "^om-p" + NL;
+		const got = blockAt(md, "om-p") ?? "";
+		assert.match(got, /line 59/, "the line the id is attached to must survive");
 	});
 });
 

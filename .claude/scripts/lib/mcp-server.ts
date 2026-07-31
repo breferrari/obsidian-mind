@@ -157,12 +157,12 @@ function promotedFacet(p: PromotedResolution): string {
 			// form handed a heading promotion back as `Note.md#^Some Heading`, which
 			// is not a reference the caller can paste anywhere.
 			return `promoted text from ${p.note}#${p.kind === "block" ? "^" : ""}${p.anchor}${
-				p.truncated ? " (TRUNCATED to the served-lines cap)" : ""
+				p.truncated ? " (TRUNCATED to the served cap)" : ""
 			}`;
 		case "no-anchor":
 			return `promoted to ${p.note} (no anchor; capture body shown)`;
 		case "stale-anchor":
-			return `promoted to ${p.note}, anchor ^${p.anchor} STALE (capture body shown)`;
+			return `promoted to ${p.note}, anchor ${p.kind === "block" ? "^" : ""}${p.anchor} STALE (capture body shown)`;
 		case "not-exposed":
 			return `promoted to ${p.note}, outside the exposed roots (capture body shown)`;
 		case "unreadable":
@@ -305,6 +305,12 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		const rows = shown.map((m) => ({
 			m,
 			promo: resolvePromoted(ctx.vaultRoot, policy, m.facets.promoted, noteCache),
+			// A marker that exists but does not PARSE — a YAML list, a stray
+			// control character — resolves to null, which otherwise renders as
+			// "not promoted at all". Refusing to echo the string is right; refusing
+			// to mention that a corrected version exists is not, and before this
+			// branch the raw value was at least printed.
+			unparsed: Boolean(m.facets.promoted) && resolvePromoted(ctx.vaultRoot, policy, m.facets.promoted, noteCache) === null,
 		}));
 		const promotions = rows.map((r) => r.promo).filter((p): p is PromotedResolution => p !== null);
 
@@ -338,7 +344,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			return `${why} Call health if you expected something here.`;
 		}
 
-		const lines = rows.map(({ m, promo }) => {
+		const lines = rows.map(({ m, promo, unparsed }) => {
 			const facets = [
 				m.facets.confidence,
 				m.facets.projects.length ? `projects: ${m.facets.projects.join(", ")}` : null,
@@ -349,7 +355,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				// quoting one memory out of five needs to know THIS one has a
 				// corrected twin — a footer applies to the response, not to the line
 				// being copied.
-				promo ? promotedFacet(promo) : null,
+				promo ? promotedFacet(promo) : unparsed ? "promoted, but the marker is unreadable (capture body shown)" : null,
 				m.why ? `why: ${m.why}` : null,
 			].filter(Boolean);
 
