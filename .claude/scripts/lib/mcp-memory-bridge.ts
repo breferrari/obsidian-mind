@@ -48,6 +48,31 @@ export interface MemoryDigest extends Facets {
  * in either the block or the inline form. Same rule the vault's own wikilink
  * checker applies.
  */
+/**
+ * Undo a YAML scalar's quoting, rather than merely removing its quote marks.
+ *
+ * Stripping the outer quotes is not the same operation and differs on exactly
+ * the values that need it. In a single-quoted scalar `''` is one literal quote,
+ * so `'It''s here'` unquoted by character removal yields `It''s here` — a name
+ * no wikilink will ever match, and one an author looking at the rendered note
+ * would swear is present. In a double-quoted scalar the escapes are C-style,
+ * so `\\` is one backslash.
+ *
+ * This matters more since captures began carrying their title as an alias: an
+ * apostrophe is ordinary in a title and would otherwise silently cost the note
+ * its only resolvable name.
+ */
+export function unquoteScalar(raw: string): string {
+	const t = raw.trim();
+	if (t.length >= 2 && t.startsWith("'") && t.endsWith("'")) {
+		return t.slice(1, -1).replace(/''/g, "'");
+	}
+	if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
+		return t.slice(1, -1).replace(/\\(["\\])/g, "$1");
+	}
+	return t;
+}
+
 export function resolvableNames(files: readonly VisibleFile[]): Set<string> {
 	const names = new Set<string>();
 	for (const f of files) {
@@ -58,13 +83,13 @@ export function resolvableNames(files: readonly VisibleFile[]): Set<string> {
 		if (block?.[1]) {
 			for (const line of block[1].split("\n")) {
 				const m = line.match(/^\s*-\s*(.+?)\s*$/);
-				if (m?.[1]) names.add(m[1].replace(/^["']|["']$/g, "").toLowerCase());
+				if (m?.[1]) names.add(unquoteScalar(m[1]).toLowerCase());
 			}
 		}
 		const inline = head.match(/^aliases:\s*\[(.*)\]\s*$/m);
 		if (inline?.[1]) {
 			for (const part of inline[1].split(",")) {
-				const name = part.trim().replace(/^["']|["']$/g, "").toLowerCase();
+				const name = unquoteScalar(part).toLowerCase();
 				if (name) names.add(name);
 			}
 		}

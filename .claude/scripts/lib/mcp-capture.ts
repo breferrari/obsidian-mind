@@ -72,6 +72,36 @@ export function slugifyTitle(title: unknown): string {
 }
 
 /**
+ * A YAML **single**-quoted scalar, which is the only quoting a caller-supplied
+ * string can survive.
+ *
+ * The double-quoted form looks equivalent and is not, because it processes
+ * escapes. A title carrying a Windows path — `C:\temp\x`, which this repo's own
+ * fixtures deliberately contain — becomes `"C:\temp\x"`, where `\t` is a TAB
+ * and `\x` demands two hex digits. That is a parse error, and it takes the
+ * whole frontmatter block with it rather than just the one field. Swapping `"`
+ * for `'` inside a double-quoted scalar, which is what this file used to do,
+ * defends against exactly one of the characters that matter.
+ *
+ * In the single-quoted form the only escape is `''` for a literal quote, and a
+ * backslash is a backslash. Whitespace is flattened here rather than at the
+ * call sites, because a newline is the other way a scalar ends early: the
+ * continuation line lands at column zero, under-indented for the block it is
+ * inside, and the document is broken from there down.
+ *
+ * Flattening at the boundary is deliberate — every field this wraps is
+ * single-line by contract, so there is no case where a caller wants the raw
+ * newline preserved and a helper that guaranteed it only sometimes would be
+ * worth less than one that always does.
+ */
+export function yamlQuoted(text: unknown): string {
+	const flat = String(text ?? "")
+		.replace(/\s+/g, " ")
+		.trim();
+	return `'${flat.replace(/'/g, "''")}'`;
+}
+
+/**
  * A description that stops at a word, not mid-syllable.
  *
  * The naive `slice(0, MAX)` cuts wherever the budget runs out, and the result is
@@ -92,7 +122,6 @@ export function slugifyTitle(title: unknown): string {
  */
 export function clampDescription(text: unknown, max: number = DESCRIPTION_MAX): string {
 	const flat = String(text ?? "")
-		.replace(/"/g, "'")
 		.replace(/\s+/g, " ")
 		.trim();
 	if (flat.length <= max) return flat;
@@ -283,12 +312,12 @@ export function renderCapture(
 	// round-trip through slugification, and `resolvableNames` has read aliases
 	// since it was written — for exactly this class of problem, where a note's
 	// real name and its file's name differ.
-	const aliases = title ? ["aliases:", `  - "${title.replace(/"/g, "'")}"`] : [];
+	const aliases = title ? ["aliases:", `  - ${yamlQuoted(title)}`] : [];
 
 	return [
 		"---",
 		`date: ${day}`,
-		`description: "${clampDescription(summary)}"`,
+		`description: ${yamlQuoted(clampDescription(summary))}`,
 		...aliases,
 		"tags:",
 		input.kind === "decision" ? "  - decision" : "  - project-note",

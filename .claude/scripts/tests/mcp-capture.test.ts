@@ -25,6 +25,7 @@ import {
 	renderCapture,
 	captureNote,
 	clampDescription,
+	yamlQuoted,
 	type Destination,
 } from "../lib/mcp-capture.ts";
 import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
@@ -181,7 +182,7 @@ describe("rendering a capture", () => {
 		const md = renderCapture(BASIC, dest, "atlas", new Set(["atlas"]), NOW);
 		assert.match(md, /^---\n/);
 		assert.match(md, /date: 2026-07-26/);
-		assert.match(md, /description: "Shipped the archive command behind a flag\."/);
+		assert.match(md, /description: 'Shipped the archive command behind a flag\.'/);
 		assert.match(md, /project: atlas/);
 		assert.match(md, /source_repo: atlas/);
 	});
@@ -215,7 +216,11 @@ describe("rendering a capture", () => {
 	test("a quote in the summary cannot break the frontmatter", () => {
 		const md = renderCapture({ ...BASIC, summary: 'He said "hello" today' }, dest, "atlas", new Set(), NOW);
 		const front = md.slice(0, md.indexOf("\n---", 4));
-		assert.ok(!/description: ".*".*"/.test(front.split("\n").find((l) => l.startsWith("description:")) ?? ""));
+		const line = front.split("\n").find((l) => l.startsWith("description:")) ?? "";
+		// A double quote is now ordinary content, because the scalar is
+		// single-quoted. What must not appear is an unescaped single quote.
+		assert.match(line, /^description: '.*'$/);
+		assert.equal(line, `description: 'He said "hello" today'`);
 	});
 
 	test("the routing decision is recorded in the note itself", () => {
@@ -323,18 +328,82 @@ describe("a capture is reachable by its own title", () => {
 	test("the title is carried as an alias, because the basename never is", () => {
 		const title = "I3 lands: a soak over the whole pipeline";
 		const md = renderCapture({ title, summary: "s", kind: "note" }, dest, "atlas", new Set(), NOW);
-		assert.match(md, /^aliases:\n {2}- "I3 lands: a soak over the whole pipeline"$/m);
+		assert.match(md, /^aliases:\n {2}- 'I3 lands: a soak over the whole pipeline'$/m);
 	});
 
 	test("a title with a quote cannot break the frontmatter", () => {
 		const md = renderCapture({ title: 'The "obvious" fix', summary: "s", kind: "note" }, dest, "atlas", new Set(), NOW);
-		assert.match(md, /^ {2}- "The 'obvious' fix"$/m);
-		assert.doesNotMatch(md, /- "The "obvious/);
+		// A double quote is ordinary content inside a single-quoted scalar.
+		assert.match(md, /^ {2}- 'The "obvious" fix'$/m);
 	});
 
 	test("an empty title emits no alias block rather than an empty one", () => {
 		const md = renderCapture({ title: "", summary: "s", kind: "note" }, dest, "atlas", new Set(), NOW);
 		assert.doesNotMatch(md, /^aliases:/m);
+	});
+
+	/**
+	 * The two characters that end a scalar early, and neither is a quote.
+	 *
+	 * A double-quoted YAML scalar processes escapes, so a Windows path is a parse
+	 * error (`\t` is TAB, `\x` wants two hex digits) — and this repo's own
+	 * fixtures carry `C:\` paths on purpose. A newline ends the scalar at a
+	 * column-zero continuation, which is under-indented for the block it sits in.
+	 * Either one takes the WHOLE frontmatter block down, not just its own field,
+	 * which is why these are asserted on the document rather than on the value.
+	 */
+	const HOSTILE: ReadonlyArray<readonly [string, string]> = [
+		["a newline", "First line\nSecond line"],
+		["a Windows path", "A path C:\\temp\\x"],
+		["a single quote", "It's the resolver's problem"],
+		["a YAML comment marker", "I3: #5 lands - done"],
+	];
+
+	for (const [label, title] of HOSTILE) {
+		test(`${label} in the title cannot break the frontmatter`, () => {
+			const md = renderCapture({ title, summary: title, kind: "note" }, dest, "atlas", new Set(), NOW);
+
+			assert.equal((md.match(/^---$/gm) ?? []).length, 2, "exactly one frontmatter block");
+
+			const front = md.slice(4, md.indexOf("\n---\n", 4));
+			// Scoped to the aliases block: `tags:` also emits `  - ` items, and a
+			// filter over the whole frontmatter counts those as extra alias lines.
+			const aliasBlock = front.match(/^aliases:\n((?: {2}- .*\n?)+)/m);
+			const aliasLines = (aliasBlock?.[1] ?? "").split("\n").filter(Boolean);
+			assert.equal(aliasLines.length, 1, `the alias must occupy one line, got ${JSON.stringify(aliasLines)}`);
+			assert.match(aliasLines[0]!, /^ {2}- '.*'$/, "single-quoted scalar");
+
+			// No line of the frontmatter may start a new key after the block began
+			// unexpectedly — a leaked newline shows up exactly here.
+			for (const line of front.split("\n")) {
+				assert.ok(line === "" || /^(\S+:|\s+-\s|\s+\S+:)/.test(line), `stray frontmatter line: ${JSON.stringify(line)}`);
+			}
+		});
+	}
+
+	test("a backslash survives literally rather than as an escape", () => {
+		const md = renderCapture({ title: "A path C:\\temp\\x", summary: "s", kind: "note" }, dest, "atlas", new Set(), NOW);
+		assert.match(md, /^ {2}- 'A path C:\\temp\\x'$/m);
+	});
+
+	test("a single quote is doubled, which is the only escape the form has", () => {
+		assert.equal(yamlQuoted("It's here"), "'It''s here'");
+		assert.equal(yamlQuoted('He said "hi"'), `'He said "hi"'`);
+		assert.equal(yamlQuoted("a\n\nb"), "'a b'");
+	});
+
+	test("round trip: a hostile title still resolves through resolvableNames", () => {
+		for (const [, title] of HOSTILE) {
+			withVault((dir) => {
+				captureNote(dir, POLICY, {}, null, { title, summary: "s", kind: "note" }, new Set(), { now: NOW });
+				const files = readdirSync(join(dir, "inbox"));
+				const label = files[0]!.replace(/\.md$/, "");
+				const resolvable = resolvableNames([{ label, full: join(dir, "inbox", files[0]!), scope: "inbox" }]);
+				// Whitespace is flattened by the scalar, so that is the name to expect.
+				const flat = title.replace(/\s+/g, " ").trim().toLowerCase();
+				assert.ok(resolvable.has(flat), `must resolve by ${JSON.stringify(flat)}`);
+			});
+		}
 	});
 
 	/**
@@ -413,7 +482,7 @@ describe("clamping a description", () => {
 		assert.doesNotMatch(clampDescription("one two three, four five six seven", 22), /[,;:–—-]…$/);
 	});
 
-	test("whitespace is flattened and quotes made frontmatter-safe", () => {
-		assert.equal(clampDescription('a\n\nb  "c"', 150), "a b 'c'");
+	test("whitespace is flattened, and quoting is left to the scalar", () => {
+		assert.equal(clampDescription('a\n\nb  "c"', 150), 'a b "c"');
 	});
 });
