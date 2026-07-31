@@ -14,6 +14,21 @@
 
 
 
+## v8.3.0 — 2026-07-31
+
+### Added
+- `recall` serves the promoted block itself, so a session in another repo reads the corrected version rather than the capture as first written
+
+### Fixed
+- **security: `mcp_never_expose` withheld only the spelling it was declared in.** On any case-insensitive filesystem a never-exposed note was served under any other case — the listing withheld it while the reader returned it
+- a note whose `private:` marker sat past the frontmatter head window was served on every surface
+- `record_work` refused every multi-segment exposed root, which is nearly all of them by default
+- a capture could not be linked by the name it calls itself, so its own cross-references never resolved
+- frontmatter quoting broke on a Windows path or a newline
+
+### Changed
+- one named predicate answers "may this path be read", and every surface asks it rather than re-deriving it
+
 ## v8.2.0 — 2026-07-30
 
 ### Added
