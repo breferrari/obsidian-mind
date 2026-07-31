@@ -394,6 +394,7 @@ flowchart TB
     Bridge["mcp-memory-bridge.ts<br/>memory ↔ vault seam"]
     Capture["mcp-capture.ts<br/>record_work filing"]
     Reason["mcp-reason.ts<br/>tier 3: argv · prompt · spawn · record"]
+    Promo["memory-promoted.ts<br/>promoted-block resolution"]
     RH["read-head.ts<br/>bounded frontmatter prefix"]
     subgraph Core["Memory core — no MCP knowledge at all"]
         MW["memory-write.ts"]
@@ -415,6 +416,8 @@ flowchart TB
     Server --> Bridge
     Server --> Capture
     Server --> Reason
+    Server --> Promo
+    Promo --> Exp
     Server --> Idx
     Server --> Core
     Server --> Qmd
@@ -429,6 +432,8 @@ flowchart TB
 ```
 
 The memory core knows nothing about MCP. That is what lets the epistemic contract be hammered by tests without an MCP client, a vault on disk, or a search index.
+
+`memory-promoted.ts` carries the `memory-` prefix and sits deliberately **outside** that subgraph: resolving a promoted block means asking the exposure policy, so it imports `mcp-exposure.ts` and would break the invariant the box states. The prefix names the domain it serves, not the layer it lives in.
 
 ### Connection: the identity handshake
 
@@ -515,15 +520,15 @@ Three things hold regardless of configuration:
 - **A symlink is contained before it is followed.** The walk `lstat`s each entry — which describes the entry rather than its target — and resolves any link against the root's realpath. Enumerating with `stat` instead means a `.md` link inside an exposed root pulls in a file from anywhere on disk.
 - **Every read is logged** to `.claude/om-mcp-audit.jsonl` (gitignored, rotated at 5 MB, one generation kept) with the calling repo — so "what did that session actually see" is answerable afterwards.
 
-Every read surface resolves through `visibleFiles`. `search` filters its hits against it, `expand` computes backlinks only over it, and the resource enumerators build from it. This is one implementation rather than three because the recurring defect in this layer is a *second* read path that reaches notes by its own route and applies a different rule.
+**Two questions, one answer each — and they are different questions.** *Which notes exist* resolves through `visibleFiles`: `search` filters its hits against it, `expand` computes backlinks only over it, and the resource enumerators build from it. *May this one path be read* resolves through `resolveExposedNote`: the resource resolver calls it, and so does the promoted-block path below. Each is one implementation rather than several, because the recurring defect in this layer is a *second* read path that reaches notes by its own route and applies a different rule.
 
 The symlink case is that defect in its most recent form, and worth keeping as the worked example: `resolveResourceUri` did realpath containment from the start, while the enumerator followed links silently. So the resource *listing* published an out-of-vault file's description and `expand` returned its body, while reading the very same URI was refused. Both ends now contain against the **matched declared root** — not the first path segment, since roots are prefixes and `work/active/` and `work/1-1/` share one.
 
-That defect recurred once more, which is why the shared predicate is now named rather than merely described. `recall` gained the ability to serve a **promoted block** out of `brain/` (below), and shipped with its own root check: it dropped `neverExpose`, dropped `isPrivate`, and compared the first path segment against roots that are prefixes. So it served two classes of note every other surface withholds, while refusing most of the vault's own declared roots. Every test passed — the fixture policy was `["brain", "projects"]`, a shape no real policy has. **`resolveExposedNote` is now the single answer to "may this path be read out of the vault"**, and `resolveResourceUri` and the promoted path both call it. Adding a fourth read surface means calling it too, not re-deriving it.
+That defect recurred once more, which is why the second predicate is now named rather than left implicit inside the URI resolver. `recall` gained the ability to serve a **promoted block** out of `brain/` (below), and shipped with its own root check: it dropped `neverExpose`, dropped `isPrivate`, and compared the first path segment against roots that are prefixes. So it served two classes of note every other surface withholds, while refusing most of the vault's own declared roots. Every test passed — the fixture policy was `["brain", "projects"]`, a shape no real policy has. `resolveExposedNote` was extracted out of `resolveExactResourceUri` so both callers ask it rather than re-deriving it. **A new surface calls one of the two predicates above; it does not grow a third.**
 
 ### Serving a promoted block through `recall`
 
-`recall` reads the memory root and `search`/`expand` read everything but, so the two are disjoint. A lesson promoted from a capture into a `brain/` topic note therefore exists twice, and a foreign repo can only reach the capture — the version as first written, which may predate a correction swept through the promoted one.
+`recall` read the memory root and `search`/`expand` read everything but, so the two *were* disjoint. A lesson promoted from a capture into a `brain/` topic note therefore exists twice, and a foreign repo can only reach the capture — the version as first written, which may predate a correction swept through the promoted one.
 
 Since promotion is **additive** (the capture stays), the capture is still the reach record and is already correct. So visibility is computed exactly as before, from the capture's `scope`/`projects`/`platforms`, and only the *content* changes: when the capture's `promoted:` marker carries an anchor, `recall` serves the promoted text instead of the capture body.
 
@@ -812,6 +817,9 @@ Every failure in this layer presents identically as **"no results"**. That is wh
 | a reasoning spawn ends early | would otherwise read as a complete answer | refused by name, with the turn count, the terminal reason and the evidence |
 | a reasoning spawn hits the 300s timeout | looks identical to a spawn that never started | the kill signal is read, so the terminal reason is `timeout`, in the message and the log |
 | the server exits mid-spawn | a session runs on with no bound and no audit line | shutdown kills every in-flight spawn |
+| a promoted anchor no longer resolves | the capture body is served, silently older than the vault's own text | the facet line marks the anchor `STALE`; the audit line records `stale-anchor` |
+| a promoted note is outside the exposed roots, `private`, or withheld by name | the capture body is served rather than the correction | the facet line says it is withheld; the audit line records `not-exposed` |
+| a promoted note is missing or unreadable | the capture body is served | the facet line says unreadable; the audit line records `unreadable` |
 
 A stray `VAULT_PATH` was honoured at one point, and that name is too generic to claim — it is set for unrelated reasons on real machines, and the result was a server serving a *different* vault while reporting that vault's config as if correct. Only `OM_VAULT_PATH` is read now.
 
@@ -970,7 +978,7 @@ The design is hostile to these changes (on purpose):
 - Bypassing the manifest. If a new component needs to know the index name, the memory root, or the infrastructure boundary, it should read the manifest rather than hardcode.
 - Hardcoding agent event names inside scripts. Event name translation is a config-layer concern.
 - **Scoping vault notes per calling repo.** An earlier revision did this — a repo saw only its own notes — and it killed the most valuable measured capability, because the answers worth having come from *connecting* projects. Memories declare their reach; notes do not.
-- **Adding a second read path.** Any new surface that answers "which notes exist" must resolve through `visibleFiles` rather than walking the vault itself.
+- **Adding a second read path.** Any new surface that answers "which notes exist" must resolve through `visibleFiles` rather than walking the vault itself — and any surface that answers "may this one path be read" must call `resolveExposedNote` rather than re-checking roots. Both have already been re-derived once each, and both re-derivations shipped serving notes the policy withholds.
 
 ---
 

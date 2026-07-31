@@ -21,7 +21,7 @@ Work through the current hygiene flags in order:
 3. **Oversized notes (25KB+)** — SPLIT, never trim: move whole sections verbatim into domain notes, event-log satellites, or an archive note; leave a one-liner index behind in the original; retarget links that pointed at the moved sections. `*Archive*` names are exempt by design. A split is complete only when the new notes are wired into the graph — search each new note's concepts (QMD when available) and link what surfaces.
 4. **Index drift, orphans, broken links** — new notes must be linked from at least one note; fix wikilinks broken by any moves this pass made; update `work/Index.md` / `org/People & Context.md` / `perf/Brag Doc.md` as touched.
 5. **Semantic-linking pass** — for notes created or split this pass, `qmd query` their core concepts (index name from `vault-manifest.json`) and add the links the graph is missing.
-6. **Memory-inbox promotion (`memories/YYYY/MM/`)** — durable captures get copied into the right `brain/` topic note. **Promotion is ADDITIVE: copy, never move.** `recall` reads only the memory root, so deleting a capture removes the lesson from every repo that cannot read `brain/` at all — which is the whole audience it was written for.
+6. **Memory-inbox promotion (`memories/YYYY/MM/`)** — durable captures get copied into the right `brain/` topic note. **Promotion is ADDITIVE: copy, never move.** `recall` reaches `brain/` only *through* a capture, so deleting one removes the lesson from every repo that cannot read `brain/` at all — which is the whole audience it was written for.
 
    Then mark the capture so the flag can fall, and **anchor the marker**:
 
@@ -29,9 +29,16 @@ Work through the current hygiene flags in order:
    promoted: "brain/Gotchas - Engineering#^om-a1b2c3"
    ```
 
-   Give the promoted block an Obsidian block id (`^om-a1b2c3` at the end of the bullet or paragraph) and point the marker at it. That anchor is what lets `recall` serve the *corrected* text to a foreign repo instead of the capture as first written — see `ARCHITECTURE.md`. A heading anchor (`#Some Section`) works where a block id is overkill.
+   Give the promoted block an Obsidian block id and point the marker at it. That anchor is what lets `recall` serve the *corrected* text to a foreign repo instead of the capture as first written — see `ARCHITECTURE.md`.
 
-   **The anchor is opt-in and deliberate.** A bare `promoted: brain/Note` still marks the capture and still clears the flag, but serves nothing — the caller is told a corrected version exists and where. Only add an anchor when you have checked that the block reads correctly on its own to someone outside this vault, because that block, and nothing around it, is what they will receive.
+   Both placements Obsidian produces are accepted: **`^om-a1b2c3` at the end of the bullet or paragraph, preceded by a space**, or **alone on the line directly after it** (which is what Obsidian generates for tables and callouts). The space matters — `text^om-a1b2c3` does not resolve, and reports as a stale anchor rather than as a typo.
+
+   A **heading** anchor (`#Some Section`) works where a block id is overkill. It matches case-insensitively with whitespace collapsed, and returns the section body *without* the heading line, up to the next heading of the same or higher level.
+
+   **The anchor is opt-in and deliberate.** A bare `promoted: brain/Note` still marks the capture and still clears the flag, but serves nothing — the caller is only told a corrected version exists and where. Two things to check before adding one:
+
+   - **The block reads correctly on its own to someone outside this vault**, because that block, and nothing around it, is what they receive.
+   - **The target note is one the server actually serves.** A note tagged `private`, one withheld by `mcp_never_expose`, or one outside the exposed roots refuses the anchor — the capture body is served instead and the caller is told why. Anchoring into such a note is not a leak, it is a no-op.
 
    Never edit a capture's body, `scope` or `confidence`. The marker is the one edit allowed.
 
