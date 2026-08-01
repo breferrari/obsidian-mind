@@ -15,6 +15,8 @@ const SCRIPT = resolve(
 	"../stop-checklist.ts",
 );
 const runScript = (stdin: string | object | null) => spawnHook(SCRIPT, stdin);
+const runJsonScript = (stdin: string | object | null) =>
+	spawnHook(SCRIPT, stdin, undefined, ["--json"]);
 
 describe("stop-checklist", () => {
 	test("silent when stop_hook_active is strict boolean true", () => {
@@ -50,5 +52,34 @@ describe("stop-checklist", () => {
 		const { stdout, code } = runScript(null);
 		assert.equal(code, 0);
 		assert.match(stdout, /Session end checklist:/);
+	});
+
+	test("emits valid Codex Stop JSON when --json is passed", () => {
+		const { stdout, code } = runJsonScript({
+			hook_event_name: "Stop",
+			stop_hook_active: false,
+		});
+		assert.equal(code, 0);
+		const output = JSON.parse(stdout) as { systemMessage?: unknown };
+		assert.equal(typeof output.systemMessage, "string");
+		assert.match(output.systemMessage as string, /Session end checklist:/);
+		assert.match(output.systemMessage as string, /Archive completed projects/);
+	});
+
+	test("auto-detects Codex input for sessions that loaded the old command", () => {
+		const { stdout, code } = runScript({
+			hook_event_name: "Stop",
+			model: "gpt-5.6-sol",
+			stop_hook_active: false,
+		});
+		assert.equal(code, 0);
+		const output = JSON.parse(stdout) as { systemMessage?: unknown };
+		assert.match(output.systemMessage as string, /Session end checklist:/);
+	});
+
+	test("Codex JSON mode remains valid on malformed input", () => {
+		const { stdout, code } = runJsonScript("garbage{{");
+		assert.equal(code, 0);
+		assert.doesNotThrow(() => JSON.parse(stdout));
 	});
 });

@@ -865,7 +865,7 @@ Step 2 is not documentation garnish. Measured: with the server wired and no repo
 
 ## Multi-Agent Portability
 
-The same scripts serve three agents. Each agent has its own config file mapping its own event names to the shared scripts. The event vocabularies differ — Claude Code calls it `Stop`, Gemini calls it `SessionEnd`, Codex has no compaction event — but the scripts are identical.
+The same scripts serve three agents. Each agent has its own config file mapping its own event names to the shared scripts. The event vocabularies differ — Claude Code calls it `Stop`, Gemini calls it `SessionEnd`, Codex has no compaction event — but the scripts are identical. Codex invokes `stop-checklist.ts` with `--json` because its `Stop` protocol rejects plain-text stdout; the other agents retain the default text format.
 
 ```mermaid
 flowchart TB

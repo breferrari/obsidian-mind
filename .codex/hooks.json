@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${CODEX_PROJECT_DIR:-.}/.claude/scripts/stop-checklist.ts\"",
+            "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${CODEX_PROJECT_DIR:-.}/.claude/scripts/stop-checklist.ts\" --json",
             "timeout": 5
           }
         ]

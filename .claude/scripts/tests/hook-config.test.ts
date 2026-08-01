@@ -123,3 +123,12 @@ describe("hook config — CWD-independent script resolution (issue #45)", () => 
 		});
 	}
 });
+
+test("Codex Stop requests JSON output from the shared checklist hook", () => {
+	const cfg = loadConfig(".codex/hooks.json");
+	const stopCommands = eachNodeHookCommand(cfg)
+		.filter(({ event }) => event === "Stop")
+		.map(({ command }) => command);
+	assert.equal(stopCommands.length, 1);
+	assert.match(stopCommands[0] ?? "", /stop-checklist\.ts\" --json$/);
+});

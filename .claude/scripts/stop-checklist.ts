@@ -10,6 +10,12 @@
  * checklist and routes through the same `triggerDebouncedRefresh`
  * entry the PostToolUse hook uses — one debounce contract, one spawn
  * shape, zero drift between the two paths.
+ *
+ * Codex requires successful Stop-hook stdout to be JSON. Its config passes
+ * `--json`, and the script also recognizes Codex's documented `model` input
+ * field so a session that loaded the previous config is repaired immediately.
+ * Both paths wrap the checklist in the supported `systemMessage` field.
+ * Claude Code and Gemini retain the plain-text output they already consume.
  */
 
 import { readFileSync } from "node:fs";
@@ -36,10 +42,14 @@ const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
 
 type HookInput = {
 	readonly stop_hook_active?: unknown;
+	readonly model?: unknown;
 };
 
 const input = await readStdinJson<HookInput>();
 if (input?.stop_hook_active === true) process.exit(0);
+
+const jsonOutput =
+	process.argv.includes("--json") || typeof input?.model === "string";
 
 const checklist = [
 	"Session end checklist:",
@@ -71,12 +81,15 @@ const hygieneLines = formatActiveHygiene(
 	),
 );
 
-process.stdout.write(
+const message =
 	checklist +
 		(hygieneLines.length > 0
 			? "\n\nVault Hygiene (drift detected):\n" + hygieneLines.join("\n")
 			: "") +
-		"\n",
+		"\n";
+
+process.stdout.write(
+	jsonOutput ? JSON.stringify({ systemMessage: message }) : message,
 );
 
 triggerDebouncedRefresh({
