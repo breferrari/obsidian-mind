@@ -32,7 +32,6 @@ export function runScript(
 	scriptPath: string,
 	stdin: string | object | null,
 	envOverrides?: Readonly<Record<string, string>>,
-	args: readonly string[] = [],
 ): RunResult {
 	const input =
 		stdin === null
@@ -46,7 +45,6 @@ export function runScript(
 			"--disable-warning=ExperimentalWarning",
 			"--experimental-strip-types",
 			scriptPath,
-			...args,
 		],
 		{
 			input,

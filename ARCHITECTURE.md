@@ -865,7 +865,9 @@ Step 2 is not documentation garnish. Measured: with the server wired and no repo
 
 ## Multi-Agent Portability
 
-The same scripts serve three agents. Each agent has its own config file mapping its own event names to the shared scripts. The event vocabularies differ — Claude Code calls it `Stop`, Gemini calls it `SessionEnd`, Codex has no compaction event — but the scripts are identical. Codex invokes `stop-checklist.ts` with `--json` because its `Stop` protocol rejects plain-text stdout; the other agents retain the default text format.
+The same scripts serve three agents. Each agent has its own config file mapping its own event names to the shared scripts. The event vocabularies differ — Claude Code calls it `Stop`, Gemini calls it `SessionEnd`, Codex has no compaction event — but the scripts are identical, and so are the arguments they are invoked with.
+
+Session-end output is the one place where that uniformity had to be earned rather than assumed. All three agents treat session-end stdout as JSON-or-nothing, but only Codex says so out loud: it reports a hook failure on plain text, while Gemini's `SessionEnd` contract silently drops anything that isn't the final JSON object, and Claude Code routes non-exempt `Stop` stdout to the debug log — read by nobody. A plain-text checklist therefore looked like it worked on two agents and broke on one, when in fact it reached none of them. `stop-checklist.ts` emits `{"systemMessage": ...}` unconditionally: `systemMessage` is the only output field all three implement with the same meaning, and emitting it unconditionally is what keeps the script from having to know which agent invoked it.
 
 ```mermaid
 flowchart TB

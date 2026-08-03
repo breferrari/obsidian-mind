@@ -11,17 +11,25 @@
  * entry the PostToolUse hook uses — one debounce contract, one spawn
  * shape, zero drift between the two paths.
  *
- * Codex requires successful Stop-hook stdout to be JSON. Its config passes
- * `--json`, and the script also recognizes Codex's documented `model` input
- * field so a session that loaded the previous config is repaired immediately.
- * Both paths wrap the checklist in the supported `systemMessage` field.
- * Claude Code and Gemini retain the plain-text output they already consume.
+ * Output is JSON on every agent, never plain text. Codex surfaced this by
+ * failing loudly — its Stop protocol rejects non-JSON stdout — but the text
+ * path was never read anywhere: Gemini's SessionEnd contract forbids plain
+ * stdout, and Claude Code sends non-exempt Stop stdout to the debug log
+ * rather than to the user or the model. A checklist nobody receives is the
+ * same bug in three places, so all three get the one field they agree on,
+ * `systemMessage`. Emitting it unconditionally is also what keeps this
+ * script agent-agnostic: no flag, and no sniffing the payload to guess who
+ * is calling.
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readStdinJson } from "./lib/hook-io.ts";
+import {
+	readStdinJson,
+	writeSilentHookOutput,
+	writeSystemMessage,
+} from "./lib/hook-io.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 import {
 	formatActiveHygiene,
@@ -42,14 +50,17 @@ const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
 
 type HookInput = {
 	readonly stop_hook_active?: unknown;
-	readonly model?: unknown;
 };
 
 const input = await readStdinJson<HookInput>();
-if (input?.stop_hook_active === true) process.exit(0);
-
-const jsonOutput =
-	process.argv.includes("--json") || typeof input?.model === "string";
+// Re-entry by a secondary agent: say nothing and spawn no second refresh,
+// but still emit the empty envelope rather than zero bytes — see
+// writeSilentHookOutput for why "sometimes silent, sometimes JSON" is the
+// weaker contract.
+if (input?.stop_hook_active === true) {
+	writeSilentHookOutput();
+	process.exit(0);
+}
 
 const checklist = [
 	"Session end checklist:",
@@ -81,16 +92,15 @@ const hygieneLines = formatActiveHygiene(
 	),
 );
 
+// No trailing newline: this is a message rendered by the agent's UI, not a
+// line written to a stream.
 const message =
 	checklist +
-		(hygieneLines.length > 0
-			? "\n\nVault Hygiene (drift detected):\n" + hygieneLines.join("\n")
-			: "") +
-		"\n";
+	(hygieneLines.length > 0
+		? "\n\nVault Hygiene (drift detected):\n" + hygieneLines.join("\n")
+		: "");
 
-process.stdout.write(
-	jsonOutput ? JSON.stringify({ systemMessage: message }) : message,
-);
+writeSystemMessage(message);
 
 triggerDebouncedRefresh({
 	sentinelPath: SENTINEL_PATH,
