@@ -27,6 +27,7 @@ import {
 	reasonUsage,
 	reasonAuditDetail,
 	reasoningArgs,
+	reasoningEnv,
 	reasoningPrompt,
 	hasEvidence,
 	visibleHits,
@@ -69,15 +70,15 @@ const result = (over: Partial<ReasoningResult> = {}): ReasoningResult => ({
 // ---------------------------------------------------------------------------
 
 describe("resolving the reason config", () => {
-	test("the config surface is exactly one key: model", () => {
-		assert.deepEqual(Object.keys(resolveReasonConfig({})), ["model"]);
+	test("the config surface is exactly model plus an optional provider route", () => {
+		assert.deepEqual(Object.keys(resolveReasonConfig({})), ["model", "route"]);
 		// Unknown keys are inert rather than honoured — a manifest that asks for
 		// something this tool does not have gets the same config as one that does
 		// not ask. Pinned so the surface cannot quietly grow back.
 		const c = resolveReasonConfig({
 			reason: { max_usd_per_call: 0.05, max_usd_per_day: 0.05, enabled: false, timeout_ms: 5 },
 		}) as unknown as Record<string, unknown>;
-		assert.deepEqual(Object.keys(c), ["model"]);
+		assert.deepEqual(Object.keys(c), ["model", "route"]);
 	});
 
 	test("no model is pinned by default, so the spawn follows the CLI", () => {
@@ -102,6 +103,33 @@ describe("resolving the reason config", () => {
 	test("a full model id is honoured when a vault deliberately pins one", () => {
 		assert.equal(resolveReasonConfig({ reason: { model: "claude-opus-4-6" } }).model, "claude-opus-4-6");
 	});
+
+	test("MiniMax defaults to its current model and global endpoint", () => {
+		assert.deepEqual(resolveReasonConfig({ reason: { provider: "MiniMax" } }), {
+			model: "MiniMax-M3",
+			route: {
+				provider: "MiniMax",
+				region: "global_en",
+				baseUrl: "https://api.minimax.io/anthropic",
+				contextWindow: 1_000_000,
+			},
+		});
+	});
+
+	test("MiniMax supports the current text model on the China endpoint", () => {
+		assert.deepEqual(
+			resolveReasonConfig({ reason: { provider: "MiniMax", region: "cn_zh", model: "MiniMax-M2.7" } }),
+			{
+				model: "MiniMax-M2.7",
+				route: {
+					provider: "MiniMax",
+					region: "cn_zh",
+					baseUrl: "https://api.minimaxi.com/anthropic",
+					contextWindow: 204_800,
+				},
+			},
+		);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -119,6 +147,18 @@ describe("the daily usage line health reports", () => {
 		assert.match(
 			reasonUsage("/v", { reason: { model: "claude-opus-4-6" } }, "2026-07-27", spend(0)),
 			/model: claude-opus-4-6/,
+		);
+	});
+
+	test("names the selected MiniMax route", () => {
+		assert.match(
+			reasonUsage(
+				"/v",
+				{ reason: { provider: "MiniMax", region: "cn_zh", model: "MiniMax-M2.7" } },
+				"2026-07-27",
+				spend(0),
+			),
+			/provider: MiniMax\/cn_zh · model: MiniMax-M2\.7/,
 		);
 	});
 
@@ -188,6 +228,17 @@ describe("the audit detail for a run", () => {
 		assert.equal(d.model_asked, "claude-opus-4-6");
 		assert.equal(d.model_used, "claude-haiku-4-5");
 	});
+
+	test("records the selected MiniMax provider and region", () => {
+		const d = reasonAuditDetail(
+			"q",
+			resolveReasonConfig({ reason: { provider: "MiniMax", region: "cn_zh" } }),
+			result(),
+			undefined,
+		);
+		assert.equal(d.provider, "MiniMax");
+		assert.equal(d.region, "cn_zh");
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -249,6 +300,21 @@ describe("the spawn arguments", () => {
 			"c.json",
 		);
 		assert.equal(pinned[pinned.indexOf("--model") + 1], "claude-opus-4-6");
+	});
+
+	test("the MiniMax route overrides only endpoint and context settings", () => {
+		const inherited = { ANTHROPIC_AUTH_TOKEN: "kept", SENTINEL: "yes" };
+		const routed = reasoningEnv(
+			resolveReasonConfig({ reason: { provider: "MiniMax", region: "cn_zh", model: "MiniMax-M2.7" } }),
+			inherited,
+		);
+		assert.deepEqual(routed, {
+			ANTHROPIC_AUTH_TOKEN: "kept",
+			SENTINEL: "yes",
+			ANTHROPIC_BASE_URL: "https://api.minimaxi.com/anthropic",
+			CLAUDE_CODE_AUTO_COMPACT_WINDOW: "204800",
+		});
+		assert.equal(reasoningEnv(resolveReasonConfig({}), inherited), inherited);
 	});
 });
 

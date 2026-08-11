@@ -14,9 +14,10 @@
  * It spawns because a server cannot borrow the calling session's inference —
  * MCP calls that sampling, and Claude Code does not implement it
  * (anthropics/claude-code#1785). So it starts a session through the user's own
- * CLI, which is also why it passes no `--model`: MCP does not expose the
- * caller's model, and the CLI's own default is the closest match to the level
- * the caller is already working at.
+ * CLI. By default it passes no `--model`, because MCP does not expose the
+ * caller's model and the CLI's own default is the closest match to the level
+ * the caller is already working at. The manifest can instead select the
+ * bounded MiniMax model and regional endpoint registry below.
  *
  * The spawn is isolated (`--strict-mcp-config` against an empty server map, so
  * it cannot call back into `om`), read-only, and seeded with tier-1 results so
@@ -38,6 +39,37 @@ const require = createRequire(import.meta.url);
 /** Where an answer and its provenance are written. */
 export const REASONING_DIR = ".claude/om-reasoning";
 
+export type ReasonRegion = "global_en" | "cn_zh";
+
+export interface ReasonProviderRoute {
+	readonly provider: "MiniMax";
+	readonly region: ReasonRegion;
+	readonly baseUrl: string;
+	readonly contextWindow: number;
+}
+
+const MINIMAX_MODELS = {
+	"MiniMax-M3": { contextWindow: 1_000_000 },
+	"MiniMax-M2.7": { contextWindow: 204_800 },
+} as const;
+
+type MiniMaxModel = keyof typeof MINIMAX_MODELS;
+
+const MINIMAX_ENDPOINTS: Record<ReasonRegion, string> = {
+	global_en: "https://api.minimax.io/anthropic",
+	cn_zh: "https://api.minimaxi.com/anthropic",
+};
+
+const DEFAULT_MINIMAX_MODEL: MiniMaxModel = "MiniMax-M3";
+
+function isMiniMaxModel(value: string): value is MiniMaxModel {
+	return Object.hasOwn(MINIMAX_MODELS, value);
+}
+
+function isReasonRegion(value: string): value is ReasonRegion {
+	return value === "global_en" || value === "cn_zh";
+}
+
 export interface ReasonConfig {
 	/**
 	 * null — the usual case — means DO NOT pass `--model`, so the spawn runs on
@@ -48,11 +80,14 @@ export interface ReasonConfig {
 	 * using". Pinning one here would quietly hand back worse answers than the
 	 * caller's own session would produce, for a choice that is theirs.
 	 *
-	 * A vault that wants to pin one sets it, and then it must be a FULL id:
-	 * `--model haiku` is not honoured and does not error — it silently runs
-	 * sonnet. An alias is ignored rather than passed on.
+	 * A vault that wants to pin the existing route sets a FULL id: `--model
+	 * haiku` is not honoured and does not error — it silently runs sonnet. An
+	 * alias is ignored rather than passed on. The MiniMax route resolves its
+	 * model against the registry instead.
 	 */
 	readonly model: string | null;
+	/** null leaves the CLI's existing provider environment unchanged. */
+	readonly route: ReasonProviderRoute | null;
 }
 
 /**
@@ -94,17 +129,32 @@ const SPAWN_TIMEOUT_MS = 300_000;
 const BARE_ALIASES = new Set(["haiku", "sonnet", "opus", "default", "sonnet[1m]", "opusplan"]);
 
 /**
- * Read the manifest's `reason` block. Exactly one thing is configurable — a model
- * pin — and it defaults to using the user's own Claude settings.
+ * Read the manifest's `reason` block. A model pin keeps the existing CLI route;
+ * selecting MiniMax adds a bounded model and regional endpoint registry.
  *
  * Pure, so the decision can be driven by a test without spawning anything.
  */
 export function resolveReasonConfig(manifest: Record<string, unknown> | null | undefined): ReasonConfig {
 	const raw = (manifest?.reason ?? {}) as Record<string, unknown>;
 	const asked = typeof raw.model === "string" ? raw.model.trim() : "";
+	const provider = typeof raw.provider === "string" ? raw.provider.trim() : "";
+	if (provider === "MiniMax") {
+		const model = isMiniMaxModel(asked) ? asked : DEFAULT_MINIMAX_MODEL;
+		const askedRegion = typeof raw.region === "string" ? raw.region.trim() : "";
+		const region = isReasonRegion(askedRegion) ? askedRegion : "global_en";
+		return {
+			model,
+			route: {
+				provider: "MiniMax",
+				region,
+				baseUrl: MINIMAX_ENDPOINTS[region],
+				contextWindow: MINIMAX_MODELS[model].contextWindow,
+			},
+		};
+	}
 	// A bare alias, or anything unset, falls back to inheriting rather than to a
 	// hardcoded id — a wrong pin is worse than no pin.
-	return { model: asked && !BARE_ALIASES.has(asked.toLowerCase()) ? asked : null };
+	return { model: asked && !BARE_ALIASES.has(asked.toLowerCase()) ? asked : null, route: null };
 }
 
 /**
@@ -129,6 +179,8 @@ export function reasonAuditDetail(
 		terminal: r.terminal,
 		model_asked: cfg.model,
 		model_used: r.modelUsed,
+		provider: cfg.route?.provider ?? "CLI default",
+		region: cfg.route?.region ?? null,
 		wall_ms: r.wallMs,
 		// What the spawn was TOLD it could read. The boundary is observed by the
 		// spawn rather than enforced by the filesystem, so recording it is what
@@ -161,7 +213,9 @@ export function reasonUsage(
 	) => { total: number; complete: boolean },
 ): string {
 	const { total, complete } = readSpend(vaultRoot, REASON_ACTION, today, "cost_usd");
-	const model = resolveReasonConfig(manifest).model ?? "your CLI default";
+	const cfg = resolveReasonConfig(manifest);
+	const model = cfg.model ?? "your CLI default";
+	const provider = cfg.route ? `${cfg.route.provider}/${cfg.route.region}` : "CLI default";
 	// "at least" when the log was too large to read whole. A figure that is
 	// silently low is worse than one that says it is a floor — this line is the
 	// entire answer to where usage went, so it has to be honest about its own
@@ -172,7 +226,7 @@ export function reasonUsage(
 			: complete
 				? "nothing yet today"
 				: "nothing in the readable tail of today's log";
-	return `${usage} · model: ${model}`;
+	return `${usage} · provider: ${provider} · model: ${model}`;
 }
 
 export interface ReasoningResult {
@@ -211,8 +265,8 @@ export function reasoningArgs(cfg: ReasonConfig, prompt: string, mcpConfigPath: 
 	return [
 		"-p",
 		prompt,
-		// Omitted unless the vault pinned one, so the spawn runs on the user's own
-		// CLI default rather than on a model this server chose for them.
+		// Omitted unless the vault selected one, so the default route still follows
+		// the user's CLI rather than a model this server chose for them.
 		...(cfg.model ? ["--model", cfg.model] : []),
 		"--output-format",
 		"json",
@@ -226,6 +280,16 @@ export function reasoningArgs(cfg: ReasonConfig, prompt: string, mcpConfigPath: 
 		"--tools",
 		READ_ONLY_TOOLS,
 	];
+}
+
+/** Build the child environment without mutating the long-lived server process. */
+export function reasoningEnv(cfg: ReasonConfig, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+	if (!cfg.route) return env;
+	return {
+		...env,
+		ANTHROPIC_BASE_URL: cfg.route.baseUrl,
+		CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(cfg.route.contextWindow),
+	};
 }
 
 /**
@@ -527,6 +591,7 @@ export function runReasoning(
 		try {
 			spawned = spawn(claude.cmd, [...claude.leading, ...reasoningArgs(cfg, prompt, mcpConfigPath)], {
 				cwd: vaultRoot,
+				env: reasoningEnv(cfg),
 				// `timeout` + `killSignal` reproduce spawnSync's bound without holding
 				// the loop: node kills the child itself when it overruns.
 				timeout: SPAWN_TIMEOUT_MS,

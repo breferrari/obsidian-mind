@@ -121,7 +121,7 @@ The hook scripts, subagent prompts, command definitions, and vault conventions a
 | What frontmatter is required for each note type? | `frontmatter_required{}` |
 | Which notes does the `om` server serve, and where do memories live? | `mcp_exposed_roots[]`, `mcp_never_expose[]`, `memory_root`, `mcp_inbox` |
 | How much context may the eager layer spend? | `eager_layer_budget_bytes`, `listing_collapse_threshold` |
-| Which model does a `reason` spawn run on? | `reason.model` — unset means the user's own CLI default |
+| Which provider route and model does a `reason` spawn use? | `reason.provider`, `reason.region`, `reason.model` — unset means the user's own CLI default |
 
 The `qmd_index` field is the most load-bearing. **Five independent callers** read it, and they fail *silently* when they disagree — one writes to a store another never reads, which surfaces only as "0 documents" or as an empty search:
 
@@ -758,16 +758,16 @@ flowchart TB
     HasEv -->|no| P2["prompt: the INDEX was silent,<br/>the vault may not be —<br/>go read it yourself"]
     P1 --> Spawn
     P2 --> Spawn
-    Spawn["spawn claude, async, cwd = vault root"] --> Flags["--strict-mcp-config + empty server map<br/>--tools Read,Grep,Glob<br/>--output-format json<br/>stdin closed"]
-    Flags --> Log["audit — EVERY run, before any refusal:<br/>question, cost, turns, terminal,<br/>model asked, model used, wall ms, roots"]
+    Spawn["spawn CLI, async, cwd = vault root"] --> Flags["--strict-mcp-config + empty server map<br/>--tools Read,Grep,Glob<br/>--output-format json<br/>stdin closed"]
+    Flags --> Log["audit — EVERY run, before any refusal:<br/>question, cost, turns, terminal,<br/>provider, region, models, wall ms, roots"]
     Log --> Run{"answer came back?"}
     Run -->|no| Ref["refuse by name — timeout, early end,<br/>or could-not-start — with the evidence"]
     Run -->|yes| Rec["write the record<br/>.claude/om-reasoning/, gitignored"]
 ```
 
-**It runs on the caller's own model, by running on none of its own.** MCP gives a server no way to see which model the calling session is using, so there is nothing to mirror. Passing no `--model` at all makes the spawn take the user's CLI default — whatever they get typing `claude` — which is the closest reachable thing to *the level they are already working at*. A vault that wants something else sets `reason.model`. Bare aliases — `haiku`, `sonnet`, `opus` — are dropped in favour of inheriting, because `--model haiku` is not honoured and does **not** error: it silently runs `claude-sonnet-5`, and a pin that quietly means a different model is worse than no pin. Anything else is passed through as written rather than matched against a shape, since an id-shaped allow-list drops real ids it did not anticipate. Every answer names the model that actually ran, and says whether that was the pinned one.
+**It uses the caller's CLI route unless the vault selects MiniMax.** MCP gives a server no way to see which model the calling session is using, so there is nothing to mirror. Passing no `--model` at all makes the spawn take the user's CLI default, which is the closest reachable thing to *the level they are already working at*. A plain `reason.model` still pins that route. Setting `reason.provider` to `MiniMax` selects one of the registered current text models and maps `reason.region` to the matching global or China Anthropic-compatible endpoint; the model's context window also becomes the child CLI's auto-compact window. The auth token remains inherited from the server environment rather than entering the manifest. Every answer names the model that actually ran, and the audit line also records the selected provider and region.
 
-**Usage is answered by the record, not by a limit.** Every invocation is appended to the audit log — before any refusal, so a run that produced no answer is still recorded — with the question, cost, turns, terminal reason, model asked for, model that ran, wall time, and the roots the spawn was given. `health` reports the day's figure from the tail of that log, and says *at least* when the log was too large to read whole: a number standing in for a cap has to admit being a floor rather than quietly under-report on the busiest day. The spawn is Claude, on the user's machine, under the user's auth, on the account the calling session already runs on; a server-side bound there would be this layer rationing the user's own resource back to them. The one bound present is a 300-second timeout, which kills a **hung child** — a failure, not a preference.
+**Usage is answered by the record, not by a limit.** Every invocation is appended to the audit log — before any refusal, so a run that produced no answer is still recorded — with the question, cost, turns, terminal reason, provider, region, model asked for, model that ran, wall time, and the roots the spawn was given. `health` reports the day's figure from the tail of that log, and says *at least* when the log was too large to read whole: a number standing in for a cap has to admit being a floor rather than quietly under-report on the busiest day. The spawn runs through the user's local CLI under the selected route and inherited auth; a server-side bound there would be this layer rationing the user's own resource back to them. The one bound present is a 300-second timeout, which kills a **hung child** — a failure, not a preference.
 
 **Isolation is what stops it recursing.** `--strict-mcp-config` pointed at a config declaring no servers leaves the spawn with no MCP at all, so it cannot call back into `om` and start a tree that multiplies at every level. Verified on the wire: a spawn under those flags reports no MCP servers available.
 
