@@ -202,6 +202,16 @@ Update these when creating or archiving notes:
 
 ### Decision Records
 
+**When a decision earns a record.** Any ONE of these holding is enough:
+
+- **Hard to reverse** — undoing it later costs real work (a schema, a public contract, a naming scheme).
+- **Surprising without context** — a competent reader would ask "why is it like this?" and the code alone cannot answer. This is the clause that stops the next contributor from "fixing" something deliberate.
+- **A real trade-off** — something was genuinely given up, so the losing option's case is worth keeping.
+
+None hold → no record; the tracker and the commit message are enough. The gate is deliberately symmetric: it prescribes records where they are missing today, and it licenses *not* writing one everywhere else, which is what keeps the record set worth reading. Without it, records cluster where writing them was easy rather than where losing them is expensive.
+
+Once it clears the gate:
+
 1. Create in `work/` using the Decision Record template
 2. Link from the work note(s) that led to the decision
 3. Add to the Decisions Log table in `work/Index.md`
