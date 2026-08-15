@@ -104,14 +104,72 @@ export function extractWikilinkTargets(content: string): string[] {
 }
 
 /**
+ * Split a YAML inline list's contents on its SEPARATORS.
+ *
+ * A blind `split(",")` cannot be used here, because a comma inside a quoted
+ * scalar is content: `["Smith, John", Nickname]` is two aliases, and splitting
+ * it blindly yields three fragments, each carrying a stray quote character —
+ * names that match nothing and that nobody could type to work around.
+ *
+ * Quote state is all this needs to track. A backslash escape is consumed whole
+ * inside a double-quoted scalar, and the `''` of a single-quoted scalar is
+ * stepped over rather than read as a close, so neither hides a separator or
+ * invents one.
+ */
+function splitInlineList(inner: string): string[] {
+	const out: string[] = [];
+	let cur = "";
+	let quote: '"' | "'" | null = null;
+	for (let i = 0; i < inner.length; i++) {
+		const ch = inner[i]!;
+		if (quote === null) {
+			if (ch === '"' || ch === "'") quote = ch;
+			else if (ch === ",") {
+				out.push(cur);
+				cur = "";
+				continue;
+			}
+		} else if (ch === "\\" && quote === '"' && i + 1 < inner.length) {
+			cur += ch + inner[++i]!;
+			continue;
+		} else if (ch === quote) {
+			if (quote === "'" && inner[i + 1] === "'") {
+				cur += "''";
+				i++;
+				continue;
+			}
+			quote = null;
+		}
+		cur += ch;
+	}
+	out.push(cur);
+	return out;
+}
+
+/**
  * Minimal frontmatter `aliases:` reader — YAML block list and inline
  * `[a, b]` forms, quoted or bare. Returns [] when absent/malformed.
+ *
+ * "Minimal" is bounded by ownership. `parseFrontmatter` in memory-recall may
+ * accept a small subset because this repo writes every file it reads; these
+ * aliases come from USER notes, written by Obsidian, by hand, by templates and
+ * by other agents, so the shapes below are ordinary input rather than
+ * malformed input — and against a zero gate, a shape this misreads costs the
+ * whole check, not one link.
  */
 export function extractAliases(content: string): string[] {
 	if (!content.startsWith("---")) return [];
-	const end = content.indexOf("\n---", 3);
+	// CRLF first, and before anything indexes or matches. Obsidian-on-Windows
+	// rewrites LF to CRLF on edit (the reason .gitattributes normalizes), and
+	// `.` does not match CR — it is a line terminator — while `$` without `m`
+	// anchors past it. The block-list item pattern therefore failed on item
+	// ONE of every CRLF note, and `break` read that as an empty list, so the
+	// file's whole alias set went missing with nothing to distinguish it from
+	// a note that declares none.
+	const text = content.replace(/\r\n/g, "\n");
+	const end = text.indexOf("\n---", 3);
 	if (end === -1) return [];
-	const fm = content.slice(3, end);
+	const fm = text.slice(3, end);
 	const lines = fm.split("\n");
 	const idx = lines.findIndex((l) => /^aliases:\s*(\[.*\])?\s*$/.test(l.trim()) || /^aliases:\s*\[/.test(l.trim()));
 	if (idx === -1) return [];
@@ -126,10 +184,12 @@ export function extractAliases(content: string): string[] {
 		}
 		return t;
 	};
-	const inline = head.match(/^aliases:\s*\[(.*)\]\s*$/);
+	// A trailing `# comment` is ordinary YAML. Without tolerating it the exact
+	// match failed, the reader fell through to the block branch, found no
+	// indented items, and reported the list as empty.
+	const inline = head.match(/^aliases:\s*\[(.*)\]\s*(?:#.*)?$/);
 	if (inline) {
-		return (inline[1] ?? "")
-			.split(",")
+		return splitInlineList(inline[1] ?? "")
 			.map(unquote)
 			.filter((s) => s !== "");
 	}
@@ -137,7 +197,13 @@ export function extractAliases(content: string): string[] {
 	for (let i = idx + 1; i < lines.length; i++) {
 		const line = lines[i] ?? "";
 		const item = line.match(/^\s+-\s+(.*)$/);
-		if (!item) break; // end of the block list
+		if (!item) {
+			// A blank line or a comment between entries is legal YAML and the
+			// sequence continues past it; only a line that is neither ends it.
+			// Stopping on them truncated the list at the first one.
+			if (line.trim() === "" || line.trim().startsWith("#")) continue;
+			break; // end of the block list
+		}
 		const value = unquote(item[1] ?? "");
 		if (value !== "") out.push(value);
 	}

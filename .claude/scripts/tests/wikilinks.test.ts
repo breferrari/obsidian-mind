@@ -179,3 +179,55 @@ describe("extractWikilinkTargets — parser gaps found in the field (2026-07-14)
 		);
 	});
 });
+
+/**
+ * Shapes the alias reader met in the field and misread. Each cost the WHOLE
+ * alias set or a whole entry, and each surfaced as a broken-link report against
+ * a note whose alias is plainly there — a zero gate red for a reason no author
+ * can act on.
+ */
+describe("extractAliases — ordinary YAML the reader used to lose", () => {
+	const crlf = (...lines: string[]): string => lines.join("\r\n");
+
+	// Obsidian-on-Windows rewrites LF to CRLF on edit; .gitattributes exists
+	// because of it, and normalizes what enters a commit, not what is on disk
+	// while the gate walks the working tree.
+	test("a CRLF note keeps its aliases", () => {
+		const md = crlf("---", "aliases:", "  - One", "  - Two", "---", "body", "");
+		assert.deepEqual(extractAliases(md), ["One", "Two"]);
+	});
+
+	// Item one is where it broke, so a single-alias note pins the total failure
+	// rather than a truncation that happens to look similar.
+	test("a CRLF note with one alias keeps it", () => {
+		assert.deepEqual(extractAliases(crlf("---", "aliases:", "  - Only", "---", "b", "")), ["Only"]);
+	});
+
+	test("an LF note is unaffected by the normalization", () => {
+		const md = "---\naliases:\n  - One\n  - Two\n---\nbody\n";
+		assert.deepEqual(extractAliases(md), ["One", "Two"]);
+	});
+
+	test("a comma inside a quoted alias is content, not a separator", () => {
+		const md = '---\naliases: ["Smith, John", Nickname]\n---\n';
+		assert.deepEqual(extractAliases(md), ["Smith, John", "Nickname"]);
+	});
+
+	test("a trailing YAML comment does not empty an inline array", () => {
+		assert.deepEqual(extractAliases("---\naliases: [One, Two] # my aliases\n---\n"), ["One", "Two"]);
+	});
+
+	test("a blank line between block entries does not end the list", () => {
+		assert.deepEqual(extractAliases("---\naliases:\n  - One\n\n  - Two\n---\n"), ["One", "Two"]);
+	});
+
+	test("a comment between block entries does not end the list", () => {
+		assert.deepEqual(extractAliases("---\naliases:\n  - One\n  # note\n  - Two\n---\n"), ["One", "Two"]);
+	});
+
+	// The blank/comment tolerance must not swallow the terminator it was added
+	// beside: a real key still ends the sequence.
+	test("a following scalar key still ends the list", () => {
+		assert.deepEqual(extractAliases("---\naliases:\n  - One\n\ntags:\n  - brain\n---\n"), ["One"]);
+	});
+});
