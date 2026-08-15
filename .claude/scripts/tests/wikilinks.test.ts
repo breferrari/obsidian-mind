@@ -115,6 +115,22 @@ describe("extractAliases", () => {
 		const md = "---\naliases:\n  - One\ntags:\n  - brain\n---\n";
 		assert.deepEqual(extractAliases(md), ["One"]);
 	});
+	test("single-quoted alias unescapes YAML's doubled apostrophe", () => {
+		const md = "---\naliases:\n  - 'the writer''s two facts'\n---\n";
+		assert.deepEqual(extractAliases(md), ["the writer's two facts"]);
+	});
+	test("inline array form unescapes it too", () => {
+		const md = "---\naliases: ['Sarah''s 1:1', Plain]\n---\n";
+		assert.deepEqual(extractAliases(md), ["Sarah's 1:1", "Plain"]);
+	});
+	test("double-quoted alias keeps a bare apostrophe unchanged", () => {
+		const md = "---\naliases:\n  - \"the writer's two facts\"\n---\n";
+		assert.deepEqual(extractAliases(md), ["the writer's two facts"]);
+	});
+	test("a lone apostrophe is not a quote pair", () => {
+		const md = "---\naliases:\n  - '\n---\n";
+		assert.deepEqual(extractAliases(md), ["'"]);
+	});
 });
 
 describe("buildResolver", () => {

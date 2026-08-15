@@ -116,13 +116,22 @@ export function extractAliases(content: string): string[] {
 	const idx = lines.findIndex((l) => /^aliases:\s*(\[.*\])?\s*$/.test(l.trim()) || /^aliases:\s*\[/.test(l.trim()));
 	if (idx === -1) return [];
 	const head = lines[idx]?.trim() ?? "";
+	// Undo the quoting rather than merely removing the quote marks — the two
+	// differ on exactly the values that need it. A YAML single-quoted scalar
+	// escapes an apostrophe by DOUBLING it, so `'the writer''s two facts'`
+	// stripped charwise yields an alias no link can ever cite. Any writer
+	// emitting YAML quotes a value containing an apostrophe, and aliases are
+	// commonly the note's own title, so this is a steady fraction of generated
+	// notes rather than an edge case — and against a zero gate one false
+	// positive turns the whole check red. The two quote styles are separated
+	// because only the single-quoted form uses `''`; double-quoted content is
+	// passed through, which is what the gate's callers already expect.
 	const unquote = (s: string): string => {
 		const t = s.trim();
-		if (
-			(t.startsWith('"') && t.endsWith('"')) ||
-			(t.startsWith("'") && t.endsWith("'"))
-		) {
-			return t.slice(1, -1);
+		if (t.length < 2) return t; // a lone `'` starts and ends with itself
+		if (t.startsWith('"') && t.endsWith('"')) return t.slice(1, -1);
+		if (t.startsWith("'") && t.endsWith("'")) {
+			return t.slice(1, -1).replaceAll("''", "'");
 		}
 		return t;
 	};
