@@ -12,7 +12,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { findToolMarkup } from "../lib/mcp-capture.ts";
+import { findToolMarkup, describeToolMarkup, toolMarkupRefusal } from "../lib/mcp-capture.ts";
 
 describe("detecting a serialization failure in a capture field", () => {
 	test("the exact shape that corrupted a note is caught, and names its field", () => {
@@ -74,5 +74,54 @@ describe("detecting a serialization failure in a capture field", () => {
 			'<parameter name="verification">["ran the suite"]',
 		].join("\n");
 		assert.equal(findToolMarkup({ title: "retries", body }), "body");
+	});
+});
+
+/**
+ * Telling the two shapes apart, because they need OPPOSITE repairs: an embedded
+ * hit lost content and the call must be rewritten, a trailing hit left the prose
+ * intact and only the tags are wrong. A message that cannot distinguish them
+ * sends half its readers to rewrite text that was never at fault.
+ */
+describe("describing a serialization failure well enough to repair it", () => {
+	const PROSE = "Landed the parser rewrite behind a feature flag.";
+
+	test("clean prose does not match, so the absence of a false positive is pinned", () => {
+		assert.equal(describeToolMarkup({ title: "parser", summary: PROSE }), null);
+	});
+
+	test("closing tags after the content are TRAILING — the prose is not at fault", () => {
+		const site = describeToolMarkup({ summary: `${PROSE}</invoke></function_calls>` });
+		assert.equal(site?.trailing, true);
+		const msg = toolMarkupRefusal(site!);
+		assert.match(msg, /Found "<\/invoke" at offset \d+ of "summary"/);
+		assert.match(msg, /do not rewrite the prose/);
+		assert.ok(!msg.includes("swallowed"), "must not accuse the prose of swallowing a field");
+	});
+
+	test("a swallowed following field is EMBEDDED, since content continues past it", () => {
+		const summary = [`${PROSE}</summary>`, '<parameter name="changes">["src/parser.ts"]'].join("\n");
+		const site = describeToolMarkup({ summary });
+		assert.equal(site?.trailing, false);
+		const msg = toolMarkupRefusal(site!);
+		assert.match(msg, /swallowed the field after it/);
+		assert.ok(!msg.includes("do not rewrite the prose"), "embedded content cannot be salvaged");
+	});
+
+	test("a list field names the offending item, not just the field", () => {
+		const site = describeToolMarkup({ changes: ["fine", '<parameter name="decisions">[]'] });
+		assert.equal(site?.item, 2);
+		assert.match(toolMarkupRefusal(site!), /of item 2 of "changes"/);
+	});
+
+	test("the named field is the field the match sits inside, not the largest one", () => {
+		const site = describeToolMarkup({ title: "ok", kind: "</invoke>", summary: "a much longer body" });
+		assert.equal(site?.field, "kind");
+	});
+
+	test("the reported offset indexes to the reported match", () => {
+		const summary = `${PROSE} <function_calls> tail`;
+		const site = describeToolMarkup({ summary })!;
+		assert.equal(summary.slice(site.offset, site.offset + site.match.length), site.match);
 	});
 });

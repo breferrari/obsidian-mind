@@ -249,13 +249,91 @@ export function resolveDestination(
  */
 const TOOL_MARKUP = /<parameter\s+name=|<\/?(?:antml:)?invoke\b|<\/?(?:antml:)?function_calls\b/i;
 
-/** The fields a malformed call can corrupt, named so the error can say which. */
-export function findToolMarkup(input: Record<string, unknown>): string | null {
-	for (const [key, value] of Object.entries(input)) {
+/**
+ * Closing tags with nothing but whitespace after them.
+ *
+ * This separates the two failures that both produce a TOOL_MARKUP hit and that
+ * need OPPOSITE repairs, so the refusal can say which one happened. The test is
+ * exact rather than heuristic: if a field swallowed the one after it, the
+ * swallowed `<parameter name=` opener sits BEFORE any trailing tags, so
+ * stripping them leaves the markup behind and the case reports `trailing: false`.
+ */
+const TRAILING_TAGS = /(?:\s*<\/(?:antml:)?(?:invoke|function_calls|parameter)\s*>)+\s*$/i;
+
+/** Where a serialization failure landed, and which of the two shapes it is. */
+export interface ToolMarkupSite {
+	/** The argument the match sits inside. */
+	readonly field: string;
+	/** The framing that matched, verbatim, so the caller can search for it. */
+	readonly match: string;
+	/** Offset of the match within the field's text — the item's text, for a list. */
+	readonly offset: number;
+	/** 1-based item number when the field is a list, else null. */
+	readonly item: number | null;
+	/** True when only closing tags trail the caller's content, which leaves it intact. */
+	readonly trailing: boolean;
+}
+
+/** Locate a serialization failure and describe it well enough to be repaired. */
+export function describeToolMarkup(input: Record<string, unknown>): ToolMarkupSite | null {
+	for (const [field, value] of Object.entries(input)) {
 		const texts = Array.isArray(value) ? value.map((v) => String(v)) : [String(value ?? "")];
-		if (texts.some((t) => TOOL_MARKUP.test(t))) return key;
+		for (const [i, text] of texts.entries()) {
+			const m = TOOL_MARKUP.exec(text);
+			if (!m) continue;
+			return {
+				field,
+				match: m[0],
+				offset: m.index,
+				item: Array.isArray(value) ? i + 1 : null,
+				trailing: !TOOL_MARKUP.test(text.replace(TRAILING_TAGS, "")),
+			};
+		}
 	}
 	return null;
+}
+
+/**
+ * The refusal both write tools return, built once.
+ *
+ * Naming the field is not enough to act on, because the two shapes need
+ * opposite repairs: an EMBEDDED hit means content was lost and the call must be
+ * rewritten, while a TRAILING hit means the prose is untouched and only the
+ * tags are wrong. The old wording was the embedded instruction unconditionally,
+ * so a trailing case sent the caller to rewrite prose that was never at fault —
+ * and nothing in the message contradicted that reading, so they would do it
+ * again. The evidence is quoted so the caller can go to the exact offset rather
+ * than hunt for what fired.
+ */
+export function toolMarkupRefusal(site: ToolMarkupSite): string {
+	const where = site.item === null ? `"${site.field}"` : `item ${site.item} of "${site.field}"`;
+	const diagnosis = site.trailing
+		? [
+				"It sits at the END of the field with none of your content after it, so the",
+				"CALL is malformed rather than the prose. Extra closing tags after your last",
+				"parameter were folded into the preceding string. Re-send the same text with",
+				"exactly one closing tag per parameter — do not rewrite the prose, it is fine.",
+			]
+		: [
+				"Your content CONTINUES past it, so this field swallowed the field after it.",
+				"What it swallowed cannot be recovered by guessing where it ended. Re-send the",
+				"call with every field as a separate argument in plain prose, and check that a",
+				"long list field was not folded into the preceding string.",
+			];
+	return [
+		`Refused: "${site.field}" contains tool-call markup, so this call's arguments did not serialize correctly.`,
+		"",
+		`Found "${site.match}" at offset ${site.offset} of ${where}.`,
+		"",
+		...diagnosis,
+		"",
+		"Nothing was written.",
+	].join("\n");
+}
+
+/** The fields a malformed call can corrupt, named so the error can say which. */
+export function findToolMarkup(input: Record<string, unknown>): string | null {
+	return describeToolMarkup(input)?.field ?? null;
 }
 
 /** Render the note body. Pure, so the shape can be asserted without writing. */
