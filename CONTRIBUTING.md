@@ -81,6 +81,7 @@ The release pipeline handles these automatically — **do not include in your PR
 - [ ] New command/agent appears in ALL doc tables (CLAUDE.md + README + Skills.md)
 - [ ] Translations flagged if you changed README.md (maintainer can handle these)
 - [ ] Tests pass: `cd .claude/scripts && npm test`
+- [ ] Any NEW guard, check, or config constraint has [demonstrated a red](#new-guards-must-demonstrate-a-red), recorded in the PR
 - [ ] Examples use generic dates and names, not specific to any company or person
 
 ## Running Tests
@@ -90,6 +91,18 @@ cd .claude/scripts && npm test
 ```
 
 Tests run automatically on PRs that touch `.claude/scripts/`.
+
+### New guards must demonstrate a red
+
+A guard that has never failed on a violation is indistinguishable from a guard that cannot fail, and this repo has shipped that class more than once: a bootstrap check that only looked for *absence*, so it stayed green for months while the thing it protected was broken (#100); a `tsconfig.json` `include` path that matched nothing after a move, so a file shipping to users fell out of the typecheck program while every check passed (#152); `manifest-check` warning and never failing, which is the exact gap `.mcp.json` slipped through (#48, #51). In each case the check existed, looked settled, and proved nothing.
+
+So, for any **new** guard, hook validation, CI check, or config constraint:
+
+> A check counts as landed only after it has failed once on a deliberate violation: break the thing it protects, watch it go red, revert, watch it pass. Record that red in the PR — one line, what was broken and what fired.
+
+That is one demonstrated red at introduction time, which is cheap, and it converts "a check exists" into "a check works."
+
+This is **not** a demand for permanent negative-fixture CI jobs on every guard — whether one is worth keeping stays a per-case call, and `hook-config.test.ts` shows the pattern where it is. It is also **not retroactive**: existing checks get the treatment opportunistically, when next touched.
 
 ## Questions?
 
