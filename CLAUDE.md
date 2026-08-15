@@ -352,6 +352,8 @@ This is the part worth understanding, and it is what the layer is for. Every mem
 
 A reader never widens what the writer declared, so a sibling app on the same platform does not inherit another app's project-scoped constraints. `recall` with `explain: true` reports why each memory was shown and how many were withheld.
 
+**Getting the reach wrong is corrected the same way any other error is** — `remember` is append-only, so re-file the lesson with the right scope and pass `supersedes: ["<its exact title>"]`. Narrowing takes effect: a superseded memory is served only where its correction can follow it, so the caller the correction excludes stops receiving the wider stale copy rather than receiving it alone with nothing to replace it.
+
 **A repo is identified by its folder name**, which is usually right and occasionally not: two repos both called `api` share one identity, so each receives the other's memories. Write a distinct name into a `.om-project` file at the repo root to separate them — `health` reports which repo it thinks is calling and where that name came from.
 
 ### Which notes the server serves

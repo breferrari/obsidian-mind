@@ -30,12 +30,17 @@ import { readFileSync } from "node:fs";
 import { validateMemory, writeMemory } from "../lib/memory-write.ts";
 import {
 	recall,
+	recallFrom,
 	isVisibleTo,
 	facetsOf,
 	parseFrontmatter,
 	specificity,
 	rankMemories,
+	supersededOutOfReach,
+	SUPERSEDED_OUT_OF_REACH,
+	MEMORY_SOURCE,
 	type Caller,
+	type MemoryEntry,
 } from "../lib/memory-recall.ts";
 
 const DAY = new Date(2026, 6, 26);
@@ -379,5 +384,68 @@ describe("a promoted capture says so", () => {
 				"the marker must be inert to the visibility rule",
 			);
 		}
+	});
+});
+
+/**
+ * A correction that NARROWS reach used to invert itself.
+ *
+ * `remember` is append-only, so correcting a memory means writing a new one and
+ * marking the old one superseded. The old one keeps the scope it was written
+ * with — fine while the correction is as wide or wider, broken the moment it is
+ * narrower, which is one of the most useful things a correction can do. Sinking
+ * the original is only safe because the reader sees the replacement ranked above
+ * it; where the replacement cannot follow, the reader gets a retired claim alone,
+ * with no signal it was retired and no access to what replaced it.
+ */
+describe("a superseded memory reaches only where its successor reaches", () => {
+	const entry = (title: string, fm: Record<string, unknown>): MemoryEntry => ({
+		rel: `memories/2026/07/${title}.md`,
+		full: `/nowhere/${title}.md`,
+		facets: facetsOf({ source: MEMORY_SOURCE, date: "2026-07-26", ...fm }),
+		title,
+		body: "b",
+	});
+
+	// The exact shape from the issue: captured wide, recognised as iOS-specific,
+	// re-filed narrow. `harbor` is the web caller the correction excludes.
+	const ORIGINAL = entry("keychain access needs an entitlement", {
+		scope: "general",
+		superseded_by: ["keychain access needs an entitlement (iOS)"],
+	});
+	const CORRECTION = entry("keychain access needs an entitlement (iOS)", {
+		scope: "platform",
+		platforms: ["ios"],
+	});
+	const CORPUS = [ORIGINAL, CORRECTION];
+
+	test("the stale original is withheld where its correction cannot reach", () => {
+		const titles = recallFrom(CORPUS, CALLERS.harbor).map((m) => m.title);
+		assert.deepEqual(titles, [], "serving the retired half alone is worse than serving neither");
+	});
+
+	test("where the caller reaches both, nothing changes and the correction ranks first", () => {
+		const titles = recallFrom(CORPUS, CALLERS.atlas).map((m) => m.title);
+		assert.deepEqual(titles, [CORRECTION.title, ORIGINAL.title], "history stays available, sunk");
+	});
+
+	test("explain names supersession, not scope, so the two exclusions stay apart", () => {
+		const { withheld } = recallFrom(CORPUS, CALLERS.harbor, { explain: true });
+		const why = withheld.find((m) => m.title === ORIGINAL.title)?.why;
+		assert.equal(why, SUPERSEDED_OUT_OF_REACH);
+		assert.ok(!/scope/.test(why ?? ""), "a scope explanation here sends the reader after the wrong thing");
+	});
+
+	// Reach is declared at write time; a title matching nothing is metadata rot,
+	// not a reach decision. Withholding on it loses a real memory to a typo.
+	test("an unresolvable superseded_by claim leaves the memory visible", () => {
+		const orphan = entry("still useful", { scope: "general", superseded_by: ["no such memory"] });
+		assert.equal(supersededOutOfReach(orphan, [orphan], CALLERS.harbor), false);
+		assert.deepEqual(recallFrom([orphan], CALLERS.harbor).map((m) => m.title), ["still useful"]);
+	});
+
+	test("a memory with no supersession is untouched by the rule", () => {
+		const plain = entry("plain", { scope: "general" });
+		assert.equal(supersededOutOfReach(plain, [plain], CALLERS.harbor), false);
 	});
 });

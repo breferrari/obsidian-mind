@@ -219,7 +219,7 @@ export const TOOLS: readonly ToolDef[] = [
 					type: "array",
 					items: { type: "string" },
 					description:
-						"Exact titles of memories this CORRECTS. They are kept and back-linked, not deleted, and this one will outrank them. Use when you have learned that something recorded earlier is wrong.",
+						"Exact titles of memories this CORRECTS. They are kept and back-linked, not deleted, and this one will outrank them. Use when you have learned that something recorded earlier is wrong — including when only its REACH was wrong: re-file with the right scope and supersede the original, and the narrowing takes effect, because a superseded memory is served only where its correction can follow it.",
 				},
 				force: {
 					type: "boolean",

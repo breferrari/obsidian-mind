@@ -27,6 +27,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { MEMORY_ROOT, MEMORY_SOURCE } from "./memory-write.ts";
 import { parsePromotedMarker, type PromotedRef } from "./memory-promoted.ts";
+import { resolveSupersedes } from "./memory-supersede.ts";
 
 // Re-exported so a reader can take the marker from the module it reads with,
 // while the writer that stamps it stays the one place it is defined.
@@ -221,6 +222,39 @@ export function visibilityReason(facets: Facets | null | undefined, caller: Call
 	return `no facet matches caller (project="${project}", platforms=[${platforms.join(", ")}])`;
 }
 
+/** How `explain` names this exclusion, kept apart from the scope reasons. */
+export const SUPERSEDED_OUT_OF_REACH = "superseded by a memory this caller cannot see";
+
+/**
+ * Does this memory's replacement fail to reach where the memory itself reaches?
+ *
+ * Sinking a superseded memory is safe only while the reader can see what
+ * replaced it, ranked above. When a correction NARROWS reach — which is one of
+ * the most useful things a correction can do, a `general` lesson re-filed as
+ * `platform` once recognised as platform-specific — the original survives
+ * carrying the wider scope, and the caller the correction was written to
+ * exclude keeps receiving the retired claim. The narrower correction is
+ * precisely the half that got scoped away, so it is not returned alongside it.
+ *
+ * Serving the stale half ALONE is worse than serving neither: there is nothing
+ * above it, no signal it was retired, and no access to what replaced it.
+ *
+ * An unresolvable `superseded_by` claim leaves the memory visible. Reach is
+ * declared at write time, and a title matching nothing is metadata rot rather
+ * than a reach decision — withholding on it would silently lose a real memory
+ * to a typo.
+ */
+export function supersededOutOfReach(
+	entry: MemoryEntry,
+	corpus: readonly MemoryEntry[],
+	caller: Caller,
+): boolean {
+	if (entry.facets.superseded_by.length === 0) return false;
+	const { matched } = resolveSupersedes(entry.facets.superseded_by, corpus);
+	if (matched.length === 0) return false;
+	return !matched.some((m) => isVisibleTo(m.facets, caller));
+}
+
 // ---------------------------------------------------------------------------
 // Ranking
 // ---------------------------------------------------------------------------
@@ -406,13 +440,23 @@ export function recallFrom(
 ): MemoryEntry[] | { visible: MemoryEntry[]; withheld: MemoryEntry[] } {
 	const visible: MemoryEntry[] = [];
 	const withheld: MemoryEntry[] = [];
-	for (const entry of agentMemories(entries)) {
+	// Judged against the agent corpus rather than the raw entries, so a claim is
+	// resolved against the set `recall` can actually serve.
+	const corpus = agentMemories(entries);
+	for (const entry of corpus) {
 		const facets = entry.facets;
-		if (isVisibleTo(facets, caller)) {
-			visible.push(explain ? { ...entry, why: visibilityReason(facets, caller) } : entry);
-		} else if (explain) {
-			withheld.push({ ...entry, why: visibilityReason(facets, caller) });
+		if (!isVisibleTo(facets, caller)) {
+			if (explain) withheld.push({ ...entry, why: visibilityReason(facets, caller) });
+			continue;
 		}
+		// Checked after visibility so the two kinds of exclusion stay
+		// distinguishable: a memory that never reached this caller is a scope
+		// answer, not a supersession one.
+		if (supersededOutOfReach(entry, corpus, caller)) {
+			if (explain) withheld.push({ ...entry, why: SUPERSEDED_OUT_OF_REACH });
+			continue;
+		}
+		visible.push(explain ? { ...entry, why: visibilityReason(facets, caller) } : entry);
 	}
 	const ranked = rankMemories(visible, caller);
 	return explain ? { visible: ranked, withheld } : ranked;
