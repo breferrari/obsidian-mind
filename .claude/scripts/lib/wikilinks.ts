@@ -181,13 +181,29 @@ export function extractAliases(content: string): string[] {
 	// emitting YAML quotes a value containing an apostrophe, and aliases are
 	// commonly the note's own title, so this is a steady fraction of generated
 	// notes rather than an edge case — and against a zero gate one false
-	// positive turns the whole check red. The two quote styles are separated
-	// because only the single-quoted form uses `''`; double-quoted content is
-	// passed through, which is what the gate's callers already expect.
+	// positive turns the whole check red.
+	//
+	// The two styles need SEPARATE rules because they escape differently, not
+	// because only one escapes: single-quoted doubles the apostrophe, and
+	// double-quoted uses a backslash. Passing the double-quoted form through
+	// charwise left `"the \"good\" parts"` as an alias carrying literal
+	// backslashes, which is the same defect the single-quoted branch was fixed
+	// for and reaches the gate the same way.
+	//
+	// Only `\\` and `\"` are undone. YAML's double-quoted form also defines
+	// `\n`, `\t`, `\/` and `\uXXXX`, which do not occur in a note title at any
+	// rate worth carrying a decoder for; each one added is a rule that has to
+	// stay correct forever. This matches `unquoteScalar` in
+	// `lib/mcp-memory-bridge.ts`, which is the copy that already reasons about
+	// escaping, so the two agree rather than drifting.
 	const unquote = (s: string): string => {
 		const t = s.trim();
 		if (t.length < 2) return t; // a lone `'` starts and ends with itself
-		if (t.startsWith('"') && t.endsWith('"')) return t.slice(1, -1);
+		if (t.startsWith('"') && t.endsWith('"')) {
+			// Left to right, so `\\"` yields a backslash and then ends the scalar
+			// rather than treating the escaped backslash's quote as escaped.
+			return t.slice(1, -1).replace(/\\(["\\])/g, "$1");
+		}
 		if (t.startsWith("'") && t.endsWith("'")) {
 			return t.slice(1, -1).replaceAll("''", "'");
 		}

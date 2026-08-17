@@ -131,6 +131,28 @@ describe("extractAliases", () => {
 		const md = "---\naliases:\n  - '\n---\n";
 		assert.deepEqual(extractAliases(md), ["'"]);
 	});
+
+	// The other half of the same defect: single-quoted YAML escapes by doubling,
+	// double-quoted escapes with a backslash, and stripping either charwise
+	// yields a name no wikilink can cite.
+	test("double-quoted alias unescapes a backslash-escaped quote", () => {
+		const md = '---\naliases:\n  - "the \\"good\\" parts"\n---\n';
+		assert.deepEqual(extractAliases(md), ['the "good" parts']);
+	});
+	test("inline array form unescapes the backslash form too", () => {
+		const md = '---\naliases: ["a \\"quoted\\" name", Plain]\n---\n';
+		assert.deepEqual(extractAliases(md), ['a "quoted" name', "Plain"]);
+	});
+	test("an escaped backslash survives as one backslash", () => {
+		const md = '---\naliases:\n  - "a \\\\ b"\n---\n';
+		assert.deepEqual(extractAliases(md), ["a \\ b"]);
+	});
+	// Regression guard on the branch being edited rather than a demonstration of
+	// the bug: this passed before and must keep passing.
+	test("a double-quoted alias with no escapes is unchanged", () => {
+		const md = "---\naliases:\n  - \"the writer's two facts\"\n---\n";
+		assert.deepEqual(extractAliases(md), ["the writer's two facts"]);
+	});
 });
 
 describe("buildResolver", () => {
