@@ -448,4 +448,42 @@ describe("a superseded memory reaches only where its successor reaches", () => {
 		const plain = entry("plain", { scope: "general" });
 		assert.equal(supersededOutOfReach(plain, [plain], CALLERS.harbor), false);
 	});
+
+	// The invariant has to hold across the CHAIN, not just across one link.
+	// Asking whether the replacement is scope-visible is one link short: the
+	// served set is filtered by visibility AND by this rule, so a replacement can
+	// pass `isVisibleTo` and still be removed by the rule being evaluated.
+	describe("across a chain of corrections", () => {
+		const a = entry("A captured wide", { scope: "general", superseded_by: ["B refiled"] });
+		const b = entry("B refiled", { scope: "general", superseded_by: ["C narrowed to ios"] });
+		const c = entry("C narrowed to ios", { scope: "platform", platforms: ["ios"] });
+		const CHAIN = [a, b, c];
+
+		test("a retired claim is not served when its correction is itself withheld", () => {
+			const served = recallFrom(CHAIN, CALLERS.harbor).map((m) => m.title);
+			assert.deepEqual(served, [], "A was served while B, its correction, was withheld");
+		});
+
+		test("the same chain is untouched for a caller who reaches the end of it", () => {
+			const served = recallFrom(CHAIN, CALLERS.atlas).map((m) => m.title);
+			assert.deepEqual(served.sort(), ["A captured wide", "B refiled", "C narrowed to ios"].sort());
+		});
+
+		test("explain still names supersession rather than scope for the middle link", () => {
+			const { withheld } = recallFrom(CHAIN, CALLERS.harbor, { explain: true });
+			assert.equal(withheld.find((m) => m.title === "B refiled")?.why, SUPERSEDED_OUT_OF_REACH);
+			assert.equal(withheld.find((m) => m.title === "A captured wide")?.why, SUPERSEDED_OUT_OF_REACH);
+		});
+	});
+
+	// A cycle is metadata rot, not a reach decision. The greatest fixpoint keeps
+	// both rather than withholding both, which is what the least fixpoint would
+	// do and is the same silent loss the unresolvable-claim hatch avoids. It also
+	// has to terminate, which is the half a naive recursion gets wrong.
+	test("a supersession cycle terminates and keeps its members", () => {
+		const x = entry("X", { scope: "general", superseded_by: ["Y"] });
+		const y = entry("Y", { scope: "general", superseded_by: ["X"] });
+		const served = recallFrom([x, y], CALLERS.harbor).map((m) => m.title);
+		assert.deepEqual(served.sort(), ["X", "Y"]);
+	});
 });
