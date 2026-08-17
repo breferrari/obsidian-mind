@@ -555,6 +555,21 @@ export function renderMemory(value: MemoryValue, links: readonly string[] = []):
 		`projects: ${yamlList(value.projects)}`,
 	];
 	if (value.platforms.length) fm.push(`platforms: ${yamlList(value.platforms)}`);
+	// An alias whenever the filename cannot carry the whole title.
+	//
+	// `slugify` truncates at SLUG_MAX and the comment there says a long title is
+	// "still fine as the H1" — true for READING, false for LINKING. Obsidian
+	// resolves a link target against filenames and aliases; an H1 is never a link
+	// target. So a memory whose title outran the slug could not be cited by the
+	// one string anyone would naturally use: its own stated claim.
+	//
+	// Titles run long as a RULE rather than as an exception here, because the
+	// `remember` contract asks for the lesson "stated as a claim" and a
+	// claim-shaped sentence passes 60 characters more often than not.
+	//
+	// Emitted only when the slug actually lost something, so a short-titled
+	// memory keeps the frontmatter it has always had and no existing note churns.
+	if (slugify(value.title) !== value.title) fm.push(`aliases: ${yamlList([value.title])}`);
 	fm.push(`confidence: ${value.confidence}`);
 	if (value.claimed_confidence) fm.push(`claimed_confidence: ${value.claimed_confidence}`);
 	// Markers make the contract operational: a Base can list every weak claim in

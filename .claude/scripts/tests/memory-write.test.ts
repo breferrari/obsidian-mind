@@ -10,6 +10,7 @@
  */
 
 import { test, describe } from "node:test";
+import { extractAliases, buildResolver } from "../lib/wikilinks.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -637,5 +638,62 @@ describe("reachability guard", () => {
 				r.value!.scope === "general" || r.value!.projects.length > 0 || r.value!.platforms.length > 0;
 			assert.ok(reachable, `accepted an unreachable memory: ${JSON.stringify(r.value!)}`);
 		}
+	});
+});
+
+/**
+ * A memory has to be citable by the one string anyone would use: its own claim.
+ *
+ * `slugify` truncates at SLUG_MAX and its comment says a long title is "still
+ * fine as the H1" — true for reading, false for LINKING. Obsidian resolves a
+ * link target against filenames and aliases; an H1 is never a link target, so a
+ * memory whose title outran the slug was addressable by nothing a reader would
+ * naturally type. Titles run long as a rule here, because the contract asks for
+ * the lesson stated as a claim.
+ */
+describe("a long-titled memory stays linkable by its title", () => {
+	const LONG =
+		"A gate can be wrong about its situation as well as its assertion, and only mutation separates the two";
+
+	const render = (title: string): string =>
+		renderMemory({
+			title,
+			body: "b".repeat(120),
+			date: new Date(2026, 6, 26),
+			scope: "general",
+			projects: [],
+			platforms: [],
+			confidence: "inferred",
+			flags: [],
+			origin: null,
+			downgraded_from: null,
+		} as never);
+
+	test("the title is emitted as an alias when the filename cannot carry it", () => {
+		const md = render(LONG);
+		assert.notEqual(slugify(LONG), LONG, "fixture must actually be truncated");
+		assert.match(md, /^aliases: \[/m, "no alias emitted, so the memory is uncitable by name");
+		// The property that actually matters. Asserting only that SOME alias was
+		// emitted would pass against a truncated or re-quoted one, which would
+		// still not resolve.
+		assert.deepEqual(extractAliases(md), [LONG]);
+	});
+
+	test("a link written with the title resolves against the rendered memory", () => {
+		const md = render(LONG);
+		const rel = `memories/2026/07/2026-07-26 ${slugify(LONG)}.md`;
+		const resolves = buildResolver([rel], new Map([[rel, extractAliases(md)]]));
+		assert.equal(resolves(LONG, "some/note.md"), true);
+	});
+
+	test("a short title emits no alias — the filename already carries it", () => {
+		const short = "short enough";
+		assert.equal(slugify(short), short);
+		assert.doesNotMatch(render(short), /^aliases:/m);
+	});
+
+	test("a title carrying a quote still round-trips through the alias", () => {
+		const tricky = `The writer's "two facts" rule, restated at length so the slug must truncate it`;
+		assert.deepEqual(extractAliases(render(tricky)), [tricky]);
 	});
 });
