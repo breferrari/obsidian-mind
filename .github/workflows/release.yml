@@ -59,11 +59,24 @@ jobs:
 
       - name: Stage release tag locally (manual trigger only)
         if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Guard against clobbering an existing release.
-          if git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
-            echo "::error::Tag $VERSION already exists"
+          # Refuse to clobber a version that actually SHIPPED — and a tag alone
+          # is not proof that it did. The last step of this job is a network
+          # call to the releases API, so a run can push the tag, bump the
+          # manifest, and then fail to publish. That state has to stay
+          # retryable, and gating on the tag made it permanent: the retry died
+          # here, four steps before the one that actually failed.
+          #
+          # The RELEASE object is what distinguishes "already released" from
+          # "half-released", so that is what this checks.
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "::error::$VERSION is already released"
             exit 1
+          fi
+          if git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
+            echo "::notice::Tag $VERSION exists with no release — resuming a partial run"
           fi
           # Create the tag LOCALLY (not pushed) before generate-changelog runs.
           # The script derives the previous release as the second-newest tag,
@@ -72,7 +85,10 @@ jobs:
           # "Tag the release commit" step later moves this onto the bump commit
           # and force-pushes it. The push:tags trigger already has its tag
           # locally from checkout, so only the dispatch path needs this.
-          git tag "$VERSION"
+          #
+          # -f because a resumed run's checkout already carries the tag it
+          # pushed last time.
+          git tag -f "$VERSION"
 
       - name: Run tests
         run: node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts
@@ -126,7 +142,22 @@ jobs:
           if [ -f .shardmind/shard.yaml ]; then
             git add .shardmind/shard.yaml
           fi
-          git commit -m "release: update CHANGELOG and manifests for $VERSION"
+          # A resumed run finds the changelog and manifests already at $VERSION,
+          # so nothing stages and `git commit` exits 1 — which under `bash -e`
+          # killed the job here rather than at whatever actually failed. Ask the
+          # index instead: `git commit`'s exit code cannot tell "already done"
+          # from "failed to do", and only one of those is an error.
+          #
+          # NOT --allow-empty: that also clears the abort, at the cost of an
+          # empty commit on main for every retry.
+          if git diff --cached --quiet; then
+            echo "::notice::CHANGELOG and manifests already at $VERSION — nothing to commit"
+          else
+            git commit -m "release: update CHANGELOG and manifests for $VERSION"
+          fi
+          # Outside the branch on purpose: a resumed run is already in sync and
+          # this is a cheap no-op, but a previous attempt that committed and
+          # died before pushing is recovered by exactly this line.
           git push origin main
 
       - name: Tag the release commit
