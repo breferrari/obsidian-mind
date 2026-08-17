@@ -22,6 +22,21 @@ Thanks for your interest in contributing to obsidian-mind!
 
 Some areas have ongoing work that isn't public yet. Opening an issue first lets us check whether the direction is already on the roadmap before you write code. Saves you from building something that can't be merged.
 
+## Some issues are questions, and they close differently
+
+The tracker's default shape is "done when code lands". A few issues are not that shape: their deliverable is a **ruling**. *"Should `manifest-check` fail the build instead of only warning?"* is the type. No amount of implementation closes it, because what is missing is a decision.
+
+Those carry the **`decision`** label. Without a route of their own they fail in two silent ways. They **idle as pseudo-tasks**, because every workflow assumption — open the issue, read scope and acceptance, execute — expects something buildable, so they get skipped past while looking like ordinary backlog. Or they get **answered implicitly**, when an implementation touching the same surface embeds an answer and nobody notices a decision was made. The second is worse: the ruling exists only as a side effect, and the losing branch's reasoning is never written down.
+
+The route:
+
+- **The deliverable is the ruling and its reasoning, written where the next reader will hit it** — the doc or section the issue names, not only the issue thread. A ruling filed only in the thread is not filed: the issue closes and the doc still reads as an omission.
+- **Both branches get written.** "Declined" is a result. Record the case for the road not taken, because it will be raised again, and the second time nobody will remember why it lost.
+- **Code is separate.** If the ruling is "build it", the build is a new issue that the ruling unblocks. A ruling must not wait behind an implementation.
+- **A ruling that cannot be made yet is a finding, not a failure.** If it needs a measurement or usage data nobody has, say so on the issue and record what would settle it. That is a complete answer, not a deferral.
+
+This is not a rule about when a decision earns a durable record. That gate lives in [CLAUDE.md](CLAUDE.md) under Decision Records and decides whether to write one at all. This is only about giving question-shaped issues a way through, so they stop masquerading as tasks.
+
 ## PR Title Format
 
 **This is the most important convention.** PR titles become commit messages (squash merge) and feed the automated changelog. Use this format:
