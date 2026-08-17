@@ -34,6 +34,28 @@ export const MEMORY_ROOT = "memories";
  */
 export const MEMORY_SOURCE = "mcp-capture";
 
+/**
+ * The source a capture carries when the tool could not take it and the session
+ * wrote the file itself.
+ *
+ * Recognised deliberately. `agentMemories` exists to leave a HUMAN note that
+ * wandered into the memory folder alone, which is a good rule with one blind
+ * spot: knowing exactly one value, it could not tell a wandering note from a
+ * correctly-formed capture written by something other than the tool. A capture
+ * in the second class has full facets, sits in the right folder, parses
+ * cleanly, and was served by nothing — so the more honestly a file labelled its
+ * own provenance, the more certainly it disappeared.
+ *
+ * That matters because the refusals are real: a tool call can be refused for a
+ * reason the caller cannot repair by rewording, and a session holding a lesson
+ * worth keeping will write the file rather than lose it. That is the right
+ * call, and it should not cost the memory its entire audience.
+ */
+export const HAND_FILED_SOURCE = "hand-filed";
+
+/** Sources marking a file as a deliberate agent capture rather than a stray note. */
+export const AGENT_SOURCES: readonly string[] = [MEMORY_SOURCE, HAND_FILED_SOURCE];
+
 export const SCOPES = ["general", "platform", "project"] as const;
 export const CONFIDENCE = ["verified", "inferred", "unverified"] as const;
 

@@ -37,6 +37,7 @@ import {
 	specificity,
 	rankMemories,
 	supersededOutOfReach,
+	agentMemories,
 	SUPERSEDED_OUT_OF_REACH,
 	MEMORY_SOURCE,
 	type Caller,
@@ -526,5 +527,46 @@ describe("a superseded memory reaches only where its successor reaches", () => {
 		const y = entry("Y", { scope: "general", superseded_by: ["X"] });
 		const served = recallFrom([x, y], CALLERS.harbor).map((m) => m.title);
 		assert.deepEqual(served.sort(), ["X", "Y"]);
+	});
+});
+
+/**
+ * A capture the tool refused still has to reach someone.
+ *
+ * A tool call can be refused for a reason the caller cannot repair by
+ * rewording, and a session holding a lesson worth keeping will write the file
+ * itself rather than lose it. Labelling that honestly then excluded it from
+ * `recall`, because the agent-source predicate knew exactly one value: the
+ * lesson landed in the vault and was served to nobody, including the session
+ * that wrote it. The honest label cost the memory its entire audience.
+ */
+describe("a hand-filed capture is still an agent memory", () => {
+	const entryWith = (source: string | null, title: string): MemoryEntry => ({
+		rel: `memories/2026/08/${title}.md`,
+		full: `/nowhere/${title}.md`,
+		facets: facetsOf({ ...(source ? { source } : {}), date: "2026-08-14", scope: "general" }),
+		title,
+		body: "b",
+	});
+	const handFiled = entryWith("hand-filed", "filed by hand after the tool refused");
+	const stray = entryWith(null, "a human note that wandered in");
+
+	test("recall serves it", () => {
+		assert.deepEqual(
+			recallFrom([handFiled], CALLERS.harbor).map((m) => m.title),
+			["filed by hand after the tool refused"],
+		);
+	});
+
+	test("agentMemories counts it", () => {
+		assert.equal(agentMemories([handFiled]).length, 1);
+	});
+
+	// The rule the predicate exists for, unchanged: a note with no agent source
+	// is still left alone rather than silently governed by these rules. Stays
+	// green across the change by design — it is the non-regression, not the fix.
+	test("a stray note with no agent source is still left alone", () => {
+		assert.equal(agentMemories([stray]).length, 0);
+		assert.deepEqual(recallFrom([stray], CALLERS.harbor), []);
 	});
 });

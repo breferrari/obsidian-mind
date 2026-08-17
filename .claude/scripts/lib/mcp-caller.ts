@@ -149,8 +149,10 @@ export interface AuditEntry {
 }
 
 /**
- * Append-only log of what each caller read. Write failures are swallowed: the
- * log must never be able to break the server.
+ * Append-only log of what each caller did, including what it was REFUSED.
+ * Successes alone answer "what did this repo read and write" and cannot answer
+ * "what did it try and fail to do", which is the question a refusal loop needs.
+ * Write failures are swallowed: the log must never be able to break the server.
  */
 /** Rotate at 5MB — roughly a year of ordinary use, kept for one generation. */
 export const AUDIT_MAX_BYTES = 5 * 1024 * 1024;

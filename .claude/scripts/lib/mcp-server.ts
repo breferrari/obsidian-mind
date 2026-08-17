@@ -421,6 +421,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		// would be scoped to the vault-as-a-project — reaching only sessions that
 		// by definition did not need it. Write-only by construction.
 		if (isVaultItself(ctx.vaultRoot, session.roots)) {
+			audit("refused", { tool: "remember", reason: "session is the vault itself" });
 			return [
 				"Refused: this session is running inside the vault itself.",
 				"",
@@ -437,7 +438,19 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		// wikilink neutralisation, because a field that has swallowed the following
 		// field is not text worth cleaning up.
 		const corruptedMemory = describeToolMarkup(args);
-		if (corruptedMemory) return toolMarkupRefusal(corruptedMemory);
+		if (corruptedMemory) {
+			// The field name, offset and shape only. No caller prose: this is the
+			// one refusal that is NOT self-correcting, so a loop has to be
+			// diagnosable from the log without the log becoming a copy of the call.
+			audit("refused", {
+				tool: "remember",
+				reason: "tool-call markup",
+				field: corruptedMemory.field,
+				offset: corruptedMemory.offset,
+				trailing: corruptedMemory.trailing,
+			});
+			return toolMarkupRefusal(corruptedMemory);
+		}
 
 		const who = caller();
 		const resolvable = resolvableNames(visibleFiles(ctx.vaultRoot, policy));
@@ -456,6 +469,9 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			{ now: now(), origin: who.project },
 		);
 		if (!v.ok || !v.value) {
+			// The count, not the messages. They quote the caller's own title and
+			// body back, and the log is not the place for that.
+			audit("refused", { tool: "remember", reason: "validation", errors: v.errors.length });
 			return `Refused:\n${v.errors.map((e) => `- ${e}`).join("\n")}`;
 		}
 
@@ -529,7 +545,16 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		// corrupted note whose damage is invisible until a human reads the rendered
 		// markup, which is exactly how one shipped unnoticed.
 		const corrupted = describeToolMarkup(args);
-		if (corrupted) return toolMarkupRefusal(corrupted);
+		if (corrupted) {
+			audit("refused", {
+				tool: "record_work",
+				reason: "tool-call markup",
+				field: corrupted.field,
+				offset: corrupted.offset,
+				trailing: corrupted.trailing,
+			});
+			return toolMarkupRefusal(corrupted);
+		}
 		const who = callerProject(session.roots);
 		const resolvable = resolvableNames(visibleFiles(ctx.vaultRoot, policy));
 		let r;

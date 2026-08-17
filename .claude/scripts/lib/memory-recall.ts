@@ -25,7 +25,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MEMORY_ROOT, MEMORY_SOURCE } from "./memory-write.ts";
+import { MEMORY_ROOT, MEMORY_SOURCE, AGENT_SOURCES } from "./memory-write.ts";
 import { parsePromotedMarker, type PromotedRef } from "./memory-promoted.ts";
 import { resolveSupersedes } from "./memory-supersede.ts";
 
@@ -512,7 +512,12 @@ export function readMemories(vaultRoot: string, root: string = MEMORY_ROOT): Mem
  * is answered in a single place.
  */
 export function agentMemories(entries: readonly MemoryEntry[]): MemoryEntry[] {
-	return entries.filter((m) => m.facets.source === MEMORY_SOURCE);
+	// Both agent sources count. A capture the tool refused is what a session
+	// writes when the lesson is worth keeping anyway; excluding it meant the
+	// honest label cost the memory its whole audience, which punishes exactly the
+	// behaviour that saved the lesson. A note with any OTHER source, or none, is
+	// still left alone — that is the rule this predicate is for.
+	return entries.filter((m) => AGENT_SOURCES.includes(String(m.facets.source)));
 }
 
 /**
