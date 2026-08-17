@@ -305,14 +305,37 @@ export function describeToolMarkup(input: Record<string, unknown>): ToolMarkupSi
  * again. The evidence is quoted so the caller can go to the exact offset rather
  * than hunt for what fired.
  */
-export function toolMarkupRefusal(site: ToolMarkupSite): string {
+export function toolMarkupRefusal(site: ToolMarkupSite, args?: Record<string, unknown>): string {
 	const where = site.item === null ? `"${site.field}"` : `item ${site.item} of "${site.field}"`;
+	// A caller knows what it SENT; only the server knows what ARRIVED. When a
+	// field has swallowed the ones after it, the gap between those two lists is
+	// the entire finding, and nothing else in this message can show it. Without
+	// it a caller can comply with the refusal completely, re-send, and fail
+	// identically: a loop in which no attempt carries new information.
+	//
+	// The key set only. Echoing the corrupt value back makes the message longer
+	// rather than more diagnosable, and what is needed is which fields exist.
+	const received = args ? Object.keys(args) : [];
+	const fieldLen = args ? String(args[site.field] ?? "").length : null;
+
 	const diagnosis = site.trailing
 		? [
 				"It sits at the END of the field with none of your content after it, so the",
-				"CALL is malformed rather than the prose. Extra closing tags after your last",
-				"parameter were folded into the preceding string. Re-send the same text with",
-				"exactly one closing tag per parameter — do not rewrite the prose, it is fine.",
+				"CALL is likely malformed rather than the prose.",
+				"",
+				// Trailing does NOT prove nothing was lost. A field can absorb the
+				// VALUES of the fields after it while their opening tags are consumed
+				// by the parser, leaving only a closing tag at the very end, which
+				// looks exactly like harmless trailing noise. The received list is the
+				// only thing that tells those two apart, so it is checked FIRST.
+				"CHECK THE FIELD LIST ABOVE FIRST. If a field you sent is missing from it,",
+				"its text was folded into this one and the data is gone rather than merely",
+				"mispunctuated; the offset then tracks your whole payload rather than a",
+				"position inside your own prose. Re-send every field in that case.",
+				"",
+				"If every field you sent is listed, then only the closing tags are wrong:",
+				"re-send the same text with exactly one closing tag per parameter, and",
+				"do not rewrite the prose.",
 			]
 		: [
 				"Your content CONTINUES past it, so this field swallowed the field after it.",
@@ -320,15 +343,17 @@ export function toolMarkupRefusal(site: ToolMarkupSite): string {
 				"call with every field as a separate argument in plain prose, and check that a",
 				"long list field was not folded into the preceding string.",
 			];
-	return [
+
+	const lines = [
 		`Refused: "${site.field}" contains tool-call markup, so this call's arguments did not serialize correctly.`,
 		"",
-		`Found "${site.match}" at offset ${site.offset} of ${where}.`,
+		`Found "${site.match}" at offset ${site.offset} of ${where}` +
+			(fieldLen === null ? "." : `, which is ${fieldLen} characters long.`),
 		"",
-		...diagnosis,
-		"",
-		"Nothing was written.",
-	].join("\n");
+	];
+	if (received.length) lines.push(`Fields received: ${received.join(", ")}.`, "");
+	lines.push(...diagnosis, "", "Nothing was written.");
+	return lines.join("\n");
 }
 
 /** The fields a malformed call can corrupt, named so the error can say which. */

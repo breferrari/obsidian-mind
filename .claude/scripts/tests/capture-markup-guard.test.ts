@@ -125,3 +125,54 @@ describe("describing a serialization failure well enough to repair it", () => {
 		assert.equal(summary.slice(site.offset, site.offset + site.match.length), site.match);
 	});
 });
+
+/**
+ * The refusal has to say what ARRIVED, not only what is wrong.
+ *
+ * A caller knows what it sent; only the server knows what arrived. When a field
+ * has swallowed the ones after it, the gap between those two lists is the whole
+ * finding. Without it a caller can comply with the refusal completely, re-send,
+ * and fail identically, in a loop where no attempt carries new information.
+ */
+describe("the refusal names the fields the server received", () => {
+	const PROSE = "The gate was measured at the cheapest position, so it passed against the defect.";
+
+	test("a swallowed field is visibly absent from the received list", () => {
+		// `changes` was folded into `summary`, so it never arrived as its own key.
+		const args = { summary: `${PROSE}</summary>\n<parameter name="changes">["src/a.ts"]` };
+		const site = describeToolMarkup(args);
+		const msg = toolMarkupRefusal(site!, args);
+		assert.match(msg, /Fields received: summary\./);
+		assert.ok(!/Fields received:.*changes/.test(msg), "the swallowed field must not appear as received");
+	});
+
+	test("the corrupt field's length is reported, but never its value", () => {
+		const args = { summary: `${PROSE}</invoke></function_calls>` };
+		const site = describeToolMarkup(args);
+		const msg = toolMarkupRefusal(site!, args);
+		assert.match(msg, /which is \d+ characters long/);
+		// The evidence is the key set and a length. Echoing the prose back would
+		// make the message longer without making it more diagnosable.
+		assert.ok(!msg.includes(PROSE), "the refusal must not echo the caller's prose");
+	});
+
+	test("the trailing branch tells the caller to check the list before trusting it", () => {
+		const args = { summary: `${PROSE}</invoke></function_calls>`, folder: "brain" };
+		const site = describeToolMarkup(args);
+		const msg = toolMarkupRefusal(site!, args);
+		assert.equal(site?.trailing, true);
+		assert.match(msg, /Fields received: summary, folder\./);
+		// Trailing does not prove nothing was lost, so the message must not say
+		// the prose is fine before the caller has checked which fields arrived.
+		assert.match(msg, /CHECK THE FIELD LIST ABOVE FIRST/);
+	});
+
+	// The optional contract: existing callers pass one argument and still get a
+	// usable message, it simply omits the list.
+	test("called without args the message is still produced, minus the list", () => {
+		const site = describeToolMarkup({ summary: `${PROSE}</invoke>` });
+		const msg = toolMarkupRefusal(site!);
+		assert.ok(!msg.includes("Fields received"));
+		assert.match(msg, /^Refused: "summary" contains tool-call markup/);
+	});
+});

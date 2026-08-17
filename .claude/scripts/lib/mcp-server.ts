@@ -449,7 +449,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				offset: corruptedMemory.offset,
 				trailing: corruptedMemory.trailing,
 			});
-			return toolMarkupRefusal(corruptedMemory);
+			return toolMarkupRefusal(corruptedMemory, args);
 		}
 
 		const who = caller();
@@ -553,7 +553,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				offset: corrupted.offset,
 				trailing: corrupted.trailing,
 			});
-			return toolMarkupRefusal(corrupted);
+			return toolMarkupRefusal(corrupted, args);
 		}
 		const who = callerProject(session.roots);
 		const resolvable = resolvableNames(visibleFiles(ctx.vaultRoot, policy));
