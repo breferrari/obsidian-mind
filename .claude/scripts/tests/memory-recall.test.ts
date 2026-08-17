@@ -476,6 +476,23 @@ describe("a superseded memory reaches only where its successor reaches", () => {
 		});
 	});
 
+	// Depth, not just the three-link case. The fixpoint has to keep retiring
+	// links until the whole chain is gone; a version that stopped after a single
+	// pass would still serve everything from the second link back.
+	test("a long chain retires all the way back to its head", () => {
+		const chain = Array.from({ length: 8 }, (_, i) =>
+			entry(
+				`L${i}`,
+				i === 7
+					? { scope: "platform", platforms: ["ios"] }
+					: { scope: "general", superseded_by: [`L${i + 1}`] },
+			),
+		);
+		assert.deepEqual(recallFrom(chain, CALLERS.harbor).map((m) => m.title), []);
+		// And the same chain is untouched for a caller reaching its terminal link.
+		assert.equal(recallFrom(chain, CALLERS.atlas).length, 8);
+	});
+
 	// A cycle is metadata rot, not a reach decision. The greatest fixpoint keeps
 	// both rather than withholding both, which is what the least fixpoint would
 	// do and is the same silent loss the unresolvable-claim hatch avoids. It also
