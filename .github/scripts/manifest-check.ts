@@ -42,17 +42,36 @@ export function globToRegex(glob: string): RegExp {
 }
 
 /**
+ * Normalize a filesystem path to the POSIX separator the manifest globs use.
+ *
+ * `node:path`'s `join` emits the PLATFORM separator, so the directory walk
+ * below produced Windows-separated paths while every glob in
+ * vault-manifest.json is written POSIX-style (`.claude/**`). `globToRegex`
+ * matches the forward slash literally, so nothing matched at all: the check
+ * reported every infrastructure file as uncovered and exited 1 against a clean
+ * tree, for every Windows contributor. The workflow runs on Linux, so CI never
+ * saw it.
+ */
+export function toPosix(path: string): string {
+	return String(path ?? "").split("\\").join("/");
+}
+
+/**
  * Return true if `path` is covered by any entry in `globs`. Exact-string
  * globs (no wildcards) are matched literally; wildcard globs go through
  * globToRegex.
+ *
+ * The path is normalized first, so this answers the same question whatever
+ * separator the caller happens to hand it.
  */
 export function isCovered(
 	path: string,
 	globs: readonly string[],
 ): boolean {
+	const p = toPosix(path);
 	for (const g of globs) {
-		if (g === path) return true;
-		if (g.includes("*") && globToRegex(g).test(path)) return true;
+		if (g === p) return true;
+		if (g.includes("*") && globToRegex(g).test(p)) return true;
 	}
 	return false;
 }
@@ -99,7 +118,7 @@ const WATCHED_ROOT_FILES: readonly string[] = [
 	"obsidian-mind-logo.png",
 ];
 
-function listTopLevelFiles(dir: string, exts: readonly string[]): string[] {
+export function listTopLevelFiles(dir: string, exts: readonly string[]): string[] {
 	let entries: Dirent[];
 	try {
 		entries = readdirSync(dir, { withFileTypes: true });
@@ -108,7 +127,10 @@ function listTopLevelFiles(dir: string, exts: readonly string[]): string[] {
 	}
 	return entries
 		.filter((e) => e.isFile() && exts.some((x) => e.name.endsWith(x)))
-		.map((e) => join(dir, e.name));
+		// Normalized here as well as inside `isCovered`, so the paths printed in
+		// the failure message are the same shape as the globs the reader is being
+		// asked to compare them against.
+		.map((e) => toPosix(join(dir, e.name)));
 }
 
 function listRootFiles(allowlist: readonly string[]): string[] {
