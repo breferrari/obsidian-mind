@@ -569,7 +569,25 @@ export function recallFrom(
 		// distinguishable: a memory that never reached this caller is a scope
 		// answer, not a supersession one.
 		if (!served.has(entry.rel)) {
-			if (explain) withheld.push({ ...entry, why: SUPERSEDED_OUT_OF_REACH });
+			if (explain) {
+				// Name what replaced it, not just that something did. This is the
+				// one exclusion the reader cannot resolve by looking: the superseding
+				// memory is out of their scope, so it is absent from the very result
+				// they are reading, and finding it otherwise means a second query
+				// from a different identity, guessing at what to search for. The
+				// title is already on the withheld entry, so naming it costs nothing
+				// and discloses nothing the entry did not already carry.
+				//
+				// The constant stays the PREFIX so the two exclusion kinds remain
+				// distinguishable by their opening words, which is what `explain` is
+				// for. Empty claim lists fall back to the bare constant rather than
+				// emitting empty parentheses.
+				const by = entry.facets.superseded_by;
+				withheld.push({
+					...entry,
+					why: by.length ? `${SUPERSEDED_OUT_OF_REACH} (${by.join("; ")})` : SUPERSEDED_OUT_OF_REACH,
+				});
+			}
 			continue;
 		}
 		visible.push(explain ? { ...entry, why: visibilityReason(facets, caller) } : entry);

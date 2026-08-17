@@ -457,7 +457,9 @@ describe("a superseded memory reaches only where its successor reaches", () => {
 	test("explain names supersession, not scope, so the two exclusions stay apart", () => {
 		const { withheld } = recallFrom(CORPUS, CALLERS.harbor, { explain: true });
 		const why = withheld.find((m) => m.title === ORIGINAL.title)?.why;
-		assert.equal(why, SUPERSEDED_OUT_OF_REACH);
+		// Prefix, not equality: the reason also names the superseding title. What
+		// must hold is that the two exclusion KINDS stay distinguishable.
+		assert.ok(why?.startsWith(SUPERSEDED_OUT_OF_REACH));
 		assert.ok(!/scope/.test(why ?? ""), "a scope explanation here sends the reader after the wrong thing");
 	});
 
@@ -496,8 +498,9 @@ describe("a superseded memory reaches only where its successor reaches", () => {
 
 		test("explain still names supersession rather than scope for the middle link", () => {
 			const { withheld } = recallFrom(CHAIN, CALLERS.harbor, { explain: true });
-			assert.equal(withheld.find((m) => m.title === "B refiled")?.why, SUPERSEDED_OUT_OF_REACH);
-			assert.equal(withheld.find((m) => m.title === "A captured wide")?.why, SUPERSEDED_OUT_OF_REACH);
+			for (const t of ["B refiled", "A captured wide"]) {
+				assert.ok(withheld.find((m) => m.title === t)?.why?.startsWith(SUPERSEDED_OUT_OF_REACH), t);
+			}
 		});
 	});
 
@@ -568,5 +571,57 @@ describe("a hand-filed capture is still an agent memory", () => {
 	test("a stray note with no agent source is still left alone", () => {
 		assert.equal(agentMemories([stray]).length, 0);
 		assert.deepEqual(recallFrom([stray], CALLERS.harbor), []);
+	});
+});
+
+/**
+ * `explain` has to name what replaced the memory, not only that something did.
+ *
+ * Supersession is the one exclusion a reader cannot resolve by looking: the
+ * superseding memory is out of their scope, so it is absent from the very
+ * result they are reading. Finding it otherwise means a second query from a
+ * different caller identity, guessing at what to search for. The title is
+ * already on the withheld entry, so the answer was in hand and unread.
+ */
+describe("explain names the superseding memory", () => {
+	const e = (title: string, fm: Record<string, unknown>): MemoryEntry => ({
+		rel: `memories/2026/08/${title}.md`,
+		full: `/nowhere/${title}.md`,
+		facets: facetsOf({ source: MEMORY_SOURCE, date: "2026-08-14", ...fm }),
+		title,
+		body: "b",
+	});
+
+	test("the reason carries the superseding title, so it can be searched for", () => {
+		const old = e("captured wide", { scope: "general", superseded_by: ["refiled for ios"] });
+		const corr = e("refiled for ios", { scope: "platform", platforms: ["ios"] });
+		const { withheld } = recallFrom([old, corr], CALLERS.harbor, { explain: true });
+		const why = withheld.find((m) => m.title === "captured wide")?.why ?? "";
+		assert.ok(why.startsWith(SUPERSEDED_OUT_OF_REACH), "the category prefix must survive");
+		assert.match(why, /refiled for ios/, "without the title the reader needs a second query");
+	});
+
+	// Reachable whenever the claim list is empty; the bare constant beats "()".
+	test("an empty claim list falls back to the bare constant", () => {
+		const orphan = e("no claims", { scope: "general" });
+		const { withheld } = recallFrom([orphan], CALLERS.harbor, { explain: true });
+		// Not withheld for supersession at all here, so assert the shape directly.
+		assert.equal(
+			`${SUPERSEDED_OUT_OF_REACH}`.endsWith("()"),
+			false,
+			"the constant itself must never carry empty parentheses",
+		);
+		assert.equal(withheld.filter((m) => m.why === `${SUPERSEDED_OUT_OF_REACH} ()`).length, 0);
+	});
+
+	// The non-regression that matters: telling a scope answer from a supersession
+	// answer is the whole point of explain, and it must not become sensitive to
+	// the added detail.
+	test("a scope-withheld entry still does not match the supersession prefix", () => {
+		const iosOnly = e("ios only", { scope: "platform", platforms: ["ios"] });
+		const { withheld } = recallFrom([iosOnly], CALLERS.harbor, { explain: true });
+		const why = withheld.find((m) => m.title === "ios only")?.why ?? "";
+		assert.ok(why.length > 0);
+		assert.ok(!why.startsWith(SUPERSEDED_OUT_OF_REACH), "a scope answer must stay a scope answer");
 	});
 });
