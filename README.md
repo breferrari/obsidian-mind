@@ -401,6 +401,7 @@ Defined in `.claude/commands/`. Run them in Claude Code, Codex CLI, or Gemini CL
 | `/om-self-review` | Write your self-assessment for review season — projects, competencies, principles |
 | `/om-review-peer` | Write a peer review — projects, principles, performance summary |
 | `/om-tidy` | Self-maintenance — acts on every hygiene flag: archive, group, split. Never deletes, never commits |
+| `/om-correct` | Sweep a corrected fact — applies it at the single source, links restatements, preserves dated records |
 | `/om-vault-audit` | Audit indexes, links, orphans, stale context |
 | `/om-vault-upgrade` | Import content from an existing vault — version detection, classification, migration |
 | `/om-prep-1on1` | Prep for an upcoming 1:1 — load person context, open items, suggested agenda |

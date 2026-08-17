@@ -425,6 +425,7 @@ Specialized agents in `.claude/agents/` for heavy operations. They run in isolat
 |-------|---------|------------|
 | `brag-spotter` | Finds uncaptured wins and competency gaps | `/om-wrap-up`, `/om-weekly` |
 | `context-loader` | Loads all vault context about a person, project, or concept | Direct |
+| `correction-sweep` | Finds every note restating a corrected fact; classifies each as authoritative, restatement, or historical. Never edits | `/om-correct` |
 | `cross-linker` | Finds missing wikilinks, orphans, broken backlinks | `/om-vault-audit` |
 | `people-profiler` | Bulk creates/updates person notes from Slack profiles | `/om-incident-capture` |
 | `review-prep` | Aggregates all performance evidence for a review period | `/om-review-brief` |
@@ -450,7 +451,7 @@ Five lifecycle hooks in `.claude/settings.json`:
 Each law exists because its absence caused real correction work in vaults running this template. Violating them re-creates documented failures.
 
 1. **Single-source status.** A project's volatile status (version, counts, released/blocked, dates) lives in exactly ONE place — its note's frontmatter + top status line. Every other note **links** to it and never restates it. *Why: one wrong status statement hardened into ~8 notes downstream and had to be swept out.*
-2. **Correction-sweep protocol.** When a fact is corrected, grep the vault for every restatement and fix them all in the same pass. A correction callout on top of a note whose body still says the wrong thing is NOT a correction — future sessions re-absorb the stain from the body.
+2. **Correction-sweep protocol.** When a fact is corrected, find every restatement and fix them all in the same pass. **`/om-correct "<the corrected fact>"` is the acting half** — grep alone finds only the notes that copied the wording, and the expensive half is the *paraphrase*: the same claim in different words, invisible to grep and indistinguishable from correct prose to every structural check. It is also the half most likely to survive a manual sweep, because the sweeper stops when grep goes quiet. A correction callout on top of a note whose body still says the wrong thing is NOT a correction — future sessions re-absorb the stain from the body. Notes that correctly record what was believed *at the time* are preserved, never rewritten; see Law 5.
 3. **Mark inference.** Anything not verified against source (code, repo, primary doc, the person) carries an explicit `(TBC)` / `(unverified)` / `(inferred)` marker. Never state inference bare.
 4. **Date-stamp volatile facts.** Counts, versions, org structure, tool maturity: write "as of YYYY-MM-DD" so staleness is self-evident instead of silent.
 5. **Attribution vs. creation dates may differ** (a `quarter:` field vs. the `date:` field's quarter) — that's legitimate, not a bug to "fix".

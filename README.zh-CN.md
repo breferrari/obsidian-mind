@@ -306,6 +306,7 @@ vault 通常只在你身处其中时才有用。**`om` MCP 服务器**改变了�
 | `/om-review-brief` | 生成评估简报（经理版或同事版） |
 | `/om-self-review` | 撰写绩效评估自评——项目、能力、原则 |
 | `/om-review-peer` | 撰写同事评审——项目、原则、绩效总结 |
+| `/om-correct` | 扫除已更正的事实——在单一来源处应用更正，将重述替换为链接，保留带日期的历史记录 |
 | `/om-vault-audit` | 审计索引、链接、孤立笔记、过时内容 |
 | `/om-vault-upgrade` | 从现有仓库导入内容——版本检测、分类、迁移 |
 | `/om-project-archive` | 将已完成的项目从 active/ 移至 archive/，更新索引 |

@@ -306,6 +306,7 @@ obsidian-mindはClaude Code、Codex CLI、Gemini CLIで動作します。`CLAUDE
 | `/om-review-brief` | レビューブリーフを生成（マネージャー版またはピア版） |
 | `/om-self-review` | レビューシーズン用の自己評価を作成 — プロジェクト、コンピテンシー、原則 |
 | `/om-review-peer` | ピアレビューを作成 — プロジェクト、原則、パフォーマンスサマリー |
+| `/om-correct` | 修正した事実を一括反映 — 単一の情報源に適用し、他ノートの記述はリンクに置換、日付付きの記録は保全 |
 | `/om-vault-audit` | インデックス、リンク、孤立ノート、古いコンテキストを監査 |
 | `/om-vault-upgrade` | 既存ボールトからコンテンツをインポート — バージョン検出、分類、移行 |
 | `/om-project-archive` | 完了プロジェクトをactive/からarchive/に移動し、インデックスを更新 |

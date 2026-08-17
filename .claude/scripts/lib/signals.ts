@@ -38,7 +38,7 @@ export const SIGNALS: readonly Signal[] = [
 			"DECISION detected — consider creating a Decision Record in work/active/ and logging in work/Index.md Decisions Log",
 		subHint: {
 			message:
-				"Looks like a decision REVERSAL — update the ORIGINAL Decision Record (status: superseded, link the new one) instead of only adding a second record; the correction-sweep rule applies to every note restating the old decision.",
+				"Looks like a decision REVERSAL — update the ORIGINAL Decision Record (status: superseded, link the new one) instead of only adding a second record; run `/om-correct \"<the corrected fact>\"` to sweep every note restating the old decision.",
 			patterns: [
 				"reversed",
 				"superseded",
