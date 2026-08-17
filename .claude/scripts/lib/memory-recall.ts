@@ -116,11 +116,58 @@ export function parseFrontmatter(md: unknown): Record<string, string | string[]>
 		if (raw === "") continue;
 		if (raw.startsWith("[") && raw.endsWith("]")) {
 			const inner = raw.slice(1, -1).trim();
-			out[key] = inner ? inner.split(",").map((p) => unquote(p.trim())).filter(Boolean) : [];
+			out[key] = inner ? splitInlineList(inner).map((p) => unquote(p.trim())).filter(Boolean) : [];
 		} else {
 			out[key] = unquote(raw);
 		}
 	}
+	return out;
+}
+
+/**
+ * Split a YAML inline list on its SEPARATORS.
+ *
+ * A blind `split(",")` reads a comma inside a quoted scalar as a separator,
+ * and that severs precisely the entries this layer cannot afford to lose.
+ * `superseded_by` is the one list key whose entries are free prose: the
+ * `remember` contract asks for a lesson "stated as a claim", and claims take
+ * commas at an ordinary rate. Splitting one produces fragments carrying stray
+ * quote characters, so neither half can ever match a real title, and no author
+ * could hand-write a title that survives.
+ *
+ * The other list keys escaped this because `projects` and `platforms` are
+ * slug-validated at write time and `tags` are slugs by convention. It was never
+ * that commas are rare, only that everywhere else they are rejected before
+ * being written.
+ *
+ * Tracking quote state is sufficient here because this parser reads what this
+ * repo writes: `addToFrontmatterList` emits `JSON.stringify(value)`, so a
+ * backslash escape consumed whole inside a double-quoted scalar means neither
+ * `\"` nor `\\` can hide a separator or invent one. The single-quoted branch is
+ * carried for hand-written frontmatter, which `unquote` already accepts.
+ */
+function splitInlineList(inner: string): string[] {
+	const out: string[] = [];
+	let cur = "";
+	let quote: '"' | "'" | null = null;
+	for (let i = 0; i < inner.length; i++) {
+		const ch = inner[i]!;
+		if (quote === null) {
+			if (ch === '"' || ch === "'") quote = ch;
+			else if (ch === ",") {
+				out.push(cur);
+				cur = "";
+				continue;
+			}
+		} else if (ch === "\\" && quote === '"' && i + 1 < inner.length) {
+			cur += ch + inner[++i]!;
+			continue;
+		} else if (ch === quote) {
+			quote = null;
+		}
+		cur += ch;
+	}
+	out.push(cur);
 	return out;
 }
 

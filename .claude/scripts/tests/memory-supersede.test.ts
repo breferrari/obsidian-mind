@@ -73,6 +73,26 @@ describe("markSuperseded", () => {
 		}
 	});
 
+	// The writer and the reader have to agree, and a title is free prose: the
+	// `remember` contract asks for a lesson "stated as a claim", and claims take
+	// commas. Asserted end to end rather than on the parser alone, because the
+	// failure was only ever visible where the two halves meet.
+	test("a comma in the superseding title survives the round trip and still resolves", () => {
+		const title = "The retry budget is per-attempt, not per-call";
+		const { dir, rel } = vaultWith(MD);
+		try {
+			assert.equal(markSuperseded(dir, rel, title).ok, true);
+			const facets = facetsOf(parseFrontmatter(readFileSync(join(dir, rel), "utf8")));
+			assert.deepEqual(facets.superseded_by, [title], "the correction link was torn in half");
+			const r = resolveSupersedes(facets.superseded_by, [{ rel: "new.md", title }]);
+			assert.deepEqual(r.unmatched, []);
+			assert.equal(r.matched.length, 1);
+			assert.equal(r.matched[0]!.rel, "new.md");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("REFUSES to modify a note it did not write, byte-for-byte", () => {
 		// The safety rule that matters most: a human's note is never edited,
 		// whatever it happens to be linked to.

@@ -321,6 +321,30 @@ describe("reader robustness", () => {
 		assert.equal(fm.description, "one, two");
 	});
 
+	// The case the test above reads as though it covers and does not: its comma
+	// sits in a SCALAR, and its list has no comma inside an entry. `superseded_by`
+	// is the one list whose entries are free prose, so it is the one that meets
+	// this shape in the field.
+	test("a comma inside a quoted list entry is content, not a separator", () => {
+		const fm = parseFrontmatter(
+			'---\nsuperseded_by: ["The retry budget is per-attempt, not per-call"]\n---\n',
+		);
+		assert.deepEqual(fm.superseded_by, ["The retry budget is per-attempt, not per-call"]);
+	});
+
+	test("a separator between two quoted entries still separates them", () => {
+		const fm = parseFrontmatter('---\nsuperseded_by: ["one, with comma", "two, also"]\n---\n');
+		assert.deepEqual(fm.superseded_by, ["one, with comma", "two, also"]);
+	});
+
+	// The neighbouring escaping rule, easy to break while fixing the split: the
+	// writer emits JSON, so a quote inside a title arrives backslash-escaped and
+	// must not be read as the end of the scalar.
+	test("an escaped double quote inside an entry does not end it", () => {
+		const fm = parseFrontmatter('---\nsuperseded_by: ["the \\"good\\" parts, revisited"]\n---\n');
+		assert.deepEqual(fm.superseded_by, ['the "good" parts, revisited']);
+	});
+
 	test("recall on a vault with no memories returns empty, not an error", () => {
 		const dir = mkdtempSync(join(tmpdir(), "empty-"));
 		try {
