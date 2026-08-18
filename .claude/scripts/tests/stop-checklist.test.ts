@@ -14,11 +14,11 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { runScript as spawnHook } from "./_helpers.ts";
+import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
 
 const SCRIPT = resolve(
 	dirname(fileURLToPath(import.meta.url)),
@@ -48,7 +48,7 @@ before(() => {
 });
 
 after(() => {
-	if (TMP_DIR) rmSync(TMP_DIR, { recursive: true, force: true });
+	rmTemp(TMP_DIR);
 });
 
 const runScript = (stdin: string | object | null) =>

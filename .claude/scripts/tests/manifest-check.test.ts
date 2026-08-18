@@ -6,7 +6,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,6 +15,8 @@ import {
 	toPosix,
 	listTopLevelFiles,
 } from "../../../.github/scripts/manifest-check.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 /** The real manifest's shape, in miniature. */
 const GLOBS = ["CLAUDE.md", ".claude/**", "templates/**", "brain/Skills.md"];
@@ -151,7 +153,7 @@ describe("listTopLevelFiles", () => {
 				assert.ok(isCovered(p, globs), `walk emitted a path its own glob cannot match: ${p}`);
 			}
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 

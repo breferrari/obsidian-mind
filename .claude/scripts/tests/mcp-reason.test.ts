@@ -17,7 +17,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,12 +42,14 @@ import {
 	type ReasoningResult,
 } from "../lib/mcp-reason.ts";
 
+import { rmTemp } from "./_helpers.ts";
+
 function withDir(fn: (dir: string) => void): void {
 	const dir = mkdtempSync(join(tmpdir(), "reason-"));
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 

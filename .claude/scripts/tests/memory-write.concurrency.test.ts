@@ -20,10 +20,11 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { rmTemp } from "./_helpers.ts";
 
 const LIB = join(dirname(fileURLToPath(import.meta.url)), "..", "lib", "memory-write.ts");
 const WRITERS = 8;
@@ -36,6 +37,7 @@ const WRITERS = 8;
  */
 const WRITER_SRC = `
 import { validateMemory, writeMemory } from ${JSON.stringify(pathToFileURL(LIB).href)};
+
 const [vault, origin] = process.argv.slice(2);
 const v = validateMemory(
   {
@@ -89,7 +91,7 @@ describe("concurrent writes from separate processes", () => {
 			const leftovers = readdirSync(join(dir, "memories", "2026", "07")).filter((f) => f.endsWith(".tmp"));
 			assert.deepEqual(leftovers, [], "no half-written note may be left for the indexer");
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 });

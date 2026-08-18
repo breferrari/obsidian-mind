@@ -10,7 +10,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,6 +21,8 @@ import {
 	writeQmdIgnore,
 	qmdConfigPath,
 } from "../lib/qmd-ignore.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 const YAML_BASE = `collections:
   obsidian-mind:
@@ -74,7 +76,7 @@ describe("translateToGlob", () => {
 describe("readObsidianIgnore", () => {
 	const tmp = mkdtempSync(join(tmpdir(), "qmd-bootstrap-obsidian-"));
 
-	test.after(() => rmSync(tmp, { recursive: true, force: true }));
+	test.after(() => rmTemp(tmp));
 
 	test("missing file (ENOENT) returns empty array — user has no filters", () => {
 		assert.deepEqual(readObsidianIgnore(join(tmp, "does-not-exist.json")), []);
@@ -274,7 +276,7 @@ describe("upsertIgnoreInYaml — pure transform", () => {
 describe("writeQmdIgnore — file IO wrapper", () => {
 	const tmp = mkdtempSync(join(tmpdir(), "qmd-bootstrap-yaml-"));
 
-	test.after(() => rmSync(tmp, { recursive: true, force: true }));
+	test.after(() => rmTemp(tmp));
 
 	test("writes the transformed YAML when patterns are non-empty", () => {
 		const path = join(tmp, "write.yml");

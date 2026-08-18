@@ -12,7 +12,6 @@ import {
 	mkdirSync,
 	writeFileSync,
 	utimesSync,
-	rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -30,6 +29,8 @@ import {
 	scanActiveHygiene,
 	walkMarkdown,
 } from "../lib/active-hygiene.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 6, 13);
@@ -58,7 +59,7 @@ before(() => {
 });
 
 after(() => {
-	rmSync(ROOT, { recursive: true, force: true });
+	rmTemp(ROOT);
 });
 
 describe("parseOpenLoopConfig", () => {
@@ -244,7 +245,7 @@ describe("scanActiveHygiene — detectors", () => {
 			assert.ok(withExport !== null);
 			assert.equal(withExport!.count, 1);
 		} finally {
-			rmSync(solo, { recursive: true, force: true });
+			rmTemp(solo);
 		}
 	});
 
@@ -264,7 +265,7 @@ describe("scanActiveHygiene — detectors", () => {
 			assert.equal(found!.count, 1);
 			assert.equal(found!.oldestDays, 3);
 		} finally {
-			rmSync(solo, { recursive: true, force: true });
+			rmTemp(solo);
 		}
 	});
 
@@ -276,7 +277,7 @@ describe("scanActiveHygiene — detectors", () => {
 			// Undrained because nobody has judged it, which is true immediately.
 			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox?.count, 1);
 		} finally {
-			rmSync(solo, { recursive: true, force: true });
+			rmTemp(solo);
 		}
 	});
 
@@ -288,7 +289,7 @@ describe("scanActiveHygiene — detectors", () => {
 			// Same permanently-unclearable trap the meetings scaffold already fixed.
 			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox, null);
 		} finally {
-			rmSync(solo, { recursive: true, force: true });
+			rmTemp(solo);
 		}
 	});
 
@@ -304,7 +305,7 @@ describe("scanActiveHygiene — detectors", () => {
 				1,
 			);
 		} finally {
-			rmSync(solo, { recursive: true, force: true });
+			rmTemp(solo);
 		}
 	});
 
@@ -325,7 +326,7 @@ describe("scanActiveHygiene — detectors", () => {
 			);
 			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox, null);
 		} finally {
-			rmSync(solo, { recursive: true, force: true });
+			rmTemp(solo);
 		}
 	});
 
@@ -364,7 +365,7 @@ describe("scanActiveHygiene — detectors", () => {
 			const text = formatActiveHygiene(scanActiveHygiene(solo, NOW, DEFAULTS)).join("\n");
 			assert.match(text, /1 already-promoted capture\(s\) here carry a bare marker/);
 		} finally {
-			rmSync(solo, { recursive: true, force: true });
+			rmTemp(solo);
 		}
 	});
 
@@ -394,7 +395,7 @@ describe("scanActiveHygiene — detectors", () => {
 				);
 			}
 		} finally {
-			rmSync(solo, { recursive: true, force: true });
+			rmTemp(solo);
 		}
 	});
 
@@ -410,7 +411,7 @@ describe("scanActiveHygiene — detectors", () => {
 			writeFileSync(join(solo, "memories/2026/07/y.md"), "# y\n\npromoted: brain/Thing\n");
 			assert.equal(scanActiveHygiene(solo, NOW, DEFAULTS).memoryInbox?.count, 2);
 		} finally {
-			rmSync(solo, { recursive: true, force: true });
+			rmTemp(solo);
 		}
 	});
 
@@ -444,7 +445,7 @@ describe("scanActiveHygiene — detectors", () => {
 			assert.equal(report.inboxPressure, null);
 			assert.deepEqual(formatActiveHygiene(report), []);
 		} finally {
-			rmSync(empty, { recursive: true, force: true });
+			rmTemp(empty);
 		}
 	});
 });

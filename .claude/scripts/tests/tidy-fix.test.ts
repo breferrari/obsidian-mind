@@ -14,12 +14,13 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
-	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+
+import { rmTemp } from "./_helpers.ts";
 
 const SCRIPT = resolve(
 	dirname(fileURLToPath(import.meta.url)),
@@ -77,8 +78,8 @@ before(() => {
 });
 
 after(() => {
-	rmSync(ROOT, { recursive: true, force: true });
-	rmSync(MEMDIR, { recursive: true, force: true });
+	rmTemp(ROOT);
+	rmTemp(MEMDIR);
 });
 
 describe("tidy-fix", () => {

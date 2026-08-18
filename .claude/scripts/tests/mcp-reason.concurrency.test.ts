@@ -29,10 +29,11 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { rmTemp } from "./_helpers.ts";
 
 const LIB = join(dirname(fileURLToPath(import.meta.url)), "..", "lib", "mcp-reason.ts");
 const LIB_URL = JSON.stringify(pathToFileURL(LIB).href);
@@ -59,13 +60,14 @@ function runAll(script: string, argsFor: (i: number) => string[], n: number): Pr
 function withDir(fn: (dir: string) => Promise<void>): Promise<void> {
 	const dir = mkdtempSync(join(tmpdir(), "reason-conc-"));
 	return fn(dir).finally(() =>
-		// `maxRetries` is not optional on Windows here: these tests create and
-		// rename hundreds of files across eight processes, and the directory stays
-		// briefly busy after the last child exits — cleanup then throws ENOTEMPTY
-		// and fails a test whose assertions already passed. Observed on this
-		// suite; CI runs a Windows job, so without it the test is flaky there and
-		// green everywhere else, which is the worst kind of red.
-		rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }),
+		// Retrying is not optional on Windows here: these tests create and rename
+		// hundreds of files across eight processes, and the directory stays briefly
+		// busy after the last child exits — a bare rmSync then throws ENOTEMPTY and
+		// fails a test whose assertions already passed. Observed on this suite; CI
+		// runs a Windows job, so without the retries the test is flaky there and
+		// green everywhere else, which is the worst kind of red. `rmTemp` retries,
+		// and swallows the case where retrying is not enough.
+		rmTemp(dir),
 	);
 }
 
@@ -87,6 +89,7 @@ process.stdout.write(rel);
 const CONFIG_CHURN = `
 import { readFileSync } from "node:fs";
 import { writeIsolatedMcpConfig, writeIsolatedMcpConfigPath } from ${LIB_URL};
+
 const [vault, role] = process.argv.slice(2);
 const path = writeIsolatedMcpConfigPath(vault);
 let torn = 0;
