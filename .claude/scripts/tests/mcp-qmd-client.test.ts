@@ -12,6 +12,8 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -21,8 +23,82 @@ import {
 	scopeResults,
 	subQueries,
 	createQmdClient,
+	callBudget,
+	timeoutMessage,
+	qmdProbe,
+	probeBudget,
 	type QmdHit,
+	type QmdClient,
 } from "../lib/mcp-qmd-client.ts";
+
+/**
+ * Write a stand-in qmd launcher that speaks just enough MCP to exercise the
+ * client, and return its path.
+ *
+ * A fake rather than the real qmd because the behaviours under test are all
+ * about TIMING and SHAPE — a call that never answers, a reply with no
+ * structured results — and none of them can be provoked on demand from a
+ * working qmd. The one that matters most, a first call that outlives its
+ * budget, is reproducible here in 300ms and was reproducible in production
+ * only on a machine that had never run qmd before.
+ *
+ * Modes: `ok` answers with structured results, `nostruct` answers without
+ * them, `silent` completes the handshake and then never answers a tools/call.
+ * Every mode answers `initialize`, because the handshake was never the thing
+ * that broke.
+ */
+function fakeLauncher(dir: string, mode: "ok" | "nostruct" | "silent"): string {
+	const file = join(dir, "fake-qmd.mjs");
+	writeFileSync(
+		file,
+		`import { createInterface } from "node:readline";
+const MODE = ${JSON.stringify(mode)};
+const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+createInterface({ input: process.stdin }).on("line", (line) => {
+	let msg;
+	try { msg = JSON.parse(line); } catch { return; }
+	if (typeof msg.id !== "number") return;
+	if (msg.method === "initialize") {
+		send({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-11-25", capabilities: {} } });
+		return;
+	}
+	if (msg.method !== "tools/call") return;
+	if (MODE === "silent") return;
+	if (MODE === "nostruct") {
+		send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: "no structure here" }] } });
+		return;
+	}
+	send({ jsonrpc: "2.0", id: msg.id, result: { structuredContent: { results: [{ file: "v/brain/Gotchas.md", score: 0.9, title: "t", snippet: "s" }] } } });
+});
+`,
+		"utf-8",
+	);
+	return file;
+}
+
+/**
+ * Run `fn` against a fake-backed client and ALWAYS reap the child.
+ *
+ * The cleanup lives in `finally` rather than after the assertions because a
+ * failing assertion would otherwise skip `dispose`, and the orphaned child
+ * holds its stdin open — which stops the test runner draining its event loop.
+ * The first draft of these tests did exactly that: one broken assertion turned
+ * a clean failure into a hang, i.e. into the slowest possible way to learn the
+ * same thing.
+ */
+async function withFake<T>(
+	mode: "ok" | "nostruct" | "silent",
+	fn: (c: QmdClient) => Promise<T>,
+): Promise<T> {
+	const dir = mkdtempSync(join(tmpdir(), "qmd-fake-"));
+	const c = createQmdClient(process.cwd(), fakeLauncher(dir, mode));
+	try {
+		return await fn(c);
+	} finally {
+		c.dispose();
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
 
 const VAULT = "C:/Dev/myvault";
 
@@ -280,5 +356,177 @@ describe("rendering", () => {
 	test("a line number is included when present and omitted when not", () => {
 		assert.match(scopeResults([hit("myvault/brain/Gotchas.md", { line: 42 })], ALLOWED).text, /Gotchas\.md:42/);
 		assert.ok(!scopeResults([hit("myvault/brain/Gotchas.md")], ALLOWED).text.includes(".md:"));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Cold start
+//
+// On 2026-08-22 a foreign repo's first search of a session failed with
+// `qmd timeout on tools/call`, `health` reported no warnings, and the identical
+// query succeeded minutes later. The cause was not the query and not a
+// readiness race — `qmdSearch` already awaits `ready`, and the handshake
+// measured 161ms. qmd was downloading its 639MB reranker model inside the first
+// query; the flat 45s budget expired at 45.02s.
+//
+// What makes that expensive is not the wait. The documented response to a
+// failed search is to call `health` and, if it is clean, conclude the record is
+// not there — so these tests are as much about what the caller is TOLD as about
+// what is waited for.
+// ---------------------------------------------------------------------------
+
+describe("call budgets", () => {
+	test("the first tools/call is given room for a model download", () => {
+		// 45s was not a wrong number so much as a wrong SHAPE: the cost it bounds
+		// is a network fetch of a few hundred MB, whose duration belongs to the
+		// connection. Anything that could plausibly be beaten by a slow link would
+		// reintroduce the same failure on a worse day.
+		assert.ok(
+			callBudget("tools/call", false) >= 5 * 60_000,
+			"a cold search must tolerate a slow download, not race it",
+		);
+	});
+
+	test("a warmed client goes back to the short budget", () => {
+		// The generous budget is a one-time concession. Keeping it would mean a
+		// genuinely wedged qmd hangs a caller for ten minutes with no signal.
+		assert.ok(callBudget("tools/call", true) < callBudget("tools/call", false));
+		assert.equal(callBudget("tools/call", true), 45_000);
+	});
+
+	test("the handshake is never given the cold budget", () => {
+		// `initialize` is a pure handshake — measured at ~160ms — and pays none of
+		// the model cost. Extending its budget would only delay the report of a
+		// launcher that is answering but broken.
+		assert.equal(callBudget("initialize", false), callBudget("tools/call", true));
+	});
+});
+
+describe("what a timeout tells the caller", () => {
+	test("a cold search timeout names the cause and blocks the wrong conclusion", () => {
+		const m = timeoutMessage("tools/call", 600_000, false);
+		assert.match(m, /download/i, "the cause has to be named or it reads as a broken vault");
+		assert.match(m, /first search/i);
+		// The load-bearing assertion. A caller who follows the documented failure
+		// path lands on "nothing is recorded"; on 2026-08-22 the record existed and
+		// was complete, and re-deriving it would have cost a night's work.
+		assert.match(m, /do not conclude it is missing/i);
+		assert.match(m, /retry/i);
+	});
+
+	test("a warmed timeout stays terse and claims nothing about downloads", () => {
+		// Blaming a download for every timeout would make the cold message noise,
+		// and noise is how a real signal stops being read.
+		const m = timeoutMessage("tools/call", 45_000, true);
+		assert.doesNotMatch(m, /download/i);
+		assert.match(m, /45s/);
+	});
+
+	test("the handshake timeout is terse too", () => {
+		assert.doesNotMatch(timeoutMessage("initialize", 45_000, false), /download/i);
+	});
+});
+
+describe("client warmth", () => {
+	test("a fresh client is not warm", () => {
+		const c = createQmdClient(process.cwd(), join(process.cwd(), "no-launcher.mjs"));
+		try {
+			assert.equal(c.warmed, false, "nothing has come back yet, so nothing is proven");
+		} finally {
+			c.dispose();
+		}
+	});
+
+	test("the handshake does not count as warmth", async () => {
+		// A handshake proves the process speaks MCP. It measured ~160ms in
+		// production while the thing that actually blocked search — a 639MB model
+		// download — had not started. Treating it as warmth is how 45s came to look
+		// like enough.
+		await withFake("ok", async (c) => {
+			await c.ready;
+			assert.equal(c.warmed, false);
+		});
+	});
+
+	test("a tools/call still IN FLIGHT does not confer warmth", async () => {
+		// The assertion the whole flag exists for. Warmth means "the models are
+		// loaded", and only a reply proves that. Setting it when the request is
+		// SENT would hand the short 45s budget to a second search queued behind the
+		// very download the first one is still waiting on — reproducing the
+		// original failure on the caller least able to explain it.
+		await withFake("silent", async (c) => {
+			await c.ready;
+			const inflight = c.call("tools/call", { name: "query", arguments: {} }, 400);
+			await new Promise((r) => setTimeout(r, 150));
+			assert.equal(c.warmed, false, "sent is not answered");
+			await assert.rejects(() => inflight);
+			assert.equal(c.warmed, false, "a timed-out call proves nothing either");
+		});
+	});
+
+	test("a tools/call that returns confers warmth", async () => {
+		await withFake("ok", async (c) => {
+			await c.call("tools/call", { name: "query", arguments: {} });
+			assert.equal(c.warmed, true);
+		});
+	});
+});
+
+describe("the health probe", () => {
+	test("a cold probe waits for the model load; a warm one does not", () => {
+		// Measured: ~31ms warm, 2.9s with the models hot in the page cache, 10.5s
+		// with them cold. A single budget sized for the warm case would report a
+		// healthy vault as DEGRADED — from the one tool a caller reaches for when
+		// they already suspect a problem, which is the worst place to be wrong.
+		assert.ok(probeBudget(false) >= 30_000, "a cold probe must outlast a ~10s model load");
+		assert.ok(probeBudget(true) <= 10_000, "a warm probe must keep health snappy");
+		assert.ok(probeBudget(false) > probeBudget(true));
+		// A real search waits out a download; a diagnostic gives up and REPORTS.
+		assert.ok(probeBudget(false) < callBudget("tools/call", false));
+	});
+
+	test("a qmd that answers is reported ok, with a latency", async () => {
+		await withFake("ok", async (c) => {
+			const r = await qmdProbe(c, 5_000);
+			assert.equal(r.ok, true);
+			assert.match(r.detail, /answered in \d+ms/);
+		});
+	});
+
+	test("answering without structured results is NOT healthy", async () => {
+		// `scopeResults` cannot scope-check hits it cannot see, so every search
+		// would return "(search unavailable)" while the transport looked perfect.
+		// A probe that only checked for a reply would call this fine — and a probe
+		// that reports fine during an outage is the defect this whole change is
+		// about, just relocated.
+		await withFake("nostruct", async (c) => {
+			const r = await qmdProbe(c, 5_000);
+			assert.equal(r.ok, false);
+			assert.match(r.detail, /structured/i);
+		});
+	});
+
+	test("a qmd that never answers is reported degraded", async () => {
+		await withFake("silent", async (c) => {
+			const r = await qmdProbe(c, 300);
+			assert.equal(r.ok, false);
+			assert.match(r.detail, /DEGRADED/);
+			assert.match(r.detail, /download/i, "the likeliest cause has to travel with the report");
+			// The probe's budget is short so `health` stays fast; search's is minutes.
+			// Echoing the raw timeout would publish the probe's number as if it were
+			// search's, and the next person to tune a timeout would tune the wrong one.
+			assert.doesNotMatch(r.detail, /qmd timeout/);
+		});
+	});
+
+	test("a launcher that will not start is reported as not answering", async () => {
+		const c = createQmdClient(process.cwd(), join(process.cwd(), "absent-launcher.mjs"));
+		try {
+			const r = await qmdProbe(c, 2_000);
+			assert.equal(r.ok, false);
+			assert.match(r.detail, /DID NOT ANSWER/);
+		} finally {
+			c.dispose();
+		}
 	});
 });

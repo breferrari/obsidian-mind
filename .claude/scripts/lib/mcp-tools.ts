@@ -266,7 +266,7 @@ export const TOOLS: readonly ToolDef[] = [
 	{
 		name: "health",
 		description:
-			"Check that this vault's wiring is intact: where memories actually live, which roots are exposed, whether the search index is reachable, and whether any memories reference a project that no longer resolves. Call this when something that should be in the vault cannot be found — every failure in this layer presents identically as 'no results', and this is what tells them apart.",
+			"Check that this vault's wiring is intact: where memories actually live, which roots are exposed, whether search ANSWERS (a real query is run and its latency reported, not merely a launcher located), and whether any memories reference a project that no longer resolves. Call this when something that should be in the vault cannot be found — every failure in this layer presents identically as 'no results', and this is what tells them apart. A search reported as DEGRADED here means a failed search proved nothing about what the vault holds; retry it before concluding anything is missing.",
 		inputSchema: { type: "object", properties: {} },
 		annotations: { title: "Check vault wiring", ...READ_ONLY },
 	},

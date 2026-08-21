@@ -27,7 +27,7 @@ import {
 	vaultRelKeyRaw,
 } from "./mcp-exposure.ts";
 import { expandNote } from "./mcp-graph.ts";
-import { qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
+import { qmdProbe, qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
 import { callerProject, callerProjectSource, isVaultItself, PROJECT_MARKER, sumAuditField, sanitize } from "./mcp-caller.ts";
 import { callerPlatforms, digestsFrom, resolvableNames } from "./mcp-memory-bridge.ts";
 import { captureNote, describeToolMarkup, toolMarkupRefusal } from "./mcp-capture.ts";
@@ -703,8 +703,13 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		].join("\n");
 	}
 
-	function callHealth(): string {
+	async function callHealth(): Promise<string> {
 		const who = caller();
+		// Run BEFORE anything is rendered, because the line it feeds used to be a
+		// check on the launcher FILE existing. On 2026-08-22 that line read healthy
+		// while every search was timing out — on the one tool whose job is telling
+		// apart the failure modes behind an identical "no results".
+		const probe = await qmdProbe(qmd());
 		// Populate the cache before reporting on it. `recall` tells the user to run
 		// health when a memory is missing, so this is routinely the FIRST call a
 		// server serves — and "3 memories / 0 entries held" reads as a parse
@@ -747,7 +752,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			// server could not re-read, served from an older parse.
 			`Parsed store: ${parsed} entr${parsed === 1 ? "y" : "ies"}${memoryIndex.stats.stale ? ` (${memoryIndex.stats.stale} served from an older parse — check permissions)` : ""}`,
 			`Exposed roots: ${policy.roots.join(", ") || "(none)"} [${policy.source}]`,
-			`Search index: ${ctx.qmdIndex ?? "(qmd default)"} · launcher ${ctx.qmdLauncher ? "found" : "NOT FOUND"}`,
+			`Search index: ${ctx.qmdIndex ?? "(qmd default)"} · launcher ${ctx.qmdLauncher ? "found" : "NOT FOUND"} · search ${probe.detail}`,
 			// `reason` is the one tool that spawns a session, and nothing bounds it.
 			// Reporting the day's usage is what stands in for a limit: the answer to
 			// "where did that go" has to exist somewhere, and this is where.
@@ -783,7 +788,12 @@ export function createHandlers(deps: ServerDeps): Handlers {
 						(p) => `promotion marker in ${p} could not be parsed — it is invisible to every consumer.`,
 					),
 				];
-				const all = [...h.warnings, ...mine];
+				// The probe failing is the loudest thing this tool can report: it means
+				// search is not answering NOW, which every other line here would let a
+				// caller mistake for an empty vault. It goes in the warnings block
+				// because "No warnings." printing during a live search outage is the
+				// exact failure this probe exists to end.
+				const all = [...h.warnings, ...mine, ...(probe.ok ? [] : [`search ${probe.detail}`])];
 				return all.length ? `Warnings:\n${all.map((w) => `- ${w}`).join("\n")}` : "No warnings.";
 			})(),
 			...(h.notes.length ? ["", `Notes:\n${h.notes.map((n) => `- ${n}`).join("\n")}`] : []),
@@ -830,7 +840,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				case "reason":
 					return session.ok(id, text(await callReason(args)));
 				case "health":
-					return session.ok(id, text(callHealth()));
+					return session.ok(id, text(await callHealth()));
 				default:
 					return session.fail(id, `unknown tool ${p.name}`, -32602);
 			}

@@ -167,7 +167,53 @@ export function scopeResults(
 // The client — impure
 // ---------------------------------------------------------------------------
 
+/** The budget for a call to a qmd that has already answered once. */
 const CALL_TIMEOUT_MS = 45_000;
+
+/**
+ * The budget for the FIRST `tools/call` a child serves.
+ *
+ * qmd fetches its embedding and reranker models on first use — hundreds of MB
+ * over the network — and does it lazily, inside the first query rather than at
+ * startup. `initialize` returns in ~160ms regardless, so no readiness signal
+ * this client can await says anything about it.
+ *
+ * On 2026-08-22, on a machine qmd had never run a query on, the reranker
+ * (639MB) took ~70s to arrive. The flat 45s budget expired at 45.02s and the
+ * caller was told the vault could not answer. The download is bounded by the
+ * connection, not by us, so the only honest budget for that one call is a
+ * generous one — a wait is recoverable, and the wrong conclusion it replaced
+ * ("nothing is recorded") is not.
+ *
+ * Long is safe here for a reason that is easy to miss: a launcher that dies is
+ * caught by `failAll` on the child's `error`/`exit`, not by this timer. Nothing
+ * waits out this budget except a child that is alive and working.
+ */
+const COLD_CALL_TIMEOUT_MS = 10 * 60_000;
+
+/** Which budget a call gets. Exported because the boundary is worth locking. */
+export function callBudget(method: string, warmed: boolean): number {
+	return method === "tools/call" && !warmed ? COLD_CALL_TIMEOUT_MS : CALL_TIMEOUT_MS;
+}
+
+/**
+ * What a caller is told when a call runs out of budget.
+ *
+ * The cold case says what it is, because the previous message did not. The
+ * documented response to a failed search is to call `health` and, if that is
+ * clean, conclude the record is not there — so a bare `qmd timeout on
+ * tools/call` does not merely under-inform, it actively argues for the wrong
+ * conclusion. On 2026-08-22 the record existed and was complete.
+ */
+export function timeoutMessage(method: string, budgetMs: number, warmed: boolean): string {
+	const secs = Math.round(budgetMs / 1000);
+	if (method !== "tools/call" || warmed) return `qmd timeout on ${method} after ${secs}s`;
+	return (
+		`qmd timeout on ${method} after ${secs}s, on the first search this qmd process served. ` +
+		"qmd downloads its embedding and reranker models on first use (hundreds of MB); that is the likely cause. " +
+		"This says NOTHING about whether the vault holds the record — do not conclude it is missing. Retry."
+	);
+}
 
 interface Pending {
 	resolve: (v: unknown) => void;
@@ -176,7 +222,7 @@ interface Pending {
 }
 
 export interface QmdClient {
-	call(method: string, params?: unknown): Promise<unknown>;
+	call(method: string, params?: unknown, timeoutMs?: number): Promise<unknown>;
 	readonly ready: Promise<void>;
 	dispose(): void;
 	/**
@@ -185,6 +231,11 @@ export interface QmdClient {
 	 * disable search for the whole life of the server.
 	 */
 	readonly alive: boolean;
+	/**
+	 * True once a `tools/call` has returned from this child, i.e. qmd's models
+	 * are loaded and the next call is on the fast path.
+	 */
+	readonly warmed: boolean;
 }
 
 /**
@@ -204,6 +255,9 @@ export function createQmdClient(vaultRoot: string, launcherPath: string | null):
 
 	const pending = new Map<number, Pending>();
 	let alive = true;
+	// Whether any `tools/call` has come BACK from this child. False means the
+	// next one may still be paying qmd's one-time model download.
+	let warmed = false;
 	let rpcId = 0;
 	let buf = "";
 
@@ -243,24 +297,36 @@ export function createQmdClient(vaultRoot: string, launcherPath: string | null):
 	child.on("error", (e) => failAll(`qmd launcher failed: ${e.message}`));
 	child.on("exit", () => failAll("qmd launcher exited"));
 
-	const call = (method: string, params?: unknown): Promise<unknown> =>
+	const call = (method: string, params?: unknown, timeoutMs?: number): Promise<unknown> =>
 		new Promise((resolve, reject) => {
 			// A call made AFTER the child died would otherwise sit in `pending`
 			// forever: failAll has already run, so nothing will ever reject it, and
 			// the timeout timer is unref'd. Callers that skip `await ready` — the
-			// semantic-ordering path does — would block until the 45s timeout.
+			// semantic-ordering path does — would block until the timeout.
 			if (!alive) {
 				reject(new Error(`qmd unavailable (${method})`));
 				return;
 			}
 			const id = ++rpcId;
+			const budget = timeoutMs ?? callBudget(method, warmed);
 			const timer = setTimeout(() => {
-				if (pending.delete(id)) reject(new Error(`qmd timeout on ${method}`));
-			}, CALL_TIMEOUT_MS);
+				if (pending.delete(id)) reject(new Error(timeoutMessage(method, budget, warmed)));
+			}, budget);
 			// Node keeps the process alive for a pending timer; this one must not
 			// hold the server open on its own.
 			timer.unref?.();
-			pending.set(id, { resolve, reject, timer });
+			pending.set(id, {
+				// Warmth is recorded on the RESULT, not on the send: a `tools/call`
+				// that is still in flight has not proved the models are loaded, and
+				// marking it early would hand the short budget to a concurrent second
+				// search that is queued behind the same download.
+				resolve: (v) => {
+					if (method === "tools/call") warmed = true;
+					resolve(v);
+				},
+				reject,
+				timer,
+			});
 			child.stdin?.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
 		});
 
@@ -284,6 +350,9 @@ export function createQmdClient(vaultRoot: string, launcherPath: string | null):
 		ready,
 		get alive() {
 			return alive;
+		},
+		get warmed() {
+			return warmed;
 		},
 		dispose: () => {
 			failAll("qmd client disposed");
@@ -326,5 +395,112 @@ export async function qmdSearch(
 		// says so; it must never present as "the vault is empty".
 		const message = e instanceof Error ? e.message : String(e);
 		return { text: `search failed: ${message}`, withheld: 0, total: 0 };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The probe — what `health` uses to prove search ANSWERS
+// ---------------------------------------------------------------------------
+
+/**
+ * How long `health` waits for search to answer before calling it degraded.
+ *
+ * Two budgets, because the probe inherits whatever the client is carrying. A
+ * warm client answers in ~31ms, so 5s is enormous headroom and `health` stays
+ * instant. A cold one pays qmd's model load first, and that is not a small
+ * number: measured at 2.9s with the models hot in the page cache and 10.5s with
+ * them cold, against ~970MB of GGUF across two models.
+ *
+ * A single 20s budget was the first attempt and it was wrong — 10.5s of a 20s
+ * budget is not headroom, and the failure mode it buys is the worst kind: a
+ * DEGRADED verdict on a healthy vault, from the one tool a caller consults
+ * precisely because they already suspect something is broken. Slow-and-correct
+ * beats fast-and-wrong here every time; `health` is rare and diagnostic.
+ */
+const PROBE_TIMEOUT_WARM_MS = 5_000;
+const PROBE_TIMEOUT_COLD_MS = 60_000;
+
+/**
+ * The probe's budget. Exported so the warm/cold split is pinned by a test
+ * rather than by a comment.
+ *
+ * Still far below `COLD_CALL_TIMEOUT_MS`: a real search should wait out a model
+ * download, a diagnostic should give up and REPORT. Timing out here is an
+ * answer, not a failure.
+ */
+export function probeBudget(warmed: boolean): number {
+	return warmed ? PROBE_TIMEOUT_WARM_MS : PROBE_TIMEOUT_COLD_MS;
+}
+
+export interface QmdProbe {
+	readonly ok: boolean;
+	readonly ms: number;
+	/** One clause, written to be appended to "search ...". */
+	readonly detail: string;
+}
+
+/**
+ * Round-trip a real search and report whether it answered.
+ *
+ * `health` used to report `launcher found`, which is a check on a FILE EXISTING.
+ * On 2026-08-22 that line read healthy while every search was timing out, on the
+ * one tool whose entire purpose is telling apart the failure modes behind an
+ * identical "no results" — so the instrument proved something other than what it
+ * said. Nothing short of a round-trip closes that gap.
+ *
+ * The probe goes through `subQueries` and omits `rerank`, exactly as `qmdSearch`
+ * does, so it pays the same model costs a real search pays. A cheaper probe —
+ * lexical only, or `rerank: false` — would have passed happily on 2026-08-22
+ * while the reranker download was still the thing blocking search, which is the
+ * same defect in a new place.
+ *
+ * Its own SHORT budget, not the client's: `health` is what a caller runs when
+ * something is already wrong, and a diagnostic that hangs for the cold-start
+ * budget is not a diagnostic. Timing out here is a REPORT, not a failure — it
+ * says search is not answering yet and names why that happens.
+ */
+export async function qmdProbe(client: QmdClient, timeoutMsOverride?: number): Promise<QmdProbe> {
+	// Read BEFORE the await: `client.warmed` flips as soon as any call returns,
+	// and a budget chosen after that would describe a state the probe did not
+	// start in.
+	const timeoutMs = timeoutMsOverride ?? probeBudget(client.warmed);
+	const started = Date.now();
+	try {
+		await client.ready;
+		const out = (await client.call(
+			"tools/call",
+			{
+				name: "query",
+				arguments: { searches: subQueries("vault"), intent: "health probe", limit: 1, minScore: 0.4 },
+			},
+			timeoutMs,
+		)) as { structuredContent?: { results?: unknown } } | null;
+		const ms = Date.now() - started;
+		// Answering with no structured results is its own failure: `scopeResults`
+		// cannot scope-check hits it cannot see, so search would return
+		// "(search unavailable)" for every query while the transport looks fine.
+		if (!Array.isArray(out?.structuredContent?.results)) {
+			return { ok: false, ms, detail: `answered in ${ms}ms but returned no structured results — hits cannot be scope-checked` };
+		}
+		return { ok: true, ms, detail: `answered in ${ms}ms` };
+	} catch (e) {
+		const ms = Date.now() - started;
+		const message = e instanceof Error ? e.message : String(e);
+		// A probe timeout does not make the same claim a search timeout makes.
+		// The probe's budget is short so `health` stays fast; search's is minutes.
+		// Echoing the raw message here would publish "timeout after 20s" as if 20s
+		// were what search allows, and someone would tune the wrong number.
+		if (message.startsWith("qmd timeout")) {
+			return {
+				ok: false,
+				ms,
+				detail:
+					`did not answer within ${Math.round(timeoutMs / 1000)}s — search is DEGRADED right now. ` +
+					"qmd downloads its embedding and reranker models on first use (hundreds of MB); " +
+					"on a vault new to this machine that is the likely cause, and it clears itself once the download lands. " +
+					"A real search waits far longer than this probe does.",
+			};
+		}
+		return { ok: false, ms, detail: `DID NOT ANSWER (${message})` };
 	}
 }

@@ -274,6 +274,29 @@ describe("the om server on the wire", () => {
 		assert.match(t, /model: your CLI default/);
 	});
 
+	test("health reports a search outage instead of reporting no warnings", async () => {
+		// The whole point of the tool, and the thing it failed at on 2026-08-22: a
+		// foreign repo's search was timing out, `health` said `launcher found` and
+		// `No warnings.`, and the caller had every reason to conclude the vault
+		// simply held no record. It held a complete one.
+		//
+		// This fixture vault carries no qmd launcher, so search is genuinely dead
+		// here — which makes it the outage, not a mock of one. `launcher found` is
+		// a check on a FILE EXISTING and can never notice this; only a round trip
+		// can.
+		const t = textOf(await call("tools/call", { name: "health", arguments: {} }));
+		assert.doesNotMatch(t, /No warnings\./, "a live search outage must not render as a clean bill of health");
+
+		// Asserted against the WARNINGS BLOCK, not the whole report. The first
+		// version of this test searched the full text and passed with the warning
+		// removed, because `search DID NOT ANSWER` also appears on the `Search
+		// index:` line — so it proved the probe ran, never that its verdict was
+		// raised where a caller looks. That is the same defect as `launcher found`,
+		// committed by the test written to catch it.
+		const block = (t.split(/^Warnings:\n/m)[1] ?? "").split(/\n\nNotes:/)[0];
+		assert.match(block, /^- search DID NOT ANSWER/m, "the outage has to be raised as a warning, not merely reported inline");
+	});
+
 	test("recall on an empty store explains itself rather than returning nothing", async () => {
 		const r = await call("tools/call", { name: "recall", arguments: { explain: true } });
 		const t = textOf(r);
