@@ -293,7 +293,7 @@ describe("the om server on the wire", () => {
 		// index:` line — so it proved the probe ran, never that its verdict was
 		// raised where a caller looks. That is the same defect as `launcher found`,
 		// committed by the test written to catch it.
-		const block = (t.split(/^Warnings:\n/m)[1] ?? "").split(/\n\nNotes:/)[0];
+		const block = (t.split(/^Warnings:\n/m)[1] ?? "").split(/\n\nNotes:/)[0] ?? "";
 		assert.match(block, /^- search DID NOT ANSWER/m, "the outage has to be raised as a warning, not merely reported inline");
 	});
 

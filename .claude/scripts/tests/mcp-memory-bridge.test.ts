@@ -49,6 +49,8 @@ function fakeQmd(files: string[] | null, fail = false): QmdClient {
 		ready: Promise.resolve(),
 		dispose: () => {},
 		alive: true,
+		// This fake never pays a model load, so it is warm by construction.
+		warmed: true,
 		call: async () => {
 			if (fail) throw new Error("index down");
 			return files === null ? {} : { structuredContent: { results: files.map((f) => ({ file: f })) } };
