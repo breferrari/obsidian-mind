@@ -10,7 +10,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -24,6 +24,8 @@ import {
 import type { VisibleFile } from "../lib/mcp-exposure.ts";
 import type { QmdClient } from "../lib/mcp-qmd-client.ts";
 
+import { rmTemp } from "./_helpers.ts";
+
 function put(dir: string, rel: string, body: string): string {
 	const full = join(dir, rel);
 	mkdirSync(dirname(full), { recursive: true });
@@ -36,7 +38,7 @@ function withVault(fn: (dir: string) => void): void {
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 

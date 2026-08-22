@@ -17,11 +17,13 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createHandlers } from "../lib/mcp-server.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 interface Logged {
 	readonly action: string;
@@ -77,7 +79,7 @@ describe("a refused call is auditable", () => {
 			const serialised = JSON.stringify(refusals[0]);
 			assert.ok(!serialised.includes("the prose is fine"), "the log must not become a copy of the call");
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -91,7 +93,7 @@ describe("a refused call is auditable", () => {
 			assert.equal(refusals.length, 1);
 			assert.equal(refusals[0]!.detail["tool"], "record_work");
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -113,7 +115,7 @@ describe("a refused call is auditable", () => {
 				"a call that was not refused must not log a refusal",
 			);
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 });

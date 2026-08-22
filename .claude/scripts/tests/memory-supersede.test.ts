@@ -9,13 +9,15 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
 import { addToFrontmatterList, markSuperseded, resolveSupersedes } from "../lib/memory-supersede.ts";
 import { validateMemory, writeMemory } from "../lib/memory-write.ts";
 import { recall, parseFrontmatter, facetsOf } from "../lib/memory-recall.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 const MD = "---\ndate: 2026-07-26\nsource: mcp-capture\nscope: general\n---\n\n# t\n\nbody\n";
 
@@ -69,7 +71,7 @@ describe("markSuperseded", () => {
 			assert.equal(r.changed, true);
 			assert.ok(readFileSync(join(dir, rel), "utf8").includes('superseded_by: ["The Correction"]'));
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -89,7 +91,7 @@ describe("markSuperseded", () => {
 			assert.equal(r.matched.length, 1);
 			assert.equal(r.matched[0]!.rel, "new.md");
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -104,7 +106,7 @@ describe("markSuperseded", () => {
 			assert.match(r.reason, /refusing to modify/);
 			assert.equal(readFileSync(join(dir, rel), "utf8"), original);
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -113,7 +115,7 @@ describe("markSuperseded", () => {
 		try {
 			assert.equal(markSuperseded(dir, "memories/nope.md", "x").ok, false);
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 });
@@ -203,7 +205,7 @@ describe("correction round trip", () => {
 				"the corrected memory carries its back-link",
 			);
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -225,7 +227,7 @@ describe("correction round trip", () => {
 			assert.deepEqual(fm.projects, ["atlas"]);
 			assert.deepEqual(fm.superseded_by, ["the newer one"]);
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 });

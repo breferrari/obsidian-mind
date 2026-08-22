@@ -13,7 +13,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -26,6 +26,8 @@ import {
 	INSTRUCTIONS,
 	PROMPTS,
 } from "../lib/mcp-context.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 function tmpVault(): string {
 	return mkdtempSync(join(tmpdir(), "ctx-"));
@@ -44,7 +46,7 @@ function withVault(fn: (dir: string) => void): void {
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 

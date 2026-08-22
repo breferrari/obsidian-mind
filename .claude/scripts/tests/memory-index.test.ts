@@ -19,7 +19,6 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
 	mkdtempSync,
-	rmSync,
 	writeFileSync,
 	mkdirSync,
 	unlinkSync,
@@ -34,6 +33,8 @@ import { createMemoryIndex } from "../lib/memory-index.ts";
 import { readMemories, recall, recallFrom, agentMemories, MEMORY_SOURCE } from "../lib/memory-recall.ts";
 import { loadMemoryDigests, digestsFrom } from "../lib/mcp-memory-bridge.ts";
 
+import { rmTemp } from "./_helpers.ts";
+
 const ROOT = "memories";
 
 function withVault(fn: (dir: string) => void): void {
@@ -41,7 +42,7 @@ function withVault(fn: (dir: string) => void): void {
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 

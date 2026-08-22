@@ -14,7 +14,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -31,6 +31,8 @@ import {
 	health,
 	type IndexPathInfo,
 } from "../lib/memory-discover.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -72,7 +74,7 @@ function withVault(fn: (dir: string) => void): void {
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 

@@ -12,7 +12,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -30,6 +30,8 @@ import {
 } from "../lib/mcp-exposure.ts";
 import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
 import { vaultRelKey } from "../lib/mcp-qmd-client.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 const NL = String.fromCharCode(10);
 
@@ -49,7 +51,7 @@ function withVault(fn: (dir: string) => void): void {
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 

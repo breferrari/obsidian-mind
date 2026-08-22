@@ -22,7 +22,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
@@ -43,6 +43,8 @@ import {
 	type Caller,
 	type MemoryEntry,
 } from "../lib/memory-recall.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 const DAY = new Date(2026, 6, 26);
 
@@ -127,7 +129,7 @@ before(() => {
 	}
 });
 
-after(() => rmSync(VAULT, { recursive: true, force: true }));
+after(() => rmTemp(VAULT));
 
 /** Ids visible to a caller, as a sorted array. */
 function seen(caller: Caller): string[] {
@@ -295,7 +297,7 @@ describe("reader robustness", () => {
 			assert.deepEqual(facetsOf(fm).projects, ["atlas"]);
 			assert.equal(facetsOf(fm).confidence, "verified");
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -351,7 +353,7 @@ describe("reader robustness", () => {
 		try {
 			assert.deepEqual(recall(dir, CALLERS.atlas), []);
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 });

@@ -12,7 +12,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -30,6 +30,8 @@ import {
 	sumAuditField,
 	type Root,
 } from "../lib/mcp-caller.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 const root = (uri: string): Root => ({ uri });
 
@@ -109,7 +111,7 @@ describe("reading the caller's identity from roots", () => {
 			assert.equal(callerProject([root(uri)]), "billing-api");
 			assert.equal(callerProjectSource([root(uri)]), "declared");
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -122,7 +124,7 @@ describe("reading the caller's identity from roots", () => {
 				assert.equal(callerProject([root(uri)]), basename(dir).toLowerCase(), `refused: ${JSON.stringify(bad)}`);
 			}
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 });
@@ -254,7 +256,7 @@ describe("the audit log", () => {
 		try {
 			fn(dir);
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	}
 
@@ -382,7 +384,7 @@ describe("summing a field across one day's entries", () => {
 		try {
 			fn(dir);
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	}
 

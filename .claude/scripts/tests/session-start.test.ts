@@ -8,7 +8,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { join, dirname } from "node:path";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -46,6 +46,8 @@ import {
 	isMarkdownFilename,
 	collectOpenTasks,
 } from "../lib/session-start.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 describe("take", () => {
 	test("keeps first N lines", () => {
@@ -246,7 +248,7 @@ describe("quoteForPosixShell — verified against a real POSIX shell", () => {
 			parts.pop(); // trailing empty after the final delimiter
 			return parts;
 		} finally {
-			rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+			rmTemp(dir);
 		}
 	}
 
@@ -289,7 +291,7 @@ describe("quoteForPosixShell — verified against a real POSIX shell", () => {
 				"quoting leaked — a command substitution executed",
 			);
 		} finally {
-			rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+			rmTemp(dir);
 		}
 	});
 
@@ -324,7 +326,7 @@ describe("quoteForPosixShell — verified against a real POSIX shell", () => {
 			assert.equal(r.status, 0, r.stderr);
 			assert.equal(r.stdout, value, "sourcing the file must restore the exact path");
 		} finally {
-			rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+			rmTemp(dir);
 		}
 	});
 });

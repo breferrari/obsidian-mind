@@ -11,18 +11,20 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { readHead } from "../lib/read-head.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 function withDir(fn: (dir: string) => void): void {
 	const dir = mkdtempSync(join(tmpdir(), "head-"));
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 

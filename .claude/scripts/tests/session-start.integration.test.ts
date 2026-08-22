@@ -33,7 +33,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { runScript as spawnHook } from "./_helpers.ts";
+import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(SCRIPT_DIR, "../session-start.ts");
@@ -61,21 +61,11 @@ before(() => {
 	);
 });
 
-after(() => {
-	// `maxRetries` + `retryDelay` is Node's documented Windows guard against
-	// transient `EBUSY` / `EPERM` on rmdir when child processes or the OS
-	// haven't fully released file handles yet. On Windows CI the test's tmp
-	// dir occasionally lingers a few seconds after the detached qmd worker
-	// finishes; retrying with linear backoff is the idiomatic fix.
-	if (TMP_DIR) {
-		rmSync(TMP_DIR, {
-			recursive: true,
-			force: true,
-			maxRetries: 10,
-			retryDelay: 200,
-		});
-	}
-});
+// `rmTemp` retries — Node's documented Windows guard against transient
+// `EBUSY` / `EPERM` on rmdir while a handle is still held — and then gives up
+// quietly. The retries alone were not enough: #235 lost a green suite to an
+// `EPERM` thrown out of this hook after the assertions had already passed.
+after(() => rmTemp(TMP_DIR));
 
 const runHook = () => spawnHook(SCRIPT, "", { CLAUDE_PROJECT_DIR: TMP_DIR });
 
@@ -209,11 +199,7 @@ describe("session-start — listing collapse and injection budget", () => {
 		}
 	});
 
-	after(() => {
-		if (BIG_DIR) {
-			rmSync(BIG_DIR, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-		}
-	});
+	after(() => rmTemp(BIG_DIR));
 
 	const runBig = () => spawnHook(SCRIPT, "", { CLAUDE_PROJECT_DIR: BIG_DIR });
 	const listingOf = (stdout: string) =>

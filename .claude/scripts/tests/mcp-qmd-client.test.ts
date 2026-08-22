@@ -30,6 +30,7 @@ import {
 	type QmdHit,
 	type QmdClient,
 } from "../lib/mcp-qmd-client.ts";
+import { waitFor } from "./_helpers.ts";
 
 /**
  * Write a stand-in qmd launcher that speaks just enough MCP to exercise the
@@ -289,8 +290,10 @@ describe("client liveness", () => {
 		// later call — search stays broken for the life of the server.
 		const c = createQmdClient(process.cwd(), join(process.cwd(), "definitely-not-a-launcher.mjs"));
 		assert.equal(c.alive, true, "alive until proven otherwise");
-		// Spawning a missing script fails asynchronously; wait for the signal.
-		await new Promise((r) => setTimeout(r, 400));
+		// Spawning a missing script fails asynchronously, and the property under
+		// test is that the client EVENTUALLY reports itself dead. A fixed sleep
+		// cannot express that: 400ms was a bet a loaded Windows runner won (#235).
+		await waitFor(() => !c.alive);
 		assert.equal(c.alive, false, "a failed launcher must mark the client dead");
 		c.dispose();
 	});
@@ -303,7 +306,7 @@ describe("client liveness", () => {
 
 	test("a call against a dead client rejects rather than hanging", async () => {
 		const c = createQmdClient(process.cwd(), join(process.cwd(), "still-missing.mjs"));
-		await new Promise((r) => setTimeout(r, 400));
+		await waitFor(() => !c.alive);
 		await assert.rejects(() => c.call("tools/call", {}), /qmd/i);
 		c.dispose();
 	});

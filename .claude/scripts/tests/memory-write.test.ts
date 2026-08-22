@@ -12,7 +12,7 @@
 import { test, describe } from "node:test";
 import { extractAliases, buildResolver } from "../lib/wikilinks.ts";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep, resolve } from "node:path";
 
@@ -30,6 +30,8 @@ import {
 	MEMORY_ROOT,
 	type MemoryInput,
 } from "../lib/memory-write.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 const DAY = new Date(2026, 6, 26, 14, 2, 11); // 2026-07-26, local
 const OK = {
@@ -77,7 +79,7 @@ describe("real usage", () => {
 			assert.equal(rel, "memories/2026/07/2026-07-26 tsup externals decide what a patch can fix.md");
 			assert.ok(existsSync(join(dir, rel)));
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -473,7 +475,7 @@ describe("write collisions", () => {
 			assert.ok(b.rel.includes("(2)"));
 			assert.ok(readMemory(dir, a.rel).includes(OK.body), "the first memory must survive intact");
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -484,7 +486,7 @@ describe("write collisions", () => {
 			writeMemory(dir, v, []);
 			assert.ok(writeMemory(dir, v, []).rel.endsWith(".md"));
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 
@@ -494,7 +496,7 @@ describe("write collisions", () => {
 			const v = validateMemory(OK, { now: new Date(2027, 2, 3), origin: "p" }).value!;
 			assert.ok(existsSync(writeMemory(dir, v, []).full));
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 });
@@ -568,7 +570,7 @@ describe("containment property", () => {
 			const { full } = writeMemory(dir, v.value!, []);
 			assert.ok(resolve(full).startsWith(resolve(dir, MEMORY_ROOT) + sep));
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmTemp(dir);
 		}
 	});
 });

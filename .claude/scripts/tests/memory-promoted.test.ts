@@ -24,7 +24,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -40,6 +40,8 @@ import {
 } from "../lib/memory-promoted.ts";
 import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
 
+import { rmTemp } from "./_helpers.ts";
+
 const POLICY: ExposurePolicy = {
 	// `work/active` is the shape that matters: multi-segment, as every root in
 	// the shipping manifest is.
@@ -54,7 +56,7 @@ function withVault(fn: (dir: string) => void): void {
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 

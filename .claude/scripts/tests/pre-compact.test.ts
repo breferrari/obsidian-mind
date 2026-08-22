@@ -4,7 +4,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, readdirSync, utimesSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readdirSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -12,6 +12,8 @@ import {
 	listBackups,
 	pruneBackups,
 } from "../pre-compact.ts";
+
+import { rmTemp } from "./_helpers.ts";
 
 describe("formatTimestamp", () => {
 	test("pads single digits (YYYYMMDD_HHMMSS)", () => {
@@ -32,7 +34,7 @@ describe("listBackups + pruneBackups", () => {
 	});
 
 	after(() => {
-		if (dir) rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	});
 
 	function makeBackup(name: string, ageSeconds: number): void {

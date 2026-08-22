@@ -17,10 +17,11 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { rmTemp, waitFor } from "./_helpers.ts";
 
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LAUNCHER = join(SCRIPTS, "om-mcp.mjs");
@@ -39,6 +40,8 @@ let child: ChildProcess;
 let stderr = "";
 const pending = new Map<number, (m: Rpc) => void>();
 let nextId = 0;
+/** Set when we have answered `roots/list` — the moment this session stops being anonymous. */
+let rootsAnswered = false;
 
 function put(rel: string, body: string): void {
 	const full = join(vault, rel);
@@ -118,6 +121,7 @@ before(async () => {
 			// identified rather than anonymous.
 			if (msg.method === "roots/list") {
 				send({ jsonrpc: "2.0", id: msg.id, result: { roots: [{ uri: `file:///C:/Dev/${CALLER}` }] } });
+				rootsAnswered = true;
 				continue;
 			}
 			if (msg.method) continue;
@@ -136,12 +140,17 @@ before(async () => {
 	});
 	assert.equal((init.result?.serverInfo as { name?: string })?.name, "om");
 	send({ jsonrpc: "2.0", method: "notifications/initialized" });
-	await new Promise((r) => setTimeout(r, 300));
+	// Wait for the handshake itself rather than for 300ms and hope. Until
+	// `roots/list` has been asked and answered this session is anonymous, and an
+	// anonymous run fails as though the vault were empty — so a runner slow
+	// enough to lose that bet loses the whole suite, not one test (#235).
+	await waitFor(() => rootsAnswered, TIMEOUT);
+	assert.ok(rootsAnswered, "the server must ask who is calling, or every scope assertion below is meaningless");
 });
 
 after(() => {
 	child?.kill();
-	if (vault) rmSync(vault, { recursive: true, force: true });
+	rmTemp(vault);
 });
 
 describe("the om server on the wire", () => {

@@ -35,7 +35,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { runScript as spawnHook } from "./_helpers.ts";
+import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
 import { resolveQmdEntry } from "../lib/qmd.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -55,7 +55,7 @@ before(() => {
 });
 
 after(() => {
-	if (TMP_DIR) rmSync(TMP_DIR, { recursive: true, force: true });
+	rmTemp(TMP_DIR);
 });
 
 // Used to build realistic absolute `file_path` fixtures for hook payloads.

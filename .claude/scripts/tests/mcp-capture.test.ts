@@ -14,7 +14,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -31,6 +31,8 @@ import {
 import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
 import { resolvableNames } from "../lib/mcp-memory-bridge.ts";
 
+import { rmTemp } from "./_helpers.ts";
+
 const NOW = new Date("2026-07-26T10:00:00Z");
 const POLICY: ExposurePolicy = { roots: ["brain", "projects"], neverExpose: new Set(), source: "manifest", memoryRoot: "memories" };
 
@@ -39,7 +41,7 @@ function withVault(fn: (dir: string) => void): void {
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 
