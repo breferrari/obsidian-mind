@@ -28,7 +28,7 @@ import {
 } from "./mcp-exposure.ts";
 import { expandNote } from "./mcp-graph.ts";
 import { qmdProbe, qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
-import { callerProject, callerProjectSource, isVaultItself, PROJECT_MARKER, sumAuditField, sanitize } from "./mcp-caller.ts";
+import { callerProject, callerProjectSource, CALLER_VAR, isVaultItself, PROJECT_MARKER, sumAuditField, sanitize } from "./mcp-caller.ts";
 import { callerPlatforms, digestsFrom, resolvableNames } from "./mcp-memory-bridge.ts";
 import { captureNote, describeToolMarkup, toolMarkupRefusal } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
@@ -59,6 +59,20 @@ import {
 	describeRefusal,
 	REASON_ACTION,
 } from "./mcp-reason.ts";
+
+/**
+ * How `health` names each way an identity can be decided.
+ *
+ * A table rather than a ternary, because the ternary this replaced could only
+ * say "declared or folder" and would have reported a third source as the second
+ * the moment one existed. `satisfies` makes the compiler notice the next one.
+ */
+const IDENTITY_SOURCE = {
+	declared: `the ${PROJECT_MARKER} file`,
+	folder: "folder name",
+	env: `${CALLER_VAR} in this server's registration`,
+	none: "nowhere",
+} as const satisfies Record<ReturnType<typeof callerProjectSource>, string>;
 
 const PROTOCOL_VERSION = "2025-11-25";
 const SERVER_NAME = "om";
@@ -741,7 +755,10 @@ export function createHandlers(deps: ServerDeps): Handlers {
 						"    If that is not deliberate, unset it — everything below describes the OTHER vault.",
 					]
 				: []),
-			`Caller: ${who.project ?? "ANONYMOUS (no MCP roots — only general-scope memories are visible)"}${who.project ? ` (from the ${callerProjectSource(session.roots) === "declared" ? PROJECT_MARKER + " file" : "folder name"})` : ""}`,
+			`Caller: ${who.project ?? `ANONYMOUS (no MCP roots and no ${CALLER_VAR} — only general-scope memories are visible)`}${who.project ? ` (from ${IDENTITY_SOURCE[callerProjectSource(session.roots)]})` : ""}`,
+			...(who.project === null
+				? [`  A client that cannot send roots can still identify itself: set ${CALLER_VAR} where this server is registered.`]
+				: []),
 			...(who.project && callerProjectSource(session.roots) === "folder"
 				? [`  Another repo with this folder name would share this identity. Write a distinct name into ${PROJECT_MARKER} to separate them.`]
 				: []),

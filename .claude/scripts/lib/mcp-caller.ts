@@ -3,9 +3,12 @@
  *
  * Identity comes from the MCP `roots/list` handshake — never from a tool
  * argument, so a session cannot claim to be a project it is not. A client that
- * does not complete the handshake is anonymous and sees only `general`-scoped
- * memories; `health` reports that explicitly, since it otherwise looks like an
- * empty vault.
+ * completes no handshake may declare one in {@link CALLER_VAR} instead, which
+ * is set where the server is registered rather than chosen by the session and
+ * so sits on the same trust boundary as `roots`; that constant carries the
+ * whole argument. A client that does neither is anonymous and sees only
+ * `general`-scoped memories; `health` reports that explicitly, since it
+ * otherwise looks like an empty vault.
  */
 
 import {
@@ -68,6 +71,52 @@ export function rootToPath(uri: unknown): string {
 export const PROJECT_MARKER = ".om-project";
 
 /**
+ * Where a client with no roots may declare an identity instead.
+ *
+ * **A real consumer arrived that cannot send roots.** Not every shipping MCP
+ * client implements the handshake: one answers `initialize` and leaves the
+ * server's `roots/list` request unanswered. It was not rootless for want of a
+ * directory, so {@link PROJECT_MARKER} cannot help it either, since nothing
+ * reads that file without a root to read it under. The consequence is not
+ * cosmetic: an identity-less caller is served **only** `general`-scoped
+ * memories, which is the narrowest slice of the vault there is.
+ *
+ * **Why this does not reopen the forgery hole the header refuses.** That rule
+ * is about a *tool argument*, which the model chooses mid-session and could
+ * therefore point at any project it liked. An environment variable is set by
+ * whoever registers and spawns this server, which is the same party that
+ * controls `roots` and could already declare any identity that way. Same trust
+ * boundary, no new surface. What stays refused is the session naming itself.
+ *
+ * **A fallback and never an override.** A client that sends roots is
+ * identifying itself, and second-guessing that with an environment left over
+ * from another context is how one repo starts answering as another.
+ */
+export const CALLER_VAR = "OM_CALLER";
+
+/** Reads one environment variable. Injected so the identity rules stay pure. */
+export type EnvLookup = (key: string) => string | undefined;
+
+const fromProcess: EnvLookup = (key) => process.env[key];
+
+/**
+ * The one shape an identity may take, wherever it was declared.
+ *
+ * Shared by the marker file and {@link CALLER_VAR} rather than spelled at each,
+ * because two copies of a validation rule are two chances for one of them to
+ * accept a path segment the scope comparison would then read oddly.
+ */
+function identityShape(raw: unknown): string | null {
+	const name = String(raw ?? "").trim().toLowerCase();
+	return name && /^[\w.-]+$/.test(name) ? name : null;
+}
+
+/** The identity declared in the environment, if it is one this may accept. */
+function declaredByEnv(env: EnvLookup): string | null {
+	return identityShape(env(CALLER_VAR));
+}
+
+/**
  * The calling repo's project identity.
  *
  * The folder name by default. A repo can override that by writing a single
@@ -76,25 +125,32 @@ export const PROJECT_MARKER = ".om-project";
  * the other's memories. Declaring a distinct name in either repo separates
  * them, and nothing changes for anyone who does not hit the collision.
  */
-export function callerProject(roots: readonly Root[]): string | null {
+export function callerProject(roots: readonly Root[], env: EnvLookup = fromProcess): string | null {
 	const first = roots[0];
-	if (!first) return null;
+	if (!first) return declaredByEnv(env);
 	const root = rootToPath(first.uri).replace(/\/+$/, "");
 
 	const declared = readProjectMarker(root);
 	if (declared) return declared;
 
+	// A root carrying no usable path is the rootless case wearing a handshake, so
+	// it falls through to the environment rather than straight to anonymity.
 	const seg = root.split(/[\\/]/).filter(Boolean).pop();
-	return seg ? seg.toLowerCase() : null;
+	return seg ? seg.toLowerCase() : declaredByEnv(env);
 }
 
 /** How the identity was decided, so `health` can explain itself. */
-export function callerProjectSource(roots: readonly Root[]): "declared" | "folder" | "none" {
+export function callerProjectSource(
+	roots: readonly Root[],
+	env: EnvLookup = fromProcess,
+): "declared" | "folder" | "env" | "none" {
 	const first = roots[0];
-	if (!first) return "none";
-	const root = rootToPath(first.uri).replace(/\/+$/, "");
-	if (readProjectMarker(root)) return "declared";
-	return root.split(/[\\/]/).filter(Boolean).length ? "folder" : "none";
+	if (first) {
+		const root = rootToPath(first.uri).replace(/\/+$/, "");
+		if (readProjectMarker(root)) return "declared";
+		if (root.split(/[\\/]/).filter(Boolean).length) return "folder";
+	}
+	return declaredByEnv(env) ? "env" : "none";
 }
 
 function readProjectMarker(root: string): string | null {
@@ -103,11 +159,9 @@ function readProjectMarker(root: string): string | null {
 			.split("\n")
 			.map((l) => l.trim())
 			.find((l) => l && !l.startsWith("#"));
-		if (!raw) return null;
 		// Same shape as a folder name, so a declared identity cannot smuggle in a
 		// path segment or anything the scope rule would compare oddly.
-		const name = raw.toLowerCase();
-		return /^[\w.-]+$/.test(name) ? name : null;
+		return identityShape(raw);
 	} catch {
 		return null;
 	}

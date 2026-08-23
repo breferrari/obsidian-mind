@@ -22,6 +22,7 @@ import {
 	rootToPath,
 	callerProject,
 	callerProjectSource,
+	CALLER_VAR,
 	PROJECT_MARKER,
 	isVaultItself,
 	sanitize,
@@ -86,12 +87,50 @@ describe("reading the caller's identity from roots", () => {
 		assert.equal(callerProject([root("file:///home/x/pocket")]), "pocket");
 	});
 
-	test("no roots means NO identity — never a guess and never a default", () => {
+	test("no roots and no declared identity means NO identity — never a guess", () => {
 		// An anonymous caller must fall through to general-scoped material only.
 		// Inventing an identity here would hand it another project's memories.
-		assert.equal(callerProject([]), null);
-		assert.equal(callerProject([{}]), null);
-		assert.equal(callerProject([root("")]), null);
+		const none = () => undefined;
+		assert.equal(callerProject([], none), null);
+		assert.equal(callerProject([{}], none), null);
+		assert.equal(callerProject([root("")], none), null);
+		assert.equal(callerProjectSource([], none), "none");
+	});
+
+	test("a rootless client may declare itself in the environment", () => {
+		// Not every shipping MCP client answers `roots/list`, and a
+		// caller with no identity is served only `general`. The variable is set
+		// where the server is registered, so it is the same trust boundary as
+		// roots rather than a session naming itself.
+		const env = (k: string) => (k === CALLER_VAR ? "workstation-a" : undefined);
+		assert.equal(callerProject([], env), "workstation-a");
+		assert.equal(callerProjectSource([], env), "env");
+
+		// A root that arrived carrying no usable path is the rootless case wearing
+		// a handshake, so it reaches the same fallback.
+		assert.equal(callerProject([{}], env), "workstation-a");
+		assert.equal(callerProject([root("")], env), "workstation-a");
+	});
+
+	test("the environment is a fallback and never an override", () => {
+		// A client that sent roots has identified itself. Letting an environment
+		// left over from another context win is how one repo answers as another.
+		const env = (k: string) => (k === CALLER_VAR ? "workstation-a" : undefined);
+		assert.equal(callerProject([root("file:///home/x/pocket")], env), "pocket");
+		assert.equal(callerProjectSource([root("file:///home/x/pocket")], env), "folder");
+	});
+
+	test("a declared identity from the environment obeys the same shape rule", () => {
+		// Same validation as the marker file, because two copies of one rule are
+		// two chances for one of them to accept a path segment.
+		for (const bad of ["../escape", "a/b", "with spaces", "", "   "]) {
+			const env = (k: string) => (k === CALLER_VAR ? bad : undefined);
+			assert.equal(callerProject([], env), null, `rejected: ${JSON.stringify(bad)}`);
+			assert.equal(callerProjectSource([], env), "none");
+		}
+		// And it is lowercased and trimmed, the way a folder name is.
+		const shouty = (k: string) => (k === CALLER_VAR ? "  Workstation-A  " : undefined);
+		assert.equal(callerProject([], shouty), "workstation-a");
 	});
 
 	test("the first root wins when a session has several", () => {
