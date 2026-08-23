@@ -69,6 +69,26 @@ export function runScript(
 }
 
 /**
+ * Temp trees this could not remove, deduplicated, in the order they failed.
+ *
+ * Module state rather than a return value because the callers are `after` and
+ * `finally` hooks: none of them is in a position to do anything with an error,
+ * which is the whole reason the throw was removed.
+ */
+const leaked: { readonly dir: string; readonly code: string }[] = [];
+
+/**
+ * What {@link rmTemp} has failed to remove so far, as a snapshot.
+ *
+ * Exported so the recording is assertable. A swallow that nothing can observe
+ * is the thing this file is trying not to be, and a test proving the swallow
+ * happens is not the same as a test proving it was *counted*.
+ */
+export function leakedTempDirs(): readonly { readonly dir: string; readonly code: string }[] {
+	return leaked.slice();
+}
+
+/**
  * Remove a temp tree, and never fail the run for not managing it.
  *
  * Cleanup is not the assertion. A temp directory that survives is residue in
@@ -78,17 +98,45 @@ export function runScript(
  * lost a passing suite to exactly that, `EPERM` out of an `after` hook.
  *
  * Retries first, because a handle race usually clears in milliseconds, then
- * gives up quietly. A test that needs the removal to have SUCCEEDED must
+ * gives up **loudly**. A test that needs the removal to have SUCCEEDED must
  * assert on it, not rely on this throwing.
+ *
+ * **The report is the point of the swallow being acceptable at all.** Before
+ * this, a held handle turned CI red: a bad test result, and also a real signal
+ * that something outlives the suite. Silently swallowing it keeps the build
+ * honest and takes the signal away, leaving the open question of what holds the
+ * handle on Windows with nothing feeding it. So the failure is recorded and
+ * announced at exit instead: green stays green, and the handle holder keeps
+ * naming itself until someone fixes it properly.
+ *
+ * The `errno` code travels with the path because that is the question the
+ * report exists to answer. `EPERM` and `EBUSY` mean a live handle; `EACCES`
+ * means permissions and is a different bug with a different owner.
  */
 export function rmTemp(dir: string | null | undefined): void {
 	if (!dir) return;
 	try {
 		rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-	} catch {
-		/* best effort — see above */
+	} catch (e) {
+		const code = (e as NodeJS.ErrnoException)?.code ?? "UNKNOWN";
+		// Deduplicated so the count means "how many trees survived" rather than
+		// "how many times we tried", which is what a reader will take it for.
+		if (!leaked.some((l) => l.dir === dir)) leaked.push({ dir, code });
 	}
 }
+
+// One handler per process, because a module is a singleton and the test runner
+// gives each file its own process — so each file reports its own residue.
+//
+// stderr rather than stdout: this is diagnostic output about the run, not a
+// result of it, and `runScript` captures the stderr of the *spawned hook*
+// rather than the runner's, so nothing that asserts stderr cleanliness can see
+// this line.
+process.on("exit", () => {
+	if (leaked.length === 0) return;
+	console.error(`rmTemp: ${leaked.length} temp dir(s) survived cleanup:`);
+	for (const { dir, code } of leaked) console.error(`  ${code}  ${dir}`);
+});
 
 /**
  * Wait until `condition` holds, or until the deadline passes.

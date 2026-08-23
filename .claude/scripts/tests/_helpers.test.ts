@@ -15,7 +15,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { rmTemp, waitFor } from "./_helpers.ts";
+import { leakedTempDirs, rmTemp, waitFor } from "./_helpers.ts";
 
 describe("waitFor", () => {
 	test("returns as soon as the condition holds", async () => {
@@ -65,7 +65,7 @@ describe("rmTemp", () => {
 	});
 
 	test(
-		"swallows a removal it is not permitted to make",
+		"swallows a removal it is not permitted to make, and RECORDS it",
 		{ skip: process.platform === "win32" || process.getuid?.() === 0 },
 		() => {
 			// The red for #235: with a bare rmSync this throws EACCES out of an
@@ -75,8 +75,56 @@ describe("rmTemp", () => {
 			mkdirSync(child);
 			chmodSync(parent, 0o500);
 			try {
+				const before = leakedTempDirs().length;
 				rmTemp(child);
 				assert.equal(existsSync(child), true, "the removal really did fail");
+
+				// The swallow is only acceptable because it is counted. A silent one
+				// keeps the build green and takes away the signal that something
+				// outlives the suite, which is the question #235 left open.
+				const after = leakedTempDirs();
+				assert.equal(after.length, before + 1, "a swallowed failure must be recorded");
+				const entry = after.at(-1);
+				assert.equal(entry?.dir, child);
+				assert.ok(entry?.code, "the errno travels with the path, or the report cannot say why");
+			} finally {
+				chmodSync(parent, 0o700);
+				rmTemp(parent);
+			}
+		},
+	);
+
+	test("records nothing when the removal succeeds", () => {
+		// The other half, and the one that would let a false positive through:
+		// a recorder that logged every call would report residue on every green
+		// run and be ignored inside a week.
+		const dir = mkdtempSync(join(tmpdir(), "rmtemp-ok-"));
+		const before = leakedTempDirs().length;
+		rmTemp(dir);
+		assert.equal(existsSync(dir), false);
+		assert.equal(leakedTempDirs().length, before, "a successful removal is not residue");
+	});
+
+	test(
+		"records one entry per surviving tree, not one per attempt",
+		{ skip: process.platform === "win32" || process.getuid?.() === 0 },
+		() => {
+			// The count is read as "how many trees survived". Retrying the same
+			// directory must not inflate it. Uses the same locked parent as the
+			// test above, because it is the one shape known to fail here: a first
+			// draft reached for a path under a regular file, which `force: true`
+			// swallows silently, so nothing was recorded and the assertion held
+			// for the wrong reason.
+			const parent = mkdtempSync(join(tmpdir(), "rmtemp-dedupe-"));
+			const child = join(parent, "child");
+			mkdirSync(child);
+			chmodSync(parent, 0o500);
+			try {
+				const before = leakedTempDirs().length;
+				rmTemp(child);
+				assert.equal(leakedTempDirs().length, before + 1, "the first attempt must record, or this proves nothing");
+				rmTemp(child);
+				assert.equal(leakedTempDirs().length, before + 1, "the second attempt on one path must not add a row");
 			} finally {
 				chmodSync(parent, 0o700);
 				rmTemp(parent);
