@@ -127,7 +127,25 @@ export function slugify(title: unknown): string {
 		// Square brackets go too. A title carrying `[[Something]]` otherwise
 		// produces a file literally named `... [[Something]].md`, which reads as a
 		// wikilink embedded in a filename and confuses every surface showing it.
-		.replace(/[[\]]/g, " ")
+		//
+		// `#` goes with them, and is the worse case of the two. It is the heading
+		// separator, so `[[A note #7 landed]]` resolves to the note `A note ` and
+		// the heading `7 landed`: a link that points somewhere else without ever
+		// erroring, to a note that looks perfectly normal in every listing. The
+		// alias written for a truncated title does not rescue it, because the
+		// split happens before any alias lookup.
+		//
+		// **The class is the set of characters that terminate a wikilink target**,
+		// which is `#`, `|`, `[` and `]`. `|` is absent here only because the
+		// Windows-illegal class above already removes it, and that is coverage by
+		// coincidence rather than by rule: if that class were ever narrowed, this
+		// one would silently stop being complete. Stated here so the next reader
+		// checks all four rather than the two that are visible.
+		//
+		// Replaced with a space rather than deleted, so `Flag #7 set` becomes
+		// `Flag 7 set` and not `Flag7 set`. The whitespace collapse below tidies
+		// the double space that leaves.
+		.replace(/[[\]#]/g, " ")
 		.replace(/\.{2,}/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();
