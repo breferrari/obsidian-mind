@@ -331,7 +331,32 @@ export function toolMarkupRefusal(site: ToolMarkupSite, args?: Record<string, un
 				"CHECK THE FIELD LIST ABOVE FIRST. If a field you sent is missing from it,",
 				"its text was folded into this one and the data is gone rather than merely",
 				"mispunctuated; the offset then tracks your whole payload rather than a",
-				"position inside your own prose. Re-send every field in that case.",
+				"position inside your own prose.",
+				"",
+				// The old text ended "Re-send every field in that case", which is the
+				// shape that folded. A caller that complied reproduced the failure and
+				// had no second move, so the tool got abandoned rather than retried.
+				//
+				// What the retry must be smaller in is NOT settled, and this wording is
+				// deliberately careful about that. A reproduction on `remember` folded
+				// with FEWER fields and a longer body while a wider, shorter call
+				// succeeded, which rules out field count as the driver; a separate
+				// `record_work` sequence folded at a field of only 832 characters,
+				// which cuts against a clean size threshold. Total serialized request
+				// size has never been measured directly. Until it is, say "smaller"
+				// and name both axes rather than picking one and being wrong.
+				"In that case do NOT re-send the same shape — it folds again. Retry",
+				"SMALLER IN TOTAL SIZE, not merely with fewer fields: a call with fewer",
+				"fields but a longer body has been refused where a wider, shorter one",
+				"succeeded. Send the required fields with the prose trimmed, let that",
+				"write land, then add the rest in a follow-up call. Two records that",
+				"arrive beat one that never does.",
+				"",
+				// Priced, because the narrow retry is a trade and a caller taking it
+				// blind loses the structured half without noticing.
+				"The cost, so you take it knowingly: a field you drop survives only as",
+				"prose if you move it into the body. As a FIELD it is gone, so anything",
+				"that queries on it will not see this record.",
 				"",
 				"If every field you sent is listed, then only the closing tags are wrong:",
 				"re-send the same text with exactly one closing tag per parameter, and",

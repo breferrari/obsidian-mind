@@ -167,6 +167,60 @@ describe("the refusal names the fields the server received", () => {
 		assert.match(msg, /CHECK THE FIELD LIST ABOVE FIRST/);
 	});
 
+	// #244. The trailing branch used to end "Re-send every field in that case",
+	// which is the shape that folded: a caller that complied reproduced the
+	// failure and had no second move, so the write tools got abandoned rather
+	// than retried. The recovery has to name a DIFFERENT shape than the one that
+	// just failed, or the message is a loop.
+	test("the trailing branch names a different shape to retry, not the one that folded", () => {
+		const args = { summary: `${PROSE}</invoke></function_calls>`, folder: "brain" };
+		const site = describeToolMarkup(args);
+		const msg = toolMarkupRefusal(site!, args);
+		assert.ok(!/Re-send every field/.test(msg), "must not send the caller back into the folding shape");
+		assert.match(msg, /do NOT re-send the same shape/);
+	});
+
+	// The axis matters as much as the direction. A reproduction folded with
+	// FEWER fields and a longer body while a wider, shorter call succeeded, so a
+	// caller told only to "drop fields" keeps the long body and keeps failing.
+	test("the retry is smaller in total size, not merely in field count", () => {
+		const args = { summary: `${PROSE}</invoke>`, folder: "brain" };
+		const msg = toolMarkupRefusal(describeToolMarkup(args)!, args);
+		assert.match(msg, /SMALLER IN TOTAL SIZE/);
+		assert.match(msg, /not merely with fewer fields/);
+	});
+
+	// Dropping a field is a trade, not a free retry: the prose can be moved into
+	// the body but the FIELD is gone, and a caller taking that blind loses the
+	// queryable half without noticing.
+	test("the trailing branch prices the field it asks the caller to drop", () => {
+		const args = { summary: `${PROSE}</invoke>`, folder: "brain" };
+		const msg = toolMarkupRefusal(describeToolMarkup(args)!, args);
+		assert.match(msg, /queries on it will not see this record/);
+	});
+
+	// The mechanism is not settled, so the message must not promise the retry
+	// works — it has been refused at least once. This is the property most
+	// likely to be "helpfully" strengthened by a later edit, so it is pinned.
+	test("the recovery is offered, never promised", () => {
+		const args = { summary: `${PROSE}</invoke>`, folder: "brain" };
+		const msg = toolMarkupRefusal(describeToolMarkup(args)!, args);
+		assert.ok(
+			!/will (succeed|work|fix)|guaranteed|always works/i.test(msg),
+			"the narrow retry is a mitigation, not a cure, and must not be stated as one",
+		);
+	});
+
+	// The other half of the split must not drift while this one changes.
+	test("the embedded branch keeps its own repair", () => {
+		const args = { summary: `before <parameter name="x">after`, folder: "brain" };
+		const site = describeToolMarkup(args);
+		assert.equal(site?.trailing, false);
+		const msg = toolMarkupRefusal(site!, args);
+		assert.match(msg, /swallowed the field after it/);
+		assert.ok(!/SMALLER IN TOTAL SIZE/.test(msg), "the narrow retry belongs to the trailing branch only");
+	});
+
 	// The optional contract: existing callers pass one argument and still get a
 	// usable message, it simply omits the list.
 	test("called without args the message is still produced, minus the list", () => {
