@@ -225,9 +225,13 @@ Worth understanding, because it explains the cost profile of everything built on
 
 | model | size | job |
 |---|---|---|
-| `embeddinggemma-300M` | ~328 MB | turns notes and queries into vectors |
+| `Qwen3-Embedding-0.6B` | ~640 MB | turns notes and queries into vectors |
 | `qmd-query-expansion-1.7B` | ~1.28 GB | rewrites a query into better search terms, and writes hypothetical answers for HyDE |
 | `Qwen3-Reranker-0.6B` | ~640 MB | reorders the shortlist by actual relevance |
+
+**The embedder is chosen, not inherited.** qmd defaults to `embeddinggemma-300M`, and the bootstrap replaces it. Measured on a 684-document vault against 211 human-labelled retrieval pairs, query path otherwise untouched: rank-1 0.299 → 0.469 and found@5 0.521 → 0.758 (McNemar exact p < 0.0001), replicated on a second independently written vault at rank-1 0.650 → 0.950 (p = 0.0003). It costs ~13ms a query and roughly doubles a full index build. Reranking is not a cheaper substitute for it — on the default embedder reranking is a large significant gain, on this one it is not significant on rank-1, because it had been compensating for the embedder; this model with no reranker beats the default with one, at an eighth of the latency.
+
+Set `models.embed` in the qmd config yourself and the bootstrap leaves it alone — it replaces qmd's default, never a choice. Changing the model invalidates every existing vector, since the two produce different dimensions and qmd refuses to mix them, so the bootstrap forces a full re-embed in the same run.
 
 They download on first use and are cached. QMD offloads to the GPU when it finds one — CUDA on a discrete card, Metal on Apple Silicon — and falls back to CPU otherwise. `qmd doctor` reports which.
 

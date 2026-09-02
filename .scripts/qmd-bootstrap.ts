@@ -51,6 +51,7 @@ import {
 	translateToGlob,
 	writeQmdIgnore,
 } from "../.claude/scripts/lib/qmd-ignore.ts";
+import { writeQmdEmbedModel } from "../.claude/scripts/lib/qmd-models.ts";
 import {
 	deriveQmdIndex,
 	isValidQmdIndex,
@@ -421,8 +422,27 @@ function main(): void {
 		}
 	}
 
+	// Set the embedding model before indexing. qmd materialises its own default
+	// into the config the first time it touches an index, so this has to run
+	// after the collection exists and before anything is embedded.
+	//
+	// Changing it invalidates every existing vector — the two models produce
+	// different dimensions, and qmd refuses to mix them: `embed` errors out and
+	// a query throws outright rather than degrading. So a change here forces a
+	// full re-embed in the same run, and the two are never left apart.
+	const embedderChanged = writeQmdEmbedModel(qmdConfigPath(index));
+	if (embedderChanged) {
+		process.stdout.write("→ Setting the embedding model\n");
+	}
+
 	run(entry, ["--index", index, "update"], "Indexing vault files");
-	run(entry, ["--index", index, "embed"], "Generating embeddings");
+	run(
+		entry,
+		["--index", index, "embed", ...(embedderChanged ? ["-f"] : [])],
+		embedderChanged
+			? "Generating embeddings (full rebuild — the model changed)"
+			: "Generating embeddings",
+	);
 
 	process.stdout.write(
 		`\n✓ QMD index '${index}' ready. Test with:\n  qmd --index ${index} query "<topic>"\n`,
