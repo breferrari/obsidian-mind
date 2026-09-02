@@ -157,23 +157,27 @@ describe("building sub-queries", () => {
 		assert.ok(types.includes("vec"));
 	});
 
-	test("a question-shaped query also gets hyde", () => {
-		// hyde writes a hypothetical answer and matches against that, which is
-		// what finds the note whose title shares no words with the question.
+	test("hyde is never sent, whatever the query looks like", () => {
+		// qmd treats `hyde` as a label on a vector search, not a mode: generation
+		// runs in expandQuery(), which only the plain-text `query` parameter
+		// reaches. A `hyde` sub-query holding the raw question IS the `vec` entry
+		// above, issued a second time and paid for twice.
 		for (const q of [
 			"why did we choose postgres over mysql",
 			"how does the retry envelope behave",
 			"what happens when the lease expires?",
+			"caching",
 		]) {
-			assert.ok(subQueries(q).some((s) => s.type === "hyde"), q);
+			assert.ok(!subQueries(q).some((s) => s.type === "hyde"), q);
 		}
 	});
 
-	test("a keyword lookup does NOT pay for hyde", () => {
-		// It runs a local generation model. Lexical matching is already the right
-		// tool for a two-word lookup, so the cost buys nothing.
-		for (const q of ["caching", "deploy runbook", "retry envelope", "postgres"]) {
-			assert.ok(!subQueries(q).some((s) => s.type === "hyde"), q);
+	test("a question-shaped query gets exactly lex and vec, like every other", () => {
+		// Guards the removal. A question used to grow a third sub-query for
+		// +35-40ms and no measured gain; re-adding one should fail here rather
+		// than quietly costing that again.
+		for (const q of ["why did we choose postgres over mysql", "what happens when the lease expires?"]) {
+			assert.deepEqual(subQueries(q).map((s) => s.type), ["lex", "vec"], q);
 		}
 	});
 

@@ -578,7 +578,7 @@ sequenceDiagram
     OM->>Exp: allowedSearchPaths(vault, policy)
     Exp-->>OM: set of vault-relative keys
     OM->>QC: qmdSearch(allowed, query, limit)
-    QC->>QC: subQueries → lex + vec (+ hyde if question-shaped)
+    QC->>QC: subQueries → lex + vec
     QC->>QMD: tools/call query, limit = max(limit*4, 20)
     QMD-->>QC: structuredContent.results — the WHOLE vault
     QC->>QC: filter each hit against allowed
@@ -595,7 +595,7 @@ Four details in that flow are decisions rather than mechanics:
 
 **Over-fetch, then trim.** Because the filter runs on the result, asking qmd for exactly `limit` means a vault with much unserved content returns far fewer than requested with no sign that more existed. The client asks for `max(limit * 4, 20)`.
 
-**HyDE is conditional.** `lex` and `vec` always go out together — keywords find the exact term, vectors find the note that answers the question without using the word. `hyde` writes a hypothetical answer and matches against *that*, which is what finds the note whose title shares no words with the question. It runs a local generation model, so it is added only for queries that are at least four words *and* question-shaped. A two-word keyword lookup, where lexical matching is already the right tool, does not pay for it.
+**`lex` and `vec`, and deliberately nothing else.** Keywords find the exact term, vectors find the note that answers the question without using the word. There is no `hyde` sub-query, because qmd treats `hyde` as a *label* on a vector search rather than as a mode — as of 2.8.3 every site in its store reads `type === 'vec' || type === 'hyde'`, and generation happens only inside `expandQuery()`, which the plain-text `query` parameter reaches and a `searches` array bypasses. Passing the raw question in a `hyde` slot therefore repeats the `vec` search already going out, and pays for both: measured over 211 human-labelled pairs, sending it never, conditionally or always gave identical rank-1 and found@5 to four decimal places for +35-40ms a query. An *authored* hyde — a caller-written passage describing what the answer would look like — is a real technique and the `SubQuery` type still allows it; handing it the user's question is not that.
 
 **Degradation is explicit.** qmd is optional in this template. A failed call degrades that one search and says so; it must never present as "the vault is empty". The client tracks liveness, so one qmd crash does not disable search for the life of the server, and the entry script replaces a dead child behind a 5-second cooldown so a permanently-broken qmd cannot fork a process per call.
 

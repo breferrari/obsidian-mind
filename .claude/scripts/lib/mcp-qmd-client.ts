@@ -65,9 +65,6 @@ export function vaultRelKey(vaultRoot: string, fullPath: string): string {
 	return p.startsWith(v) ? p.slice(v.length).replace(/^\/+/, "") : p;
 }
 
-/** A word that marks a query as a question rather than a set of keywords. */
-const QUESTION_SHAPED = /\b(why|how|what|when|where|which|who|should|can|does|did|is|are|was)\b|\?/i;
-
 export interface SubQuery {
 	readonly type: "lex" | "vec" | "hyde";
 	readonly query: string;
@@ -76,23 +73,34 @@ export interface SubQuery {
 /**
  * Build the typed sub-queries for one search.
  *
- * `lex` and `vec` always go out together: keywords find the exact term, vectors
- * find the note that answers the question without using the word.
+ * `lex` and `vec` go out together and are the whole of it: keywords find the
+ * exact term, vectors find the note that answers the question without using the
+ * word.
  *
- * `hyde` is added only for question-shaped queries. It writes a hypothetical
- * answer and matches against that, which is what helps when someone asks "why
- * did we decide X" and the note is titled something else entirely. It is not
- * free — it runs a local generation model — so a two-word keyword lookup, where
- * lexical matching is already the right tool, does not pay for it.
+ * There is deliberately no `hyde` sub-query. qmd treats `hyde` as a LABEL on a
+ * vector search rather than as a mode — as of 2.8.3 every site in its store
+ * reads `type === 'vec' || type === 'hyde'`, and generation happens only inside
+ * `expandQuery()`, which the plain-text `query` parameter reaches and a
+ * `searches` array bypasses. A `hyde` sub-query carrying the raw question is
+ * therefore byte-for-byte the `vec` search already in this list, issued twice.
+ *
+ * Measured before removing it, over 211 human-labelled pairs: sending it never,
+ * conditionally, or always produced identical rank-1 and found@5 to four
+ * decimal places, changing 0 of 211 top hits on the better embedder and 2 on
+ * the worse, for +35-40ms per query. The comment this replaces asserted that it
+ * "runs a local generation model", and that belief is what kept the cost
+ * looking justified.
+ *
+ * An authored `hyde` — a caller-written passage describing what the answer
+ * would look like — is a real technique, and `SubQuery` still allows the type.
+ * Handing it the user's question is not that.
  */
 export function subQueries(query: string): SubQuery[] {
 	const q = String(query).trim();
-	const subs: SubQuery[] = [
+	return [
 		{ type: "lex", query: q },
 		{ type: "vec", query: q },
 	];
-	if (q.split(/\s+/).length >= 4 && QUESTION_SHAPED.test(q)) subs.push({ type: "hyde", query: q });
-	return subs;
 }
 
 /** qmd paths are collection-prefixed: `myvault/brain/Foo.md` → `brain/foo.md`. */
