@@ -71,6 +71,76 @@ describe("choosing the embedding model", () => {
 		}
 	});
 
+	test("a shape it cannot edit is refused, never appended to", () => {
+		// The corruption this guards is the expensive one: appending a second
+		// top-level `models:` makes the file unparseable, and qmd rethrows that
+		// as a config error that takes every collection and all search with it.
+		const r = upsertEmbedModelInYaml(
+			`collections:\n  v:\n    path: /x\nmodels: {embed: ${QMD_DEFAULT_EMBED_MODEL}}\n`,
+			PREFERRED_EMBED_MODEL,
+		);
+		assert.equal(r.kind, "unsupported");
+	});
+
+	test("no edit ever produces a duplicate key", () => {
+		// One assertion over every spelling that reached the append branch before:
+		// CRLF from a Windows host, a trailing space, a commented header, and an
+		// `embed:` key with no value. Each one used to yield two `models:` keys
+		// or two `embed:` keys.
+		const D = QMD_DEFAULT_EMBED_MODEL;
+		for (const [label, input] of [
+			["CRLF", `collections:\r\n  v:\r\n    path: /x\r\nmodels:\r\n  embed: ${D}\r\n`],
+			["trailing space", `collections:\n  v:\n    path: /x\nmodels: \n  embed: ${D}\n`],
+			["commented header", `collections:\n  v:\n    path: /x\nmodels: # embedders\n  embed: ${D}\n`],
+			["empty value", `collections:\n  v:\n    path: /x\nmodels:\n  embed:\n  rerank: hf:r\n`],
+		] as const) {
+			const r = upsertEmbedModelInYaml(input, PREFERRED_EMBED_MODEL);
+			assert.equal(r.kind, "updated", label);
+			if (r.kind !== "updated") continue;
+			assert.equal((r.content.match(/^models:/gm) ?? []).length, 1, label);
+			assert.equal((r.content.match(/^[ \t]+embed:/gm) ?? []).length, 1, label);
+			assert.ok(r.content.includes(`embed: ${PREFERRED_EMBED_MODEL}`), label);
+		}
+	});
+
+	test("a CRLF file stays CRLF", () => {
+		// Rewriting a Windows config as LF would show up as every line changed in
+		// whatever the user diffs it with.
+		const r = upsertEmbedModelInYaml(
+			`collections:\r\n  v:\r\n    path: /x\r\nmodels:\r\n  embed: ${QMD_DEFAULT_EMBED_MODEL}\r\n`,
+			PREFERRED_EMBED_MODEL,
+		);
+		assert.equal(r.kind, "updated");
+		assert.ok(r.kind === "updated" && r.content.includes("\r\n"));
+		assert.ok(r.kind === "updated" && !/[^\r]\n/.test(r.content));
+	});
+
+	test("qmd's default is recognised through quotes and comments", () => {
+		// Otherwise the decoration reads as a deliberate choice, the vault keeps
+		// the worse embedder, and the warning tells the user their model is
+		// neither qmd's default nor ours — when it is exactly qmd's default.
+		for (const spelling of [
+			`"${QMD_DEFAULT_EMBED_MODEL}"`,
+			`'${QMD_DEFAULT_EMBED_MODEL}'`,
+			`${QMD_DEFAULT_EMBED_MODEL} # qmd's default`,
+		]) {
+			const r = upsertEmbedModelInYaml(
+				`collections:\n  v:\n    path: /x\nmodels:\n  embed: ${spelling}\n`,
+				PREFERRED_EMBED_MODEL,
+			);
+			assert.equal(r.kind, "updated", spelling);
+		}
+	});
+
+	test("an embed key with no value is unset, not chosen", () => {
+		const r = upsertEmbedModelInYaml(
+			`collections:\n  v:\n    path: /x\nmodels:\n  embed:\n  rerank: hf:r\n`,
+			PREFERRED_EMBED_MODEL,
+		);
+		assert.equal(r.kind, "updated");
+		assert.ok(r.kind === "updated" && r.content.includes("rerank: hf:r"));
+	});
+
 	test("a config with no models block gets one", () => {
 		const r = upsertEmbedModelInYaml(`collections:\n  vault:\n    path: /somewhere\n`, PREFERRED_EMBED_MODEL);
 		assert.equal(r.kind, "updated");
@@ -104,6 +174,19 @@ describe("writing the embedding model to disk", () => {
 			assert.equal(writeQmdEmbedModel(p), true);
 			assert.ok(readFileSync(p, "utf-8").includes(`embed: ${PREFERRED_EMBED_MODEL}`));
 			assert.equal(writeQmdEmbedModel(p), false);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("an unsupported config is left untouched on disk", () => {
+		const dir = mkdtempSync(join(tmpdir(), "qmd-models-"));
+		try {
+			const p = join(dir, "vault.yml");
+			const before = `collections:\n  v:\n    path: /x\nmodels: {embed: ${QMD_DEFAULT_EMBED_MODEL}}\n`;
+			writeFileSync(p, before, "utf-8");
+			assert.equal(writeQmdEmbedModel(p), false);
+			assert.equal(readFileSync(p, "utf-8"), before);
 		} finally {
 			rmTemp(dir);
 		}

@@ -226,7 +226,7 @@ Worth understanding, because it explains the cost profile of everything built on
 | model | size | job |
 |---|---|---|
 | `Qwen3-Embedding-0.6B` | ~640 MB | turns notes and queries into vectors |
-| `qmd-query-expansion-1.7B` | ~1.28 GB | rewrites a query into better search terms, and writes hypothetical answers for HyDE |
+| `qmd-query-expansion-1.7B` | ~1.28 GB | rewrites a query into better search terms, and writes hypothetical answers for HyDE — reached by the `qmd query` CLI, not by the typed sub-queries this template sends (see below) |
 | `Qwen3-Reranker-0.6B` | ~640 MB | reorders the shortlist by actual relevance |
 
 **The embedder is chosen, not inherited.** qmd defaults to `embeddinggemma-300M`, and the bootstrap replaces it. Measured on a 684-document vault against 211 human-labelled retrieval pairs, query path otherwise untouched: rank-1 0.299 → 0.469 and found@5 0.521 → 0.758 (McNemar exact p < 0.0001), replicated on a second independently written vault at rank-1 0.650 → 0.950 (p = 0.0003). It costs ~13ms a query and roughly doubles a full index build. Reranking is not a cheaper substitute for it — on the default embedder reranking is a large significant gain, on this one it is not significant on rank-1, because it had been compensating for the embedder; this model with no reranker beats the default with one, at an eighth of the latency.

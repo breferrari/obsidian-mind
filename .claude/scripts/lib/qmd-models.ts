@@ -27,6 +27,25 @@ export const QMD_DEFAULT_EMBED_MODEL =
 	"hf:ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf";
 
 /**
+ * Every embedder qmd has shipped as its default, not just the current one.
+ *
+ * The failure this exists for is silent in both directions. qmd materialises
+ * its default into the config on first use, so when a future version ships a
+ * different one it lands in configs unasked — and matching only the current
+ * default would then read that as somebody's deliberate choice and stop
+ * applying this template's embedder, with no error and no failing test. Worse,
+ * the `warn()` below goes to stderr, and the SessionStart self-heal spawns the
+ * bootstrap with stdio ignored, so nothing surfaces anywhere.
+ *
+ * Add to this set rather than replacing: a config still holding an older qmd
+ * default is exactly as unchosen as one holding the current one.
+ */
+const QMD_SHIPPED_DEFAULTS: ReadonlySet<string> = new Set([
+	// The only one so far: verified identical in 2.1.0, 2.5.3 and 2.8.3.
+	QMD_DEFAULT_EMBED_MODEL,
+]);
+
+/**
  * What this template uses instead.
  *
  * Measured on a 684-document vault against 211 human-labelled retrieval pairs,
@@ -45,79 +64,140 @@ export const QMD_DEFAULT_EMBED_MODEL =
 export const PREFERRED_EMBED_MODEL =
 	"hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf";
 
-const MODELS_BLOCK_RE = /^models:\n(?:(?![^\s]).*\n?)*/m;
-const EMBED_LINE_RE = /^(\s+)embed:[ \t]*(\S.*?)[ \t]*$/m;
+/**
+ * A `models:` key in any spelling at all. Used to decide whether appending a
+ * block is safe — never to locate one for editing.
+ */
+const MODELS_KEY_RE = /^models:/m;
 
 /**
- * The outcome of trying to set `models.embed`, kept distinct because the three
- * cases need different handling and two of them produce no write:
+ * The block-style `models:` mapping, which is the only shape this can edit: the
+ * header (with an optional trailing comment) plus every following line that is
+ * indented or blank.
+ */
+const MODELS_BLOCK_RE = /^models:[ \t]*(?:#[^\n]*)?\n(?:(?![^\s]).*\n?)*/m;
+
+/**
+ * An `embed:` entry inside that block. The value is captured loosely — empty,
+ * quoted and comment-suffixed values all match — because failing to match here
+ * means inserting a SECOND `embed:` key, which is a corrupt file rather than a
+ * missed improvement.
+ */
+const EMBED_LINE_RE = /^([ \t]+)embed:[ \t]*(.*?)[ \t]*$/m;
+
+/**
+ * Reduce a captured YAML scalar to the string it denotes: drop an inline
+ * comment, then one layer of surrounding quotes.
+ *
+ * Without this, `embed: "<qmd's default>"` and `embed: <qmd's default> # note`
+ * both compare unequal to the default and get classified as somebody's
+ * deliberate choice — so the vault silently keeps the worse embedder and is
+ * told its model is "neither qmd's default nor this template's" when it is
+ * exactly qmd's default.
+ */
+function yamlScalar(raw: string): string {
+	let v = raw.trim();
+	const comment = v.search(/\s#/);
+	if (comment !== -1) v = v.slice(0, comment).trim();
+	const quoted =
+		(v.startsWith('"') && v.endsWith('"')) ||
+		(v.startsWith("'") && v.endsWith("'"));
+	return quoted && v.length >= 2 ? v.slice(1, -1) : v;
+}
+
+/**
+ * The outcome of trying to set `models.embed`. Three of the four produce no
+ * write, and they are kept distinct because they need different handling:
  *
  * - `updated` — the key was absent or still held qmd's default, and `content`
  *   is the file to write. Existing vectors are now the wrong dimension, so the
  *   caller MUST force a re-embed; qmd raises a hard error otherwise, and a
  *   query in that state throws rather than degrading.
  * - `already-set` — nothing to do, so re-running is free.
- * - `user-chosen` — someone set a different model deliberately. Never
+ * - `user-chosen` — somebody set a different model deliberately. Never
  *   overwritten: a template supplies a better default, it does not overrule a
- *   choice. The caller reports what it found and leaves it.
+ *   choice.
+ * - `unsupported` — there is a `models:` key this cannot edit safely (flow
+ *   style, say). Refusing is the whole point: the alternative is appending a
+ *   second `models:` key, and a duplicate key makes the file unparseable, which
+ *   takes qmd's collections and all search down with it.
  */
 export type EmbedModelPatch =
 	| { readonly kind: "updated"; readonly content: string }
 	| { readonly kind: "already-set" }
-	| { readonly kind: "user-chosen"; readonly current: string };
+	| { readonly kind: "user-chosen"; readonly current: string }
+	| { readonly kind: "unsupported"; readonly reason: string };
+
+/** Exactly one top-level `models:` and at most one `embed:` inside it. */
+function isWellFormed(content: string): boolean {
+	const models = content.match(/^models:/gm) ?? [];
+	if (models.length !== 1) return false;
+	const block = MODELS_BLOCK_RE.exec(content);
+	return (block?.[0].match(/^[ \t]+embed:/gm) ?? []).length <= 1;
+}
 
 /**
  * Set `models.embed` to `desired` in a qmd config, preserving everything else.
  *
- * Pure so the policy — replace the default, keep a deliberate choice, do
- * nothing when already correct — is testable without a filesystem or a qmd.
+ * Pure, so the policy — replace the default, keep a deliberate choice, do
+ * nothing when already correct, refuse what it cannot edit — is testable
+ * without a filesystem or a qmd.
+ *
+ * CRLF is normalised for matching and restored on the way out: a config written
+ * on Windows otherwise misses every anchored pattern here, and the miss lands
+ * in the append branch rather than failing visibly.
  */
 export function upsertEmbedModelInYaml(
 	content: string,
 	desired: string,
 ): EmbedModelPatch {
-	const block = MODELS_BLOCK_RE.exec(content);
+	const crlf = content.includes("\r\n");
+	const text = crlf ? content.replace(/\r\n/g, "\n") : content;
+	const restore = (out: string): string => (crlf ? out.replace(/\n/g, "\r\n") : out);
 
-	// No `models:` at all. qmd writes one on first use, so this is mainly the
-	// hand-written or freshly-templated case; append rather than guess where
-	// it belongs.
+	const block = MODELS_BLOCK_RE.exec(text);
+
 	if (!block) {
-		const separator = content.endsWith("\n") || content.length === 0 ? "" : "\n";
-		return {
-			kind: "updated",
-			content: `${content}${separator}models:\n  embed: ${desired}\n`,
-		};
+		// A `models:` key that did not parse as an editable block. Appending here
+		// would duplicate the key and make the file unloadable, so stop instead.
+		if (MODELS_KEY_RE.test(text)) {
+			return {
+				kind: "unsupported",
+				reason: "a `models:` key that is not a block mapping this can edit",
+			};
+		}
+		const separator = text.endsWith("\n") || text.length === 0 ? "" : "\n";
+		const out = `${text}${separator}models:\n  embed: ${desired}\n`;
+		return isWellFormed(out)
+			? { kind: "updated", content: restore(out) }
+			: { kind: "unsupported", reason: "appending a models block would not be well-formed" };
 	}
 
 	const embed = EMBED_LINE_RE.exec(block[0]);
+	const splice = (patchedBlock: string): EmbedModelPatch => {
+		const out =
+			text.slice(0, block.index) +
+			patchedBlock +
+			text.slice(block.index + block[0].length);
+		// The guard, not a formality: every corruption this function could cause
+		// shows up as a duplicate key, so refuse to hand one back.
+		return isWellFormed(out)
+			? { kind: "updated", content: restore(out) }
+			: { kind: "unsupported", reason: "the edit would have produced a duplicate key" };
+	};
 
-	// A `models:` block with no `embed:` key — qmd fills in the rest itself.
 	if (!embed) {
-		const patched = block[0].replace(/^models:\n/, `models:\n  embed: ${desired}\n`);
-		return {
-			kind: "updated",
-			content:
-				content.slice(0, block.index) +
-				patched +
-				content.slice(block.index + block[0].length),
-		};
+		return splice(block[0].replace(/^models:/, `models:\n  embed: ${desired}`).replace(/^(models:\n  embed: [^\n]*)\n[ \t]*(?:#[^\n]*)?\n/, "$1\n"));
 	}
 
-	// A capture group is `string | undefined` to the compiler even when the
-	// pattern guarantees it; the empty string is not a model anyone configured,
-	// so it falls through to the default-replacement path exactly as it should.
-	const current = embed[2] ?? "";
+	// An `embed:` key with no value is unset, not chosen — the improvement
+	// applies, and the line is replaced rather than a second one inserted.
+	const current = yamlScalar(embed[2] ?? "");
 	if (current === desired) return { kind: "already-set" };
-	if (current !== QMD_DEFAULT_EMBED_MODEL) return { kind: "user-chosen", current };
-
-	const patched = block[0].replace(EMBED_LINE_RE, `$1embed: ${desired}`);
-	return {
-		kind: "updated",
-		content:
-			content.slice(0, block.index) +
-			patched +
-			content.slice(block.index + block[0].length),
-	};
+	if (current !== "" && !QMD_SHIPPED_DEFAULTS.has(current)) {
+		return { kind: "user-chosen", current };
+	}
+	return splice(block[0].replace(EMBED_LINE_RE, `$1embed: ${desired}`));
 }
 
 /**
@@ -146,6 +226,12 @@ export function writeQmdEmbedModel(
 	if (result.kind === "user-chosen") {
 		warn(
 			`QMD embedding model is set to ${result.current}, which is neither qmd's default nor this template's; leaving it alone.`,
+		);
+		return false;
+	}
+	if (result.kind === "unsupported") {
+		warn(
+			`QMD config at ${configPath} has ${result.reason}; embedding model not set. Set models.embed to ${desired} by hand, then run \`qmd embed -f\`.`,
 		);
 		return false;
 	}
