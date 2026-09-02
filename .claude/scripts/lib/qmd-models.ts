@@ -103,7 +103,10 @@ export function upsertEmbedModelInYaml(
 		};
 	}
 
-	const current = embed[2];
+	// A capture group is `string | undefined` to the compiler even when the
+	// pattern guarantees it; the empty string is not a model anyone configured,
+	// so it falls through to the default-replacement path exactly as it should.
+	const current = embed[2] ?? "";
 	if (current === desired) return { kind: "already-set" };
 	if (current !== QMD_DEFAULT_EMBED_MODEL) return { kind: "user-chosen", current };
 
