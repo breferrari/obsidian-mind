@@ -79,7 +79,9 @@ describe("delivery gate", () => {
 
 	test("the subagent checkpoint judges the subagent's own report, never the parent's text", () => {
 		// The parent answers itself: no Agent call.
-		assert.deepEqual(outcomes(continued, continuedStream({ subagent: [said(METER)] }))[2], ["from a subagent", "INVALID"]);
+		const selfAnswered = judge(continued, parseTurns(continuedStream({ subagent: [said(METER)] })), METER)[2]!;
+		assert.equal(selfAnswered.outcome, "INVALID");
+		assert.match(selfAnswered.why, /no subagent answered/);
 		// The subagent says NONE and the parent "helpfully" quotes the line anyway.
 		assert.deepEqual(outcomes(continued, continuedStream({ subagent: [called("Agent"), subagentDone(0), handedBack("NONE"), said(METER)] }))[2], ["from a subagent", "FAIL"]);
 		// The subagent read the vault to answer.
@@ -87,7 +89,10 @@ describe("delivery gate", () => {
 	});
 
 	test("a failed turn or a session that ended early is invalid, never a verdict", () => {
-		assert.deepEqual(outcomes(startup, stream({ type: "result", subtype: "error_max_budget_usd", is_error: true, result: "budget" })), [["at startup", "INVALID"]]);
+		// Even with the right line already in the text, a turn that ended in an error is not a verdict.
+		const failedTurn = judge(startup, parseTurns(stream(said(METER), { type: "result", subtype: "error_max_budget_usd", is_error: true, result: "budget" })), METER)[0]!;
+		assert.equal(failedTurn.outcome, "INVALID");
+		assert.match(failedTurn.why, /error_max_budget_usd/);
 		assert.deepEqual(outcomes(continued, stream(said("OK"), done, compacted, done)), [
 			["after /compact", "INVALID"],
 			["after /clear", "INVALID"],
