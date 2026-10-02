@@ -130,9 +130,9 @@ node --experimental-strip-types .github/scripts/delivery-gate.ts --self-test # f
 node --experimental-strip-types .github/scripts/delivery-gate.ts             # then: PASS at every checkpoint
 ```
 
-The self-test runs two broken copies of the mod, one that cuts its context everywhere and one that delivers it whole only at startup, and every checkpoint must fail against both. If any passes, the gate is broken; fix it before trusting a normal run.
+The self-test runs two broken copies of the mod, one that cuts its context everywhere and one that delivers it whole only at startup. Every checkpoint must fail against both, except the startup-only copy's own startup, which must pass: that control proves the copy delivered at all. Any other outcome means the gate is broken; fix it before trusting a normal run.
 
-Only the session's own events decide. An answer whose turn used a tool, a subagent checkpoint without the subagent's own report, and a `/compact` or `/clear` that left no event of its own are reported INVALID, never PASS, as is a session that errors or times out. Exit codes: 0 pass, 1 a checkpoint did not receive the context, 2 the run could not be judged.
+Only the session's own events decide, and every other road an answer could take counts as INVALID, never PASS: a turn that used a tool, a `/compact` summary that itself carried the line, a `/compact` or `/clear` that left no event of its own, a subagent that was not general-purpose, was handed the line, used tools or did not report its tool count, a settings hook that printed the context when the mod should have delivered it, and a session that errored, timed out or ran an extra turn. Exit codes: 0 pass (with `--self-test`: the gate can fail), 1 a checkpoint did not receive the context (the gate is broken), 2 the run could not be judged.
 
 Two limits: the mod is loaded with `--plugin-dir` rather than found in the vault after the trust prompt, and the fixture's settings-hook context is too short to show a cut, so that path shows only that something arrived. The throwaway vaults run with qmd unresolvable, so they start no search bootstrap on your machine.
 
