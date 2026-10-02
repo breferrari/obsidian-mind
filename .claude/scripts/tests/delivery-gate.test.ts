@@ -6,7 +6,7 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { carries, fixtureEnv, judge, lastLine, parseTurns, plan, quotes, selfTestOutcome, sessionDirs, subagentReport, SUBAGENT_TASK, type Step, type Verdict } from "../../../.github/scripts/delivery-gate.ts";
+import { carries, expectationTracker, fixtureEnv, judge, lastLine, parseTurns, plan, quotes, selfTestOutcome, sessionDirs, subagentReport, SUBAGENT_TASK, type Step, type Verdict } from "../../../.github/scripts/delivery-gate.ts";
 
 const METER = "_context injected: 15.9kB / 20.0kB budget_";
 
@@ -76,6 +76,34 @@ describe("delivery gate: plan and matching", () => {
 		assert.equal(carries("115.9kB or 15.95", METER), false, "a longer number is a different number");
 	});
 
+	test("each shift's own line: quoting a neighbour's is a stale FAIL", () => {
+		const L1 = "_context injected: 15.5kB / 20.0kB budget_";
+		const L2 = "_context injected: 15.9kB / 20.0kB budget_";
+		const L3 = "_context injected: 16.2kB / 20.0kB budget_";
+		const lines = [METER, L1, L1, L2, L2, L3, L3];
+		const honest = parseTurns(continuedStream({ afterCompact: [said(L1)], subagent: [agentCall(), handedBack(L2)], afterClear: [said(L3)] }));
+		assert.deepEqual(judge(continued, honest, lines, MOD).map((v) => v.outcome), ["PASS", "PASS", "PASS"]);
+		// After the second /clear the main loop quotes the subagent's line from the conversation.
+		const echoed = judge(continued, parseTurns(continuedStream({ afterCompact: [said(L1)], subagent: [agentCall(), handedBack(L2)], afterClear: [said(L2)] })), lines, MOD)[2]!;
+		assert.equal(echoed.outcome, "FAIL");
+		assert.match(echoed.why, /stale/);
+	});
+
+	test("the tracker shifts exactly at the steps that shift, and only when they are reached", () => {
+		const calls: number[] = [];
+		const lineFor = expectationTracker("L0", (n) => {
+			calls.push(n);
+			return `L${n}`;
+		});
+		const lines: string[] = [];
+		for (const step of continued) {
+			lines.push(lineFor(step));
+			if (step.kind === "compact") assert.deepEqual(calls, [1], "the first shift lands with the /compact, not before");
+		}
+		assert.deepEqual(lines, ["L0", "L1", "L1", "L2", "L2", "L3", "L3"]);
+		assert.deepEqual(calls, [1, 2, 3]);
+	});
+
 	test("each step is judged against its own line when the fixture shifts mid-session", () => {
 		const LATER = "_context injected: 16.4kB / 20.0kB budget_";
 		const lines = continued.map((_, i) => (i < 1 ? METER : LATER));
@@ -142,6 +170,12 @@ describe("delivery gate: verdicts", () => {
 		assert.match(v.why, /summary itself carried/);
 	});
 
+	test("a summary sent as blocks is still read; a compaction with no readable summary is invalid", () => {
+		const blocks = { type: "user", isSynthetic: true, message: { role: "user", content: [{ type: "text", text: `It ended at ${METER}.` }] } };
+		assert.match(run(continued, continuedStream({ compact: [stoodDown, compacted, blocks] }))[0]!.why, /summary itself carried/);
+		assert.match(run(continued, continuedStream({ compact: [stoodDown, compacted] }))[0]!.why, /could not be read/);
+	});
+
 	test("a turn nobody sent spoils the session, even when it ended normally", () => {
 		const extra = continuedStream({ compact: [stoodDown, compacted, summary("OK."), done, said("an unsent turn")] });
 		for (const v of run(continued, extra)) {
@@ -187,6 +221,8 @@ describe("delivery gate: the subagent checkpoint", () => {
 	test("a subagent handed the line in its prompt is invalid", () => {
 		assert.match(subagentVerdict([agentCall(`${SUBAGENT_TASK} The line is ${METER}.`), handedBack(METER)]).why, /handed the line/);
 		assert.match(subagentVerdict([agentCall(`${SUBAGENT_TASK} Hint: it mentions 15.9kB.`), handedBack(METER)]).why, /handed the line/, "a size alone is enough to rebuild it");
+		const described = called("Agent", { prompt: SUBAGENT_TASK, description: "Find 15.9kB", subagent_type: "general-purpose" });
+		assert.match(subagentVerdict([described, handedBack(METER)]).why, /handed the line/, "the description is handed over too");
 	});
 
 	test("a subagent that used tools, or whose tool count was not reported, is invalid", () => {
@@ -212,7 +248,7 @@ describe("delivery gate: sessions that did not run as planned", () => {
 	});
 
 	test("checkpoints a session never reached say why it stopped", () => {
-		const cut = stream(stoodDown, said("OK"), done, stoodDown, compacted, done);
+		const cut = stream(stoodDown, said("OK"), done, stoodDown, compacted, summary("OK."), done);
 		assert.match(judge(continued, parseTurns(cut), METER, { withMod: true, ending: "timeout" })[0]!.why, /timed out/);
 		assert.match(judge(continued, parseTurns(cut), METER, { withMod: true, ending: "extra-turn" })[0]!.why, /turn nobody sent/);
 		assert.match(judge(continued, parseTurns(cut), METER, { withMod: true })[0]!.why, /ended before/);
@@ -236,6 +272,10 @@ describe("delivery gate: self-test and environment", () => {
 		const leaky = broken("PASS");
 		leaky[0]!.verdicts[1] = v("after /compact", "PASS");
 		assert.equal(selfTestOutcome(leaky).exitCode, 1);
+		const leakedAndInvalid = broken("PASS");
+		leakedAndInvalid[0]!.verdicts[1] = v("after /compact", "PASS");
+		leakedAndInvalid[1]!.verdicts[1] = v("after /compact", "INVALID");
+		assert.equal(selfTestOutcome(leakedAndInvalid).exitCode, 1, "a PASS against a broken mod is not excused by an INVALID elsewhere");
 		const invalid = broken("PASS");
 		invalid[1]!.verdicts[1] = v("after /compact", "INVALID");
 		assert.equal(selfTestOutcome(invalid).exitCode, 2);

@@ -45,7 +45,8 @@
  * startup, which must PASS (the control that proves that copy delivered).
  * It exits 0 when the gate can fail. Exit codes: 0 pass (or, with
  * `--self-test`, the gate can fail), 1 a checkpoint failed (or the gate is
- * broken), 2 the run could not be judged. A FAIL wins over an INVALID.
+ * broken), 2 the run could not be judged. A FAIL wins over an INVALID, and in
+ * the self-test so does any PASS against a broken mod.
  *
  * It costs model turns on the caller's account, and it is not wired to CI: a
  * public repository's CI has no credentials to give it.
@@ -142,6 +143,7 @@ export function carries(text: string, expected: string): boolean {
 /** One Agent call: what the main loop asked for, and what came back. */
 export type AgentCall = {
 	readonly type: string | null;
+	/** Everything the main loop handed the subagent: its description and its prompt. */
 	readonly prompt: string;
 	/** The subagent's own words, or null when no result came back. */
 	readonly report: string | null;
@@ -168,7 +170,7 @@ export type Turn = {
 	readonly error: string | null;
 };
 
-type Block = { type?: string; text?: string; name?: string; id?: string; tool_use_id?: string; content?: unknown; input?: { prompt?: string; subagent_type?: string } };
+type Block = { type?: string; text?: string; name?: string; id?: string; tool_use_id?: string; content?: unknown; input?: { prompt?: string; description?: string; subagent_type?: string } };
 type StreamEvent = {
 	type?: string;
 	subtype?: string;
@@ -228,11 +230,11 @@ export function parseTurns(streamJson: string): Turn[] {
 				} else if (block.type === "text") t.text += `${block.text ?? ""}\n`;
 				else if (block.type === "tool_use") {
 					t.tools.push(block.name ?? "?");
-					if (block.name === "Agent" && block.id) t.calls.set(block.id, { type: block.input?.subagent_type ?? null, prompt: block.input?.prompt ?? "", report: null, toolUses: null });
+					if (block.name === "Agent" && block.id) t.calls.set(block.id, { type: block.input?.subagent_type ?? null, prompt: [block.input?.description, block.input?.prompt].filter(Boolean).join("\n"), report: null, toolUses: null });
 				}
 			}
 		} else if (event.type === "user") {
-			if (event.isSynthetic && typeof event.message?.content === "string") t.summaries.push(event.message.content);
+			if (event.isSynthetic) t.summaries.push(textOf(event.message?.content));
 			for (const block of blocks) {
 				const call = block.type === "tool_result" && block.tool_use_id ? t.calls.get(block.tool_use_id) : undefined;
 				if (!call) continue;
@@ -284,6 +286,7 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 		if (!turn) problem ??= ending === "timeout" ? "the turn timed out" : ending === "extra-turn" ? "the session ran a turn nobody sent" : "the session ended before this turn";
 		else if (turn.error) problem ??= `the turn failed (${turn.error})`;
 		else if (step.kind === "compact" && !turn.compacted) problem ??= "/compact left no compact_boundary event";
+		else if (step.kind === "compact" && turn.summaries.every((summary) => summary.trim() === "")) problem ??= "the /compact summary could not be read, so it cannot be cleared of the line";
 		else if (step.kind === "compact" && turn.summaries.some((summary) => carries(summary, want))) problem ??= "the /compact summary itself carried the line";
 		else if (step.kind === "clear" && !turn.reset) problem ??= "/clear left no conversation_reset event";
 		else if (step.kind === "ask" && turn.tools.length > 0) problem ??= `the answer used tools (${turn.tools.join(", ")})`;
@@ -292,7 +295,7 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 			if (calls.length !== 1 || calls[0]!.report === null) problem ??= "no single subagent answered: the main loop answered itself";
 			else if (turn.tools.some((name) => name !== "Agent")) problem ??= `the main loop used tools (${turn.tools.join(", ")})`;
 			else if (calls[0]!.type !== "general-purpose") problem ??= `the subagent was ${calls[0]!.type ?? "of no stated type"}, not general-purpose`;
-			else if (carries(calls[0]!.prompt, want)) problem ??= "the main loop handed the line to the subagent in its prompt";
+			else if (carries(calls[0]!.prompt, want)) problem ??= "the main loop handed the line to the subagent in its prompt or description";
 			else if (calls[0]!.toolUses === null) problem ??= "the subagent's tool count was not reported";
 			else if (calls[0]!.toolUses > 0 || turn.subagentToolUses > 0) problem ??= `the subagent used ${Math.max(calls[0]!.toolUses, turn.subagentToolUses)} tool(s)`;
 		}
@@ -305,7 +308,13 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 		if (problem === null && answer.trim() === "") problem = "no answer";
 		const shown = quotes(answer, want) ? want : lastLine(answer);
 		if (problem !== null) verdicts.push({ checkpoint: step.name, expected: want, answer: shown, outcome: "INVALID", why: problem });
-		else verdicts.push({ checkpoint: step.name, expected: want, answer: shown, outcome: quotes(answer, want) ? "PASS" : "FAIL", why: "" });
+		else if (quotes(answer, want)) verdicts.push({ checkpoint: step.name, expected: want, answer: shown, outcome: "PASS", why: "" });
+		else {
+			// A line from before a shift arrived whole, but stale: the context was not delivered again.
+			const earlier = steps.slice(0, i).map((_, j) => expectedAt(j)).filter((line) => line !== "" && line !== want);
+			const stale = earlier.some((line) => quotes(answer, line));
+			verdicts.push({ checkpoint: step.name, expected: want, answer: shown, outcome: "FAIL", why: stale ? "stale: it quoted the context from before the shift" : "" });
+		}
 	});
 	return verdicts;
 }
@@ -424,7 +433,23 @@ export function shiftFixture(vault: string, n: number, withMod: boolean, before:
 	const after = lastLine(contextOf(vault, withMod));
 	const size = (line: string) => line.match(/\d+(?:\.\d+)?\s*kB/i)?.[0];
 	if (size(after) === undefined || size(after) === size(before)) throw new Error(`shift ${n} did not move the delivered size: ${after}`);
+	if (after.includes("collapsed")) throw new Error(`shift ${n} pushed the context past the instruction budget, so it collapsed: ${after}`);
 	return after;
+}
+
+/**
+ * Called once per step, just before it is sent: the line that step's answer
+ * must quote. The starting line until a step shifts the fixture; from then on
+ * the line `shift` returned, so the shift lands before the step that causes
+ * the re-delivery, never earlier.
+ */
+export function expectationTracker(start: string, shift: (n: number, before: string) => string): (step: Step) => string {
+	let current = start;
+	let shifts = 0;
+	return (step) => {
+		if (step.shifts) current = shift(++shifts, current);
+		return current;
+	};
 }
 
 /** Run one paced session: each turn is sent once the previous one's result arrives, after `beforeSend` has run for it. */
@@ -498,13 +523,12 @@ async function runSession(steps: readonly Step[], breakage: Breakage, options: {
 		}
 		// The line each step's answer must quote: the startup one until a step shifts the fixture.
 		const expectedByStep: string[] = [];
-		let current = expected;
-		let shifts = 0;
+		const lineFor = expectationTracker(expected, (n, before) => shiftFixture(vault, n, options.withMod, before));
 		const { transcript, ending } = await session(vault, steps, options, (step, index) => {
-			if (step.shifts) current = shiftFixture(vault, ++shifts, options.withMod, current);
-			expectedByStep[index] = current;
+			expectedByStep[index] = lineFor(step);
 		});
-		return judge(steps, parseTurns(transcript), steps.map((_, i) => expectedByStep[i] ?? current), { withMod: options.withMod, ending });
+		// Steps never sent (the session stopped early) are INVALID whatever their line.
+		return judge(steps, parseTurns(transcript), steps.map((_, i) => expectedByStep[i] ?? ""), { withMod: options.withMod, ending });
 	} finally {
 		removeFixture(vault);
 	}
@@ -519,9 +543,13 @@ const print = (label: string, verdicts: readonly Verdict[]) => {
 /** The self-test's expectation: every checkpoint fails, except the startup-only copy's own startup, its positive control. */
 export function selfTestOutcome(runs: ReadonlyArray<{ readonly breakage: Breakage; readonly verdicts: readonly Verdict[] }>): { exitCode: 0 | 1 | 2; message: string } {
 	const all = runs.flatMap((run) => run.verdicts.map((v) => ({ ...v, breakage: run.breakage })));
+	const isControl = (v: { breakage: Breakage; checkpoint: string }) => v.breakage === "startup-only" && v.checkpoint === "at startup";
+	// A PASS against a broken mod proves the gate cannot fail there; nothing else in the run can excuse it.
+	const leaked = all.filter((v) => v.outcome === "PASS" && !isControl(v));
+	if (leaked.length > 0) return { exitCode: 1, message: `The gate is broken: ${leaked.map((v) => `${v.checkpoint} (${v.breakage}) passed`).join(", ")}.` };
 	const invalid = all.filter((v) => v.outcome === "INVALID").length;
 	if (invalid > 0) return { exitCode: 2, message: `${invalid} checkpoint(s) could not be judged; fix the run before trusting the self-test.` };
-	const wrong = all.filter((v) => v.outcome !== (v.breakage === "startup-only" && v.checkpoint === "at startup" ? "PASS" : "FAIL"));
+	const wrong = all.filter((v) => v.outcome !== (isControl(v) ? "PASS" : "FAIL"));
 	if (wrong.length > 0) return { exitCode: 1, message: `The gate is broken: ${wrong.map((v) => `${v.checkpoint} (${v.breakage}) ${v.outcome}`).join(", ")}.` };
 	return { exitCode: 0, message: "The gate can fail: every checkpoint failed against both broken mods, and the startup-only control passed." };
 }
@@ -562,7 +590,7 @@ async function main(): Promise<void> {
 	const invalid = verdicts.filter((v) => v.outcome === "INVALID").length;
 	const failed = verdicts.filter((v) => v.outcome === "FAIL").length;
 	if (invalid > 0) console.log(`\n${invalid} checkpoint(s) could not be judged.`);
-	if (failed > 0) console.log(`\n${failed} checkpoint(s) did not receive the whole context.`);
+	if (failed > 0) console.log(`\n${failed} checkpoint(s) did not receive the current context: cut, missing, or stale from before a shift.`);
 	if (invalid === 0 && failed === 0) console.log("\nAll checkpoints received the whole context.");
 	// A FAIL needs nothing else to be judged: it wins over an INVALID elsewhere.
 	process.exitCode = failed > 0 ? 1 : invalid > 0 ? 2 : 0;
