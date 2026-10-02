@@ -231,10 +231,10 @@ describe("session-start — listing collapse and injection budget", () => {
 		assert.match(listing, /projects[\\/]alpha[\\/]Note 0\.md/);
 	});
 
-	test("no manifest budget → plain meter, nothing collapsed (pre-budget behaviour)", () => {
+	test("no manifest budget → the hook output ceiling is the budget (#254)", () => {
 		const { stdout } = runBig();
 		const last = stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
-		assert.match(last, /^_context injected: \d+\.\dkB_$/);
+		assert.match(last, /^_context injected: \d+\.\dkB \/ 9\.1kB budget(?: — collapsed: [^_]+)?_$/);
 	});
 
 	test("a tight manifest budget degrades sections and NAMES them in the meter", () => {
@@ -263,13 +263,28 @@ describe("session-start — listing collapse and injection budget", () => {
 		}
 	});
 
-	test("a generous budget collapses nothing but still reports the ceiling", () => {
+	test("a budget under the ceiling collapses nothing it does not need to and reports itself", () => {
 		const manifest = join(BIG_DIR, "vault-manifest.json");
-		writeFileSync(manifest, JSON.stringify({ eager_layer_budget_bytes: 5_000_000 }));
+		writeFileSync(manifest, JSON.stringify({ eager_layer_budget_bytes: 9_000 }));
 		try {
 			const last =
 				runBig().stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
-			assert.match(last, /^_context injected: \d+\.\dkB \/ 5000\.0kB budget_$/);
+			assert.match(last, /^_context injected: \d+\.\dkB \/ 9\.0kB budget_$/);
+		} finally {
+			rmSync(manifest, { force: true });
+		}
+	});
+
+	test("a budget above the hook output cap is clamped, and the meter says so (#254)", () => {
+		const manifest = join(BIG_DIR, "vault-manifest.json");
+		writeFileSync(manifest, JSON.stringify({ eager_layer_budget_bytes: 80_000 }));
+		try {
+			const last =
+				runBig().stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
+			assert.match(
+				last,
+				/^_context injected: \d+\.\dkB \/ 9\.1kB budget \(80\.0kB configured, held under the hook output cap\)(?: — collapsed: [^_]+)?_$/,
+			);
 		} finally {
 			rmSync(manifest, { force: true });
 		}
@@ -287,6 +302,64 @@ describe("session-start — listing collapse and injection budget", () => {
 			);
 		} finally {
 			rmSync(manifest, { force: true });
+		}
+	});
+});
+
+/**
+ * Claude Code caps a hook's plain stdout at 10,000 characters; past it, the
+ * session gets a file path and the first 2,000 characters (#254). The output
+ * must fit whole, with the meter as its last line, whatever the vault holds.
+ */
+describe("session-start — the hook output cap", () => {
+	const CAP = 10_000;
+	const lastLine = (stdout: string) => stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
+
+	test("an ordinary vault of ~250 nested notes fits, the listing degrading first", () => {
+		// The shape that reproduced #254: nested project folders, each under
+		// the listing-collapse threshold, so nothing folds by count.
+		const dir = mkdtempSync(join(tmpdir(), "session-start-cap-"));
+		try {
+			mkdirSync(join(dir, "brain"), { recursive: true });
+			writeFileSync(join(dir, "brain", "North Star.md"), "---\ndescription: test\n---\n\n# North Star\n\n- placeholder\n");
+			for (let p = 0; p < 12; p++) {
+				for (const sub of ["notes", "decisions"]) {
+					mkdirSync(join(dir, "projects", `project-${p}`, sub), { recursive: true });
+					for (let i = 0; i < 10; i++) {
+						writeFileSync(
+							join(dir, "projects", `project-${p}`, sub, `Example project-${p} ${sub} note ${i}.md`),
+							"---\ndescription: x\n---\n",
+						);
+					}
+				}
+			}
+			writeFileSync(join(dir, "vault-manifest.json"), JSON.stringify({ eager_layer_budget_bytes: 80_000 }));
+			const { stdout, code, stderr } = spawnHook(SCRIPT, "", { CLAUDE_PROJECT_DIR: dir });
+			assert.equal(code, 0);
+			assert.equal(stderr, "");
+			assert.ok(stdout.length <= CAP, `stdout is ${stdout.length} characters`);
+			assert.match(lastLine(stdout), /^_context injected: .* — collapsed: Vault File Listing_$/);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("sections that never degrade cannot carry the output past the cap: it is cut, and the meter says so", () => {
+		// Open tasks never degrade. Ten long ones are over the cap on their own,
+		// with every degradable section already a pointer.
+		const dir = mkdtempSync(join(tmpdir(), "session-start-cut-"));
+		try {
+			const tasks = Array.from({ length: 10 }, (_, i) => `- [ ] task ${i} ${"x".repeat(1_500)}`).join("\n");
+			writeFileSync(join(dir, "Tasks.md"), `# Tasks\n\n${tasks}\n`);
+			const { stdout, code, stderr } = spawnHook(SCRIPT, "", { CLAUDE_PROJECT_DIR: dir });
+			assert.equal(code, 0);
+			assert.equal(stderr, "");
+			assert.ok(stdout.includes("task 0 "), "the fixture's tasks reached the output");
+			assert.ok(stdout.length <= CAP, `stdout is ${stdout.length} characters`);
+			assert.ok(stdout.includes("… (cut to fit the hook output cap"), "the cut is marked where it happened");
+			assert.match(lastLine(stdout), /^_context injected: .* — cut to fit the hook output cap_$/);
+		} finally {
+			rmTemp(dir);
 		}
 	});
 });
