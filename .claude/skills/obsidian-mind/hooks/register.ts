@@ -1,6 +1,6 @@
 import { atom, read, update, type EngineInterface, type Register } from 'claude-code'
 import { withSessionContext } from './context.ts'
-import { parseStopReport, summaryLine } from './stop.ts'
+import { carriesReport, parseStopReport, summaryLine, withLine } from './stop.ts'
 
 /**
  * obsidian-mind's Claude Code mod (#262).
@@ -110,8 +110,9 @@ export const register: Register = (on) => {
 
 	on('turn.complete', async ($, e, next) => {
 		const done = await next(e)
-		// Only under a main-loop answer; a subagent's turn draws nothing.
-		if (e.agentId !== undefined) return done
+		// Only under a main-loop answer that completed: a subagent's turn, an
+		// interrupted one or one an error ended keeps the line for the next.
+		if (e.agentId !== undefined || e.reason !== 'answer') return done
 		const line = await read($, pendingLine)
 		if (line === null) return done
 		await update($, pendingLine, () => null)
@@ -119,18 +120,23 @@ export const register: Register = (on) => {
 		if (urgent !== null) {
 			// Never from classic.Stop: the engine refuses a submit that would wait
 			// on the turn the hook may be holding, and names turn.complete instead.
+			// Framed as this plugin's message, so the model knows it is not the
+			// person speaking. The full report rides it (prompt.submit below).
 			await update($, pendingUrgent, () => null)
-			$.prompt.submit({ text: urgent, asUser: true }).catch(() => {
-				// Not submitted: the report still rides the user's next prompt.
+			$.prompt.submit({ text: urgent }).catch(() => {
+				// Not submitted: the report stays queued for the person's next prompt.
 			})
 		}
-		return { ...done, text: line }
+		return { ...done, text: withLine(done.text, e.answer, line) }
 	})
 
 	on('prompt.submit', async ($, e, next) => {
 		const report = await read($, pendingReport)
-		if (report === null) return next(e)
-		await update($, pendingReport, () => null)
-		return next({ ...e, context: [...(e.context ?? []), report] })
+		if (report === null || !carriesReport(e.origin)) return next(e)
+		const entered = await next({ ...e, context: [...(e.context ?? []), report] })
+		// Cleared only once a prompt actually entered with it: a prompt dropped
+		// or blocked below keeps the report for the next one.
+		if (entered.drop === undefined) await update($, pendingReport, () => null)
+		return entered
 	})
 }
