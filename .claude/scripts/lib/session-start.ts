@@ -202,7 +202,7 @@ export const METER_HEADROOM = 400;
  * 10,000 characters and, over it, injects a file path and the first 2,000
  * characters instead, so a budget above the cap never binds: the session
  * gets a preview and the meter at the end is the first thing lost (#254).
- * HOOK_OUTPUT_MAX_CHARS (9,500) already keeps a margin under that 10,000. The
+ * HOOK_OUTPUT_MAX_CHARS already keeps a margin under that 10,000. The
  * budget is in bytes, and a string's UTF-8 bytes are never fewer than its
  * characters, so a byte ceiling also holds the character cap.
  */

@@ -1206,7 +1206,7 @@ describe("injectionMode", () => {
 });
 
 describe("the injection budget under the hook output cap (#254)", () => {
-	test("the ceiling leaves the meter its headroom under the 9,500-character output cap", () => {
+	test("the ceiling leaves the meter its headroom under the hook output cap", () => {
 		assert.equal(INJECTION_CEILING_BYTES, 9_100);
 	});
 
