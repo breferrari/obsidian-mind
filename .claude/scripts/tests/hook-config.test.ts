@@ -223,7 +223,9 @@ describe("hook config — Claude commands find the vault root from a subfolder (
 		return found ? [found] : [];
 	}
 	const shells = posixShells();
-	const noShell = shells.length === 0 ? "no POSIX shell found (on Windows: Git Bash)" : false;
+	// Locally a missing shell skips with the reason. On CI it must fail instead:
+	// a run that skips every command proves nothing and would still pass.
+	const noShell = shells.length === 0 && !process.env["CI"] ? "no POSIX shell found (on Windows: Git Bash)" : false;
 
 	/** The script path the command hands to node under `shell`, run from `cwd` with `env`. */
 	function resolvedScript(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv): string {
