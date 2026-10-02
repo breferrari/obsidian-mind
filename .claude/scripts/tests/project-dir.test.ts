@@ -50,6 +50,15 @@ describe("resolveProjectDir — finds the vault root above the named folder", ()
 		assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: root }, isRoot), root);
 	});
 
+	test("the nearest root wins: a vault inside another vault resolves to the inner one", () => {
+		// Starting the search above the named folder would skip the inner root
+		// and land on the outer one; the fallback could not hide that here.
+		const inner = join(root, "nested-vault");
+		const both = (dir: string) => dir === root || dir === inner;
+		assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: inner }, both), inner);
+		assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: join(inner, "work") }, both), inner);
+	});
+
 	test("no vault root above the named folder keeps the named folder", () => {
 		const elsewhere = join(tmpdir(), "pd-elsewhere", "x");
 		assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: elsewhere }, isRoot), elsewhere);
