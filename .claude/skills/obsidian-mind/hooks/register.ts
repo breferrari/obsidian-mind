@@ -41,6 +41,13 @@ const shownReport = atom({ plugin: 'obsidian-mind', key: 'shownReport' } as cons
 const pendingLine = atom({ plugin: 'obsidian-mind', key: 'pendingLine' } as const, null)
 const pendingReport = atom({ plugin: 'obsidian-mind', key: 'pendingReport' } as const, null)
 const pendingUrgent = atom({ plugin: 'obsidian-mind', key: 'pendingUrgent' } as const, null)
+/** Set while the turn our urgent prompt started is running, so it cannot start another. */
+const urgentTurn = atom({ plugin: 'obsidian-mind', key: 'urgentTurn' } as const, null)
+
+/** Fold an urgent finding that never got its own turn into the queued report, so it is not lost. */
+async function keepUrgent($: EngineInterface, urgent: string): Promise<void> {
+	await update($, pendingReport, (report) => `${report ?? ''}${report ? '\n\n' : ''}Urgent, not yet seen: ${urgent}`)
+}
 
 /** Run one of the vault's hook scripts with `input` on stdin; its stdout, or a throw. */
 async function runScript($: EngineInterface, root: string, script: string, input: object): Promise<string> {
@@ -59,17 +66,21 @@ async function runScript($: EngineInterface, root: string, script: string, input
 }
 
 export const register: Register = (on) => {
-	on("classic.SessionStart", async ($, e, next) => {
-		// If this run fails, the settings hook runs instead. At a start that
-		// begins a conversation it prints the full layer, so the old context is
-		// cleared first (and the render redrawn) or it would ride beside the
-		// fresh one. At a compaction it prints only a pointer, trusting the
-		// static half to be in the conversation already; under the mod it never
-		// was, so there the last good context is kept rather than lost.
-		if (e.source !== "compact") {
-			await update($, sessionContext, () => null);
-			$.ui.invalidate("prompt.context");
+	on('classic.SessionStart', async ($, e, next) => {
+		// A new conversation (startup, /clear) drops what an earlier one queued:
+		// `/clear` keeps the process and its `$.state`, and a report about the
+		// old conversation must not ride the first prompt of the new one. A
+		// compaction or a resume continues the conversation, so it keeps it.
+		if (e.source === 'startup' || e.source === 'clear') {
+			// One call per atom: the validator reads each state source statically.
+			await update($, pendingLine, () => null)
+			await update($, pendingReport, () => null)
+			await update($, pendingUrgent, () => null)
+			await update($, urgentTurn, () => null)
 		}
+		// Cleared first: if this run fails, the settings hook delivers fresh
+		// output and no earlier context may ride beside it.
+		await update($, sessionContext, () => null);
 		const root = await $.session.root();
 		const text = await runScript($, root, "session-start.ts", { ...e, om_mod: "deliver" });
 		await update($, sessionContext, () => text);
@@ -113,19 +124,34 @@ export const register: Register = (on) => {
 		// Only under a main-loop answer that completed: a subagent's turn, an
 		// interrupted one or one an error ended keeps the line for the next.
 		if (e.agentId !== undefined || e.reason !== 'answer') return done
+		// The turn our own urgent prompt started has ended: the next urgent
+		// finding waits for the person rather than starting another turn.
+		const wasUrgentTurn = (await read($, urgentTurn)) !== null
+		await update($, urgentTurn, () => null)
 		const line = await read($, pendingLine)
 		if (line === null) return done
 		await update($, pendingLine, () => null)
 		const urgent = await read($, pendingUrgent)
 		if (urgent !== null) {
-			// Never from classic.Stop: the engine refuses a submit that would wait
-			// on the turn the hook may be holding, and names turn.complete instead.
-			// Framed as this plugin's message, so the model knows it is not the
-			// person speaking. The full report rides it (prompt.submit below).
 			await update($, pendingUrgent, () => null)
-			$.prompt.submit({ text: urgent }).catch(() => {
-				// Not submitted: the report stays queued for the person's next prompt.
-			})
+			if (wasUrgentTurn) {
+				// At most one turn of our own in a row: findings that keep changing
+				// while the agent fixes them must not chain turns.
+				await keepUrgent($, urgent)
+			} else {
+				// Never from classic.Stop: the engine refuses a submit that would
+				// wait on the turn the hook may be holding, and names turn.complete
+				// instead. Framed as this plugin's message, so the model knows it is
+				// not the person speaking. The full report rides it (prompt.submit
+				// below). If it never enters, the finding joins the queued report.
+				await update($, urgentTurn, () => urgent)
+				$.prompt.submit({ text: urgent }).then(
+					async (entered) => {
+						if (entered.drop !== undefined) await keepUrgent($, urgent)
+					},
+					() => keepUrgent($, urgent),
+				)
+			}
 		}
 		return { ...done, text: withLine(done.text, e.answer, line) }
 	})
@@ -133,10 +159,19 @@ export const register: Register = (on) => {
 	on('prompt.submit', async ($, e, next) => {
 		const report = await read($, pendingReport)
 		if (report === null || !carriesReport(e.origin)) return next(e)
-		const entered = await next({ ...e, context: [...(e.context ?? []), report] })
-		// Cleared only once a prompt actually entered with it: a prompt dropped
-		// or blocked below keeps the report for the next one.
-		if (entered.drop === undefined) await update($, pendingReport, () => null)
+		// Taken before `next`, so two prompts entering at once cannot both carry
+		// it; put back if this one never enters (dropped or blocked below, or a
+		// throw), unless a newer report was queued meanwhile.
+		await update($, pendingReport, () => null)
+		const putBack = () => update($, pendingReport, (now) => now ?? report)
+		let entered: Awaited<ReturnType<typeof next>>
+		try {
+			entered = await next({ ...e, context: [...(e.context ?? []), report] })
+		} catch (error) {
+			await putBack()
+			throw error
+		}
+		if (entered.drop !== undefined) await putBack()
 		return entered
 	})
 }

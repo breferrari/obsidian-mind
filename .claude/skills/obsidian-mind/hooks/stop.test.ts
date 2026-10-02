@@ -3,8 +3,8 @@ import { carriesReport, parseStopReport, summaryLine, withLine, type StopReport 
 
 // Run with `claude plugin test .claude/skills/obsidian-mind`. Each test's own
 // `on` hooks sit beneath the mod and stand in for the engine and the vault.
-// turn.complete is not a call a test can raise, so the line under the answer
-// is checked through summaryLine and in a live session.
+// What the kit cannot establish is the order a live session raises them in
+// (classic.Stop before turn.complete); that is checked in a live session.
 
 const ROOT = '/vault'
 const report = (key: string, extra: Partial<StopReport> = {}): StopReport => ({
@@ -14,11 +14,20 @@ const report = (key: string, extra: Partial<StopReport> = {}): StopReport => ({
 	...extra,
 })
 
-type World = { runs: string[]; passedDown: Array<Record<string, unknown>>; submitted: Array<{ text: string; context?: readonly string[] }>; dropNext: boolean }
+type World = {
+	runs: string[]
+	passedDown: Array<Record<string, unknown>>
+	submitted: Array<{ text: string; context?: readonly string[]; origin?: unknown }>
+	/** The next prompt is dropped below, or the next one throws below. */
+	dropNext: boolean
+	throwNext: boolean
+	/** A line another hook below sets under the answer, if any. */
+	lowerLine: string | null
+}
 
 /** The world beneath the mod. `reply` is what stop-checklist.ts prints, per call. */
 function vault(on: Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1], reply: () => { exitCode: number; stdout: string }): World {
-	const world: World = { runs: [], passedDown: [], submitted: [], dropNext: false }
+	const world: World = { runs: [], passedDown: [], submitted: [], dropNext: false, throwNext: false, lowerLine: null }
 	on('session.root', () => ({ value: ROOT }))
 	on('process.run', (_$, e) => {
 		world.runs.push(e.init?.stdin ?? '')
@@ -30,7 +39,11 @@ function vault(on: Parameters<Extract<Parameters<typeof test>[1], (...args: neve
 		return {}
 	})
 	on('prompt.submit', (_$, e) => {
-		world.submitted.push({ text: e.text, context: e.context })
+		world.submitted.push({ text: e.text, context: e.context, origin: e.origin })
+		if (world.throwNext) {
+			world.throwNext = false
+			throw new Error('failed below')
+		}
 		// A settings hook below can block a prompt: it never enters.
 		if (world.dropNext) {
 			world.dropNext = false
@@ -38,10 +51,23 @@ function vault(on: Parameters<Extract<Parameters<typeof test>[1], (...args: neve
 		}
 		return { text: e.text, context: e.context }
 	})
+	on('turn.complete', (_$, e) => ({ text: world.lowerLine ?? e.answer }))
+	on('fs.write', () => ({ value: undefined }))
+	on('ui.invalidate', () => ({ value: undefined }))
+	on('classic.SessionStart', () => ({}))
 	return world
 }
 
 const ok = (r: StopReport) => () => ({ exitCode: 0, stdout: JSON.stringify({ report: r }) })
+
+/** A main-loop answer that completed, as turn.complete receives it. */
+const answered = (extra: Record<string, unknown> = {}) => ({ answer: 'the answer', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer', ...extra }) as never
+
+/** Let an unawaited submit and its follow-up settle. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+const LINE = 'vault check: 1 note(s) marked done but still in active/ · the full report reaches the agent with your next message'
+const HANDED = (key: string) => `Stop hook report, handed over with this message: ${key}`
 
 describe('Stop report (#266)', () => {
 	test('a changed report: the settings hook stands down and the next prompt carries the full report, once', async ($, on) => {
@@ -142,6 +168,109 @@ describe('Stop report (#266)', () => {
 		expect(world.runs.length).toBe(1)
 		expect(world.passedDown[0]?.['om_mod']).toBe(undefined)
 		expect(world.submitted[0]?.context ?? []).toEqual([])
+	})
+})
+
+describe('the line under the answer (#266)', () => {
+	test('drawn once, under the next completed answer', async ($, on) => {
+		vault(on, ok(report('k')))
+		await $.classic.Stop({ stop_hook_active: false })
+
+		expect((await $.turn.complete(answered())).text).toBe(LINE)
+		expect((await $.turn.complete(answered())).text).toBe('the answer')
+	})
+
+	test('a subagent turn, an interrupt, an error or a refusal keeps it for the next answer', async ($, on) => {
+		vault(on, ok(report('k')))
+		await $.classic.Stop({ stop_hook_active: false })
+		for (const turn of [answered({ agentId: 'a1' }), answered({ reason: 'aborted' }), answered({ reason: 'error' }), answered({ reason: 'refusal' })]) {
+			expect((await $.turn.complete(turn)).text).toBe('the answer')
+		}
+
+		expect((await $.turn.complete(answered())).text).toBe(LINE)
+	})
+
+	test('a line a hook below set is kept, and ours follows it', async ($, on) => {
+		const world = vault(on, ok(report('k')))
+		world.lowerLine = 'TL;DR: done'
+		await $.classic.Stop({ stop_hook_active: false })
+
+		expect((await $.turn.complete(answered())).text).toBe(`TL;DR: done\n${LINE}`)
+	})
+
+	test('with no urgent finding, no prompt is submitted', async ($, on) => {
+		const world = vault(on, ok(report('k')))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+
+		expect(world.submitted.length).toBe(0)
+	})
+
+	test('/clear drops what the old conversation queued; a compaction keeps it', async ($, on) => {
+		const world = vault(on, ok(report('k')))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.classic.SessionStart({ source: 'compact' } as never)
+		expect((await $.turn.complete(answered())).text).toBe(LINE)
+
+		await $.classic.SessionStart({ source: 'clear' } as never)
+		expect((await $.turn.complete(answered())).text).toBe('the answer')
+		await $.prompt.submit({ text: 'first in the new conversation' })
+		expect(world.submitted.at(-1)?.context ?? []).toEqual([])
+	})
+})
+
+describe('an urgent finding (#266)', () => {
+	test("gets one turn of its own, framed as the plugin's, carrying the report", async ($, on) => {
+		const world = vault(on, ok(report('k', { urgent: 'push blocked' })))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+
+		expect(world.submitted.length).toBe(1)
+		expect(world.submitted[0]?.text).toBe('push blocked')
+		expect(world.submitted[0]?.origin).toEqual(expect.objectContaining({ kind: 'plugin', name: 'obsidian-mind' }))
+		expect(world.submitted[0]?.context).toEqual([HANDED('k')])
+		await $.prompt.submit({ text: 'typed' })
+		expect(world.submitted[1]?.context ?? []).toEqual([])
+	})
+
+	test('dropped below, it joins the report the next prompt carries', async ($, on) => {
+		const world = vault(on, ok(report('k', { urgent: 'push blocked' })))
+		await $.classic.Stop({ stop_hook_active: false })
+		world.dropNext = true
+		await $.turn.complete(answered())
+		await settle()
+		await $.prompt.submit({ text: 'typed' })
+
+		expect(world.submitted[1]?.context).toEqual([`${HANDED('k')}\n\nUrgent, not yet seen: push blocked`])
+	})
+
+	test('failing below, it joins the report the next prompt carries', async ($, on) => {
+		const world = vault(on, ok(report('k', { urgent: 'push blocked' })))
+		await $.classic.Stop({ stop_hook_active: false })
+		world.throwNext = true
+		await $.turn.complete(answered())
+		await settle()
+		await $.prompt.submit({ text: 'typed' })
+
+		expect(world.submitted[1]?.context).toEqual([`${HANDED('k')}\n\nUrgent, not yet seen: push blocked`])
+	})
+
+	test('the turn it started cannot start another: a new urgent finding waits for the person', async ($, on) => {
+		let key = 'a'
+		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key, { urgent: `urgent ${key}` }) }) }))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+		key = 'b'
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+
+		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a'])
+		await $.prompt.submit({ text: 'typed' })
+		expect(world.submitted[1]?.context).toEqual([`${HANDED('b')}\n\nUrgent, not yet seen: urgent b`])
 	})
 })
 

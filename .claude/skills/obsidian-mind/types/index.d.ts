@@ -14,6 +14,8 @@ declare module "claude-code" {
 			pendingReport: string | null
 			/** An urgent finding, for a turn of its own. */
 			pendingUrgent: string | null
+			/** The urgent finding whose turn is running, so that turn cannot start another. */
+			urgentTurn: string | null
 		}
 	}
 }

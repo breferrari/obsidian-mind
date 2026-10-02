@@ -1,7 +1,7 @@
 {
   "name": "obsidian-mind",
-  "version": "8.6.0",
-  "description": "Delivers obsidian-mind's session context as an instruction file, so it survives compaction whole and reaches subagents. The vault's settings hooks stand down for each event it handles and run as before wherever it does not load.",
+  "version": "1.0.0",
+  "description": "Delivers obsidian-mind's session context as an instruction file, so it survives compaction whole and reaches subagents, and shows the vault's Stop report as one line under the answer, handing the agent the full report with your next message (an urgent finding, if a vault defines one, gets a turn of its own). The vault's settings hooks stand down for each event it handles and run as before wherever it does not load.",
   "author": {
     "name": "Brenno Ferrari",
     "url": "https://github.com/breferrari/obsidian-mind"
