@@ -92,9 +92,18 @@ function envelopeOf(stdout: string): Record<string, unknown> {
 	}
 }
 
-/** The envelope's systemMessage, failing loudly if absent. */
-function systemMessageOf(stdout: string): string {
-	const message = envelopeOf(stdout)["systemMessage"];
+/**
+ * The report the user is shown, failing loudly if absent: a Stop block's
+ * reason after the agent preface (Claude Code prints the reason in the
+ * transcript), otherwise the systemMessage.
+ */
+function shownOf(stdout: string): string {
+	const envelope = envelopeOf(stdout);
+	if (envelope["decision"] === "block") {
+		const reason = String(envelope["reason"]);
+		return reason.slice(reason.indexOf("\n\n") + 2);
+	}
+	const message = envelope["systemMessage"];
 	assert.equal(
 		typeof message,
 		"string",
@@ -140,7 +149,7 @@ describe("stop-checklist", () => {
 
 	test("the first Stop of a session reports the checklist and findings", () => {
 		const root = vault("first-stop", "Done.md");
-		const message = systemMessageOf(run(stop("s-first"), { vault: root }).stdout);
+		const message = shownOf(run(stop("s-first"), { vault: root }).stdout);
 		assert.match(message, /Wrap-up checklist:/);
 		assert.match(message, /work\/active\/Done\.md/);
 	});
@@ -151,7 +160,7 @@ describe("stop-checklist", () => {
 		const first = run(stop("s-same"), { vault: root, state });
 		const second = run(stop("s-same"), { vault: root, state });
 		const third = run(stop("s-same"), { vault: root, state });
-		assert.match(systemMessageOf(first.stdout), /work\/active\/Done\.md/);
+		assert.match(shownOf(first.stdout), /work\/active\/Done\.md/);
 		assert.deepEqual(envelopeOf(second.stdout), {});
 		assert.deepEqual(envelopeOf(third.stdout), {});
 	});
@@ -161,7 +170,7 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		run(stop("s-change"), { vault: root, state });
 		completeNote(root, "Also Done.md");
-		const message = systemMessageOf(run(stop("s-change"), { vault: root, state }).stdout);
+		const message = shownOf(run(stop("s-change"), { vault: root, state }).stdout);
 		assert.match(message, /work\/active\/Also Done\.md/);
 	});
 
@@ -175,9 +184,9 @@ describe("stop-checklist", () => {
 		const b = run(stop("s-revert"), { vault: root, state });
 		completeNote(root, "Done.md");
 		const a2 = run(stop("s-revert"), { vault: root, state });
-		assert.match(systemMessageOf(a1.stdout), /work\/active\/Done\.md/);
-		assert.doesNotMatch(systemMessageOf(b.stdout), /Vault Hygiene/);
-		assert.match(systemMessageOf(a2.stdout), /work\/active\/Done\.md/);
+		assert.match(shownOf(a1.stdout), /work\/active\/Done\.md/);
+		assert.doesNotMatch(shownOf(b.stdout), /Vault Hygiene/);
+		assert.match(shownOf(a2.stdout), /work\/active\/Done\.md/);
 	});
 
 	test("a note growing past the threshold does not re-show the report", () => {
@@ -192,7 +201,7 @@ describe("stop-checklist", () => {
 		const first = run(stop("s-grow"), { vault: root, state });
 		writeFileSync(log, "x".repeat(40_000));
 		const second = run(stop("s-grow"), { vault: root, state });
-		assert.match(systemMessageOf(first.stdout), /notes\/Log\.md \(26KB\)/);
+		assert.match(shownOf(first.stdout), /notes\/Log\.md \(26KB\)/);
 		assert.deepEqual(envelopeOf(second.stdout), {});
 	});
 
@@ -207,20 +216,21 @@ describe("stop-checklist", () => {
 		const first = run(stop("s-two-grow"), { vault: root, state });
 		writeFileSync(join(root, "notes/B.md"), "x".repeat(34_000));
 		const second = run(stop("s-two-grow"), { vault: root, state });
-		assert.match(systemMessageOf(first.stdout), /notes\/A\.md \(30KB\)[\s\S]*notes\/B\.md \(26KB\)/);
+		assert.match(shownOf(first.stdout), /notes\/A\.md \(30KB\)[\s\S]*notes\/B\.md \(26KB\)/);
 		assert.deepEqual(envelopeOf(second.stdout), {});
 	});
 
 	test("a changed Stop report reaches the agent: decision block with the report as the reason (#256)", () => {
 		// A Stop systemMessage never reaches the model. decision "block" is the
 		// one Stop output that does, with a turn to act, ask, or say nothing
-		// needs doing; the user still sees the report.
+		// needs doing. Claude Code prints the reason in the transcript, so the
+		// user reads it there; a systemMessage beside it showed the report twice.
 		const root = vault("block", "Done.md");
 		const envelope = envelopeOf(run(stop("s-block"), { vault: root }).stdout);
+		assert.deepEqual(Object.keys(envelope), ["decision", "reason"]);
 		assert.equal(envelope["decision"], "block");
 		const reason = String(envelope["reason"]);
 		assert.match(reason, /^Stop hook report: .*ask the user when something needs their call/);
-		assert.ok(reason.endsWith(`\n\n${String(envelope["systemMessage"])}`), "the reason carries the report the user sees");
 		assert.match(reason, /work\/active\/Done\.md/);
 	});
 
@@ -267,7 +277,7 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		run(stop("s-one"), { vault: root, state });
 		const other = run(stop("s-two"), { vault: root, state });
-		assert.match(systemMessageOf(other.stdout), /work\/active\/Done\.md/);
+		assert.match(shownOf(other.stdout), /work\/active\/Done\.md/);
 	});
 
 	test("a clean vault still gets the checklist once, then silence", () => {
@@ -275,8 +285,8 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		const first = run(stop("s-clean"), { vault: root, state });
 		const second = run(stop("s-clean"), { vault: root, state });
-		assert.match(systemMessageOf(first.stdout), /Wrap-up checklist:/);
-		assert.doesNotMatch(systemMessageOf(first.stdout), /Vault Hygiene/);
+		assert.match(shownOf(first.stdout), /Wrap-up checklist:/);
+		assert.doesNotMatch(shownOf(first.stdout), /Vault Hygiene/);
 		assert.deepEqual(envelopeOf(second.stdout), {});
 	});
 
@@ -286,20 +296,20 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		const first = run(stop(), { state });
 		const second = run(stop(), { state });
-		assert.match(systemMessageOf(first.stdout), /Wrap-up checklist:/);
-		assert.match(systemMessageOf(second.stdout), /Wrap-up checklist:/);
+		assert.match(shownOf(first.stdout), /Wrap-up checklist:/);
+		assert.match(shownOf(second.stdout), /Wrap-up checklist:/);
 	});
 
 	test("an unreadable dedupe state fails open", () => {
 		const state = freshState();
 		writeFileSync(state, "not json{{");
 		const { stdout } = run(stop("s-corrupt"), { state });
-		assert.match(systemMessageOf(stdout), /Wrap-up checklist:/);
+		assert.match(shownOf(stdout), /Wrap-up checklist:/);
 	});
 
 	test("string stop_hook_active is not re-entry", () => {
 		const { stdout } = run({ ...stop("s-string"), stop_hook_active: "true" });
-		assert.match(systemMessageOf(stdout), /Wrap-up checklist:/);
+		assert.match(shownOf(stdout), /Wrap-up checklist:/);
 	});
 
 	test("SessionEnd reports every time — it is the last chance, not a turn", () => {
@@ -308,8 +318,8 @@ describe("stop-checklist", () => {
 		const payload = { session_id: "s-end", hook_event_name: "SessionEnd" };
 		const first = run(payload, { vault: root, state });
 		const second = run(payload, { vault: root, state });
-		assert.match(systemMessageOf(first.stdout), /work\/active\/Done\.md/);
-		assert.match(systemMessageOf(second.stdout), /work\/active\/Done\.md/);
+		assert.match(shownOf(first.stdout), /work\/active\/Done\.md/);
+		assert.match(shownOf(second.stdout), /work\/active\/Done\.md/);
 	});
 
 	test("SessionEnd after a deduped Stop still reports", () => {
@@ -317,30 +327,30 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		run(stop("s-mixed"), { vault: root, state });
 		const end = run({ session_id: "s-mixed", hook_event_name: "SessionEnd" }, { vault: root, state });
-		assert.match(systemMessageOf(end.stdout), /work\/active\/Done\.md/);
+		assert.match(shownOf(end.stdout), /work\/active\/Done\.md/);
 	});
 
 	test("the checklist hands drift to om-tidy", () => {
-		const message = systemMessageOf(run(stop("s-handoff")).stdout);
+		const message = shownOf(run(stop("s-handoff")).stdout);
 		assert.match(message, /ask the agent to run om-tidy/i);
 	});
 
 	test("malformed input emits a valid default", () => {
 		const { stdout, code } = run("garbage{{");
 		assert.equal(code, 0);
-		assert.match(systemMessageOf(stdout), /Wrap-up checklist:/);
+		assert.match(shownOf(stdout), /Wrap-up checklist:/);
 	});
 
 	test("empty stdin emits a valid default", () => {
 		const { stdout, code } = run(null);
 		assert.equal(code, 0);
-		assert.match(systemMessageOf(stdout), /Wrap-up checklist:/);
+		assert.match(shownOf(stdout), /Wrap-up checklist:/);
 	});
 
 	test("does not terminate the message with a stray newline", () => {
 		// systemMessage is rendered by the agent's UI, not written to a
 		// stream — a trailing newline is padding in all three.
-		const message = systemMessageOf(run({}).stdout);
+		const message = shownOf(run({}).stdout);
 		assert.equal(message, message.trimEnd());
 	});
 
@@ -394,7 +404,7 @@ describe("stop-checklist", () => {
 		test(`${label} receives the same JSON envelope`, () => {
 			const { stdout, code } = run(payload);
 			assert.equal(code, 0);
-			const message = systemMessageOf(stdout);
+			const message = shownOf(stdout);
 			assert.match(message, /Wrap-up checklist:/);
 			rendered.add(message);
 		});
