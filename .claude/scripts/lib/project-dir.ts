@@ -7,10 +7,11 @@
  * An empty value counts as unset (`||`, not `??`): an empty string is never
  * a usable root, and treating it as one resolved paths against "".
  *
- * The fallback is the caller's. Every hook passes the working directory:
- * the hook commands themselves resolve their script through
- * `${*_PROJECT_DIR:-.}`, so when the variable is unset the hook only runs at
- * all if cwd is the vault. Not to be confused with qmd-refresh.ts's
+ * The fallback is the caller's. Every hook passes the working directory.
+ * The Codex and Gemini hook commands resolve their script through
+ * `${*_PROJECT_DIR:-.}`, so there a hook only runs at all when the variable
+ * or cwd names the vault root. The Claude commands walk up from
+ * `${CLAUDE_PROJECT_DIR:-.}` instead (below). Not to be confused with qmd-refresh.ts's
  * resolveVaultRoot, which ignores these variables on purpose (a detached
  * worker anchors to its own location), or with mcp-context.ts's, which
  * reads the MCP server's own vault-path override.

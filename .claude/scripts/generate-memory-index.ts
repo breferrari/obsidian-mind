@@ -8,7 +8,8 @@
  *   node --experimental-strip-types .claude/scripts/generate-memory-index.ts \
  *     > ~/.claude/projects/<slug>/memory/MEMORY.md
  *
- * Run from the vault root (or with CLAUDE_PROJECT_DIR set).
+ * Run from anywhere inside the vault: the root is found by walking up to
+ * vault-manifest.json (lib/project-dir.ts), from CLAUDE_PROJECT_DIR when set.
  */
 
 import { readdirSync, readFileSync } from "node:fs";

@@ -13,15 +13,22 @@
  * was reverted (89bb963) without a recorded rationale; the replacement
  * fix re-applies the same pattern. This test exists so the revert
  * doesn't silently happen a third time.
+ *
+ * Claude Code's commands go one step further (#263): CLAUDE_PROJECT_DIR is
+ * the folder the session was launched in and does not follow `/cd`, so it can
+ * name a vault subfolder. They start from `${CLAUDE_PROJECT_DIR:-.}` and
+ * walk up to the nearest folder holding vault-manifest.json. The last block
+ * runs each real command to prove it.
  */
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { nearestVaultRoot } from "../lib/project-dir.ts";
 
 type HookConfig = {
 	readonly hooks?: Record<
@@ -190,23 +197,46 @@ describe("hook config — the checklist runs where its message is shown", () => 
 /**
  * #263: run every Claude hook command for real, with `node` replaced by a
  * shell function that prints its arguments, and check which script it would
- * run. Claude Code runs hook commands through a POSIX shell on every OS (Git
- * Bash on Windows), so this is the same shell, the same quoting and the same
- * path handling, minus the script itself.
+ * run. Claude Code runs hook commands through a POSIX shell (Git Bash on
+ * Windows), so this is the same shell, quoting and path handling, minus the
+ * script itself. On macOS and Linux each command also runs under `sh`.
  */
 describe("hook config — Claude commands find the vault root from a subfolder (#263)", () => {
 	const commands = eachNodeHookCommand(loadConfig(".claude/settings.json"));
 	const scriptOf = (command: string) => /\/\.claude\/scripts\/([a-z-]+\.ts)"$/.exec(command)?.[1] ?? "";
 
-	/** The script path the command would hand to node, with CLAUDE_PROJECT_DIR set to `projectDir`. */
-	function resolvedScript(command: string, projectDir: string): string {
-		const run = spawnSync("bash", ["-c", `node() { printf '%s\n' "$@"; }; ${command}`], {
-			encoding: "utf-8",
-			env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
-		});
-		assert.equal(run.status, 0, `bash failed: ${run.stderr}`);
+	/**
+	 * The POSIX shells to run the commands under. On Windows that is Git Bash,
+	 * the shell Claude Code itself uses there: never a bare `bash`, which can
+	 * resolve to WSL's. None found means the run tests are skipped, with the
+	 * reason in the skip, rather than failing on a missing binary.
+	 */
+	function posixShells(): string[] {
+		if (process.platform !== "win32") return ["bash", "sh"].filter((sh) => spawnSync(sh, ["-c", "true"]).status === 0);
+		const candidates = [
+			process.env["CLAUDE_CODE_GIT_BASH_PATH"],
+			process.env["ProgramFiles"] && join(process.env["ProgramFiles"], "Git", "bin", "bash.exe"),
+			process.env["ProgramFiles(x86)"] && join(process.env["ProgramFiles(x86)"], "Git", "bin", "bash.exe"),
+			process.env["LOCALAPPDATA"] && join(process.env["LOCALAPPDATA"], "Programs", "Git", "bin", "bash.exe"),
+		];
+		const found = candidates.find((path): path is string => typeof path === "string" && existsSync(path));
+		return found ? [found] : [];
+	}
+	const shells = posixShells();
+	const noShell = shells.length === 0 ? "no POSIX shell found (on Windows: Git Bash)" : false;
+
+	/** The script path the command hands to node under `shell`, run from `cwd` with `env`. */
+	function resolvedScript(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv): string {
+		const run = spawnSync(shell, ["-c", `node() { printf '%s\\n' "$@"; }; ${command}`], { encoding: "utf-8", cwd, env });
+		assert.equal(run.status, 0, `${shell} failed: ${run.error?.message ?? run.stderr}`);
 		return run.stdout.trim().split("\n").pop() ?? "";
 	}
+	const withProjectDir = (dir: string): NodeJS.ProcessEnv => ({ ...process.env, CLAUDE_PROJECT_DIR: dir });
+	const withoutProjectDir = (): NodeJS.ProcessEnv => {
+		const env = { ...process.env };
+		delete env["CLAUDE_PROJECT_DIR"];
+		return env;
+	};
 
 	let vault = "";
 	before(() => {
@@ -216,21 +246,36 @@ describe("hook config — Claude commands find the vault root from a subfolder (
 	});
 	after(() => rmSync(vault, { recursive: true, force: true }));
 
-	for (const { event, command } of commands) {
-		test(`${event}: launched in a subfolder, the command runs the vault root's script`, () => {
-			const script = scriptOf(command);
-			assert.ok(script, `could not read the script name from: ${command}`);
-			assert.equal(resolve(resolvedScript(command, join(vault, "work", "deep"))), resolve(vault, ".claude", "scripts", script));
-		});
+	// The "no vault above" case needs a temp folder that is not itself inside a vault.
+	const tmpInVault = nearestVaultRoot(tmpdir()) !== null ? "the temp folder is inside a vault on this machine" : false;
 
-		test(`${event}: with no vault above, the command keeps the named folder`, () => {
-			const elsewhere = mkdtempSync(join(tmpdir(), "hook-config-novault-"));
-			try {
-				const script = scriptOf(command);
-				assert.equal(resolve(resolvedScript(command, elsewhere)), resolve(elsewhere, ".claude", "scripts", script));
-			} finally {
-				rmSync(elsewhere, { recursive: true, force: true });
-			}
-		});
+	for (const shell of shells.length ? shells : ["(none)"]) {
+		for (const { event, command } of commands) {
+			const script = scriptOf(command);
+			const label = `${event} under ${shell.split(/[\\/]/).pop()}`;
+
+			test(`${label}: launched in a subfolder, the command runs the vault root's script`, { skip: noShell }, () => {
+				assert.ok(script, `could not read the script name from: ${command}`);
+				const got = resolvedScript(shell, command, vault, withProjectDir(join(vault, "work", "deep")));
+				assert.equal(resolve(got), resolve(vault, ".claude", "scripts", script));
+			});
+
+			test(`${label}: with the variable unset, run from the vault root, the command still runs the root's script`, { skip: noShell }, () => {
+				// Claude Code always sets the variable for hooks; unset is the
+				// outside-Claude case, which keeps the pre-#263 `.` behaviour.
+				const got = resolvedScript(shell, command, vault, withoutProjectDir());
+				assert.equal(resolve(vault, got), resolve(vault, ".claude", "scripts", script));
+			});
+
+			test(`${label}: with no vault above, the command keeps the named folder`, { skip: noShell || tmpInVault }, () => {
+				const elsewhere = mkdtempSync(join(tmpdir(), "hook-config-novault-"));
+				try {
+					const got = resolvedScript(shell, command, elsewhere, withProjectDir(elsewhere));
+					assert.equal(resolve(got), resolve(elsewhere, ".claude", "scripts", script));
+				} finally {
+					rmSync(elsewhere, { recursive: true, force: true });
+				}
+			});
+		}
 	}
 });
