@@ -6,7 +6,7 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { fixtureEnv, judge, lastLine, parseTurns, plan, quotes, selfTestOutcome, sessionDirs, subagentReport, SUBAGENT_TASK, type Step, type Verdict } from "../../../.github/scripts/delivery-gate.ts";
+import { carries, fixtureEnv, judge, lastLine, parseTurns, plan, quotes, selfTestOutcome, sessionDirs, subagentReport, SUBAGENT_TASK, type Step, type Verdict } from "../../../.github/scripts/delivery-gate.ts";
 
 const METER = "_context injected: 15.9kB / 20.0kB budget_";
 
@@ -31,7 +31,7 @@ const reset = { type: "conversation_reset", trigger: "clear" };
 const [startup, continued] = plan(true) as [readonly Step[], readonly Step[]];
 const MOD = { withMod: true };
 
-type Part = "warm" | "compact" | "afterCompact" | "clear" | "subagent" | "afterClear";
+type Part = "warm" | "compact" | "afterCompact" | "clear" | "subagent" | "clearAgain" | "afterClear";
 /** The continued session, turn by turn, each turn's events overridable. The mod stood the hook down at every start. */
 function continuedStream(over: Partial<Record<Part, object[]>> = {}): string {
 	return stream(
@@ -40,6 +40,7 @@ function continuedStream(over: Partial<Record<Part, object[]>> = {}): string {
 		...(over.afterCompact ?? [said(METER)]), done,
 		...(over.clear ?? [stoodDown, reset]), done,
 		...(over.subagent ?? [agentCall(), handedBack(METER), said(METER)]), done,
+		...(over.clearAgain ?? [stoodDown, reset]), done,
 		...(over.afterClear ?? [said(METER)]), done,
 	);
 }
@@ -51,7 +52,9 @@ const subagentVerdict = (events: object[]) => run(continued, continuedStream({ s
 describe("delivery gate: plan and matching", () => {
 	test("startup is a session of its own; the subagent is asked straight after /clear, before the line is quoted again", () => {
 		assert.deepEqual(startup.map((s) => s.name), ["at startup"]);
-		assert.deepEqual(continued.map((s) => s.kind), ["warm", "compact", "ask", "clear", "ask-subagent", "ask"]);
+		assert.deepEqual(continued.map((s) => s.kind), ["warm", "compact", "ask", "clear", "ask-subagent", "clear", "ask"]);
+		assert.deepEqual(continued.filter((s) => s.shifts).map((s) => s.kind), ["compact", "clear", "clear"], "every compact and clear shifts the fixture first");
+		assert.equal(continued[5]!.kind, "clear", "the subagent's answer is cleared away before the main loop is asked again");
 		assert.equal(continued[0]!.prompt.includes("_context"), false, "the warm-up must not put the line into the conversation");
 		assert.deepEqual(plan(false).flat().map((s) => s.name), ["without the mod, at startup"]);
 	});
@@ -64,6 +67,24 @@ describe("delivery gate: plan and matching", () => {
 		assert.equal(quotes("_context injected: 2.0kB / 9.1kB budget_", METER), false);
 		assert.equal(quotes("_context injected: 15.9kB", METER), false);
 		assert.equal(quotes("anything", ""), false, "an empty expected line never passes");
+	});
+
+	test("carries finds the delivered size in any wording, never the budget", () => {
+		assert.equal(carries(`The meter read ${METER}`, METER), true);
+		for (const text of ["it was 15.9kB", "15.9 KB of context", "about 15.9 kilobytes", "context injected 15.9 / 20.0"]) assert.equal(carries(text, METER), true, text);
+		assert.equal(carries("a 20.0kB budget", METER), false, "the budget is the same before and after a shift");
+		assert.equal(carries("115.9kB or 15.95", METER), false, "a longer number is a different number");
+	});
+
+	test("each step is judged against its own line when the fixture shifts mid-session", () => {
+		const LATER = "_context injected: 16.4kB / 20.0kB budget_";
+		const lines = continued.map((_, i) => (i < 1 ? METER : LATER));
+		// The compaction summary repeats the old size: harmless, the new line is what must arrive.
+		const turns = parseTurns(continuedStream({ compact: [stoodDown, compacted, summary(`It ended at ${METER}.`)], afterCompact: [said(LATER)], subagent: [agentCall(), handedBack(LATER)], afterClear: [said(LATER)] }));
+		assert.deepEqual(judge(continued, turns, lines, MOD).map((v) => v.outcome), ["PASS", "PASS", "PASS"]);
+		// Quoting the old line after a shift is a FAIL: it came from memory, not from delivery.
+		const stale = parseTurns(continuedStream({ afterCompact: [said(METER)], subagent: [agentCall(), handedBack(LATER)], afterClear: [said(LATER)] }));
+		assert.equal(judge(continued, stale, lines, MOD)[0]!.outcome, "FAIL");
 	});
 
 	test("the framed report is cut at a footer at the start of a line, not an indented one inside the report", () => {

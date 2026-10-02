@@ -12,13 +12,18 @@
  *
  *  - with the mod: at startup, in a session of its own; then in a second
  *    session after `/compact`, from a general-purpose subagent straight after
- *    `/clear`, and after `/clear`;
+ *    `/clear`, and after a second `/clear`;
  *  - without the mod: at startup.
+ *
+ * Each `/compact` and `/clear` first adds a brain note to the fixture, so the
+ * context delivered after it ends with a size nobody has quoted yet: neither
+ * a compaction summary nor an earlier answer in the conversation can supply
+ * the new line, only a fresh delivery can.
  *
  * Only the stream decides, and every other road the answer could take is
  * closed in the judge, not in the prompt. A checkpoint is INVALID, never
  * PASS, when: its turn used a tool; the `/compact` summary itself carried the
- * line; a `/compact` or `/clear` left no event of its own; the subagent was
+ * new line's size; a `/compact` or `/clear` left no event of its own; the subagent was
  * not a general-purpose one, was handed the line in its prompt, used tools,
  * or did not report its tool count; with the mod, the settings hook printed
  * the context instead of standing down (or, without it, printed nothing); or
@@ -40,7 +45,7 @@
  * startup, which must PASS (the control that proves that copy delivered).
  * It exits 0 when the gate can fail. Exit codes: 0 pass (or, with
  * `--self-test`, the gate can fail), 1 a checkpoint failed (or the gate is
- * broken), 2 the run could not be judged.
+ * broken), 2 the run could not be judged. A FAIL wins over an INVALID.
  *
  * It costs model turns on the caller's account, and it is not wired to CI: a
  * public repository's CI has no credentials to give it.
@@ -71,8 +76,12 @@ export const SUBAGENT_QUESTION = `Use the Agent tool to start one general-purpos
 export const WARM_UP = "Reply with the single word OK.";
 
 export type StepKind = "ask" | "ask-subagent" | "warm" | "compact" | "clear";
-/** One turn of a session. A named step is a checkpoint; the others prepare the next one. */
-export type Step = { readonly name: string; readonly kind: StepKind; readonly prompt: string };
+/**
+ * One turn of a session. A named step is a checkpoint; the others prepare the
+ * next one. A step that `shifts` changes the fixture just before it is sent,
+ * so the context delivered from then on ends with a line nobody has seen yet.
+ */
+export type Step = { readonly name: string; readonly kind: StepKind; readonly prompt: string; readonly shifts?: boolean };
 
 const ask = (name: string): Step => ({ name, kind: "ask", prompt: QUESTION });
 
@@ -80,6 +89,11 @@ const ask = (name: string): Step => ({ name, kind: "ask", prompt: QUESTION });
  * The sessions a run is made of, each with the turns it sends. The subagent
  * is asked straight after `/clear`, before the main loop has quoted the line
  * in that conversation, so there is nothing for it to pass along.
+ *
+ * `/compact` and `/clear` shift the fixture first. A compaction summary is
+ * written from the conversation before it, which held the old context, and
+ * real summaries do repeat its size; after a shift, the only way to quote the
+ * new line is to have been handed the context again.
  */
 export function plan(withMod: boolean): ReadonlyArray<readonly Step[]> {
 	if (!withMod) return [[ask("without the mod, at startup")]];
@@ -87,10 +101,12 @@ export function plan(withMod: boolean): ReadonlyArray<readonly Step[]> {
 		[ask("at startup")],
 		[
 			{ name: "", kind: "warm", prompt: WARM_UP },
-			{ name: "", kind: "compact", prompt: "/compact" },
+			{ name: "", kind: "compact", prompt: "/compact", shifts: true },
 			ask("after /compact"),
-			{ name: "", kind: "clear", prompt: "/clear" },
+			{ name: "", kind: "clear", prompt: "/clear", shifts: true },
 			{ name: "from a subagent", kind: "ask-subagent", prompt: SUBAGENT_QUESTION },
+			// Cleared and shifted again: the subagent's answer is in this conversation, and the main loop must not quote it from there.
+			{ name: "", kind: "clear", prompt: "/clear", shifts: true },
 			ask("after /clear"),
 		],
 	];
@@ -109,16 +125,18 @@ export function quotes(answer: string, expected: string): boolean {
 
 /**
  * Whether a text carries enough of the line to rebuild it: the whole line, or
- * any of its sizes (`15.2kB`, `20.0kB`) in any wording. Used where the line
+ * its delivered size as a number on its own (`15.2`, whatever unit follows);
+ * not the budget, which stays the same when the context changes. Used where the line
  * must not travel (a compaction summary, a subagent's prompt); stricter than
  * `quotes` on purpose, since there a false alarm costs a rerun and a miss
  * costs a false PASS.
  */
 export function carries(text: string, expected: string): boolean {
 	if (quotes(text, expected)) return true;
-	const sizes = expected.match(/\d+(?:\.\d+)?\s*kB/gi) ?? [];
-	const squeezed = text.replace(/\s+/g, "");
-	return sizes.some((size) => squeezed.includes(size.replace(/\s+/g, "")));
+	const size = expected.match(/(\d+(?:\.\d+)?)\s*kB/i)?.[1];
+	if (size === undefined) return false;
+	// The number on its own, whatever unit, case or spacing comes after it.
+	return new RegExp(`(?<![\\d.])${size.replace(".", "\\.")}(?![\\d])`).test(text);
 }
 
 /** One Agent call: what the main loop asked for, and what came back. */
@@ -246,7 +264,9 @@ export type Ending = "complete" | "timeout" | "extra-turn";
  * PASS or FAIL only when the stream shows the answer could have come from the
  * delivered context alone; anything else is INVALID, with the reason.
  */
-export function judge(steps: readonly Step[], turns: readonly Turn[], expected: string, options: { withMod: boolean; ending?: Ending }): Verdict[] {
+export function judge(steps: readonly Step[], turns: readonly Turn[], expected: string | readonly string[], options: { withMod: boolean; ending?: Ending }): Verdict[] {
+	// One line for the whole session, or one per step when the fixture shifts during it.
+	const expectedAt = (i: number) => (typeof expected === "string" ? expected : (expected[i] ?? ""));
 	const ending = options.ending ?? "complete";
 	const verdicts: Verdict[] = [];
 	// Who delivered: with the mod, every settings SessionStart must have stood down; without it, the first must have printed.
@@ -259,11 +279,12 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 	let carried: string | null = null; // a preparing step that failed spoils the checkpoint after it
 	steps.forEach((step, i) => {
 		const turn = turns[i];
+		const want = expectedAt(i);
 		let problem = sessionProblem ?? carried;
 		if (!turn) problem ??= ending === "timeout" ? "the turn timed out" : ending === "extra-turn" ? "the session ran a turn nobody sent" : "the session ended before this turn";
 		else if (turn.error) problem ??= `the turn failed (${turn.error})`;
 		else if (step.kind === "compact" && !turn.compacted) problem ??= "/compact left no compact_boundary event";
-		else if (step.kind === "compact" && turn.summaries.some((summary) => carries(summary, expected))) problem ??= "the /compact summary itself carried the line";
+		else if (step.kind === "compact" && turn.summaries.some((summary) => carries(summary, want))) problem ??= "the /compact summary itself carried the line";
 		else if (step.kind === "clear" && !turn.reset) problem ??= "/clear left no conversation_reset event";
 		else if (step.kind === "ask" && turn.tools.length > 0) problem ??= `the answer used tools (${turn.tools.join(", ")})`;
 		else if (step.kind === "ask-subagent") {
@@ -271,7 +292,7 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 			if (calls.length !== 1 || calls[0]!.report === null) problem ??= "no single subagent answered: the main loop answered itself";
 			else if (turn.tools.some((name) => name !== "Agent")) problem ??= `the main loop used tools (${turn.tools.join(", ")})`;
 			else if (calls[0]!.type !== "general-purpose") problem ??= `the subagent was ${calls[0]!.type ?? "of no stated type"}, not general-purpose`;
-			else if (carries(calls[0]!.prompt, expected)) problem ??= "the main loop handed the line to the subagent in its prompt";
+			else if (carries(calls[0]!.prompt, want)) problem ??= "the main loop handed the line to the subagent in its prompt";
 			else if (calls[0]!.toolUses === null) problem ??= "the subagent's tool count was not reported";
 			else if (calls[0]!.toolUses > 0 || turn.subagentToolUses > 0) problem ??= `the subagent used ${Math.max(calls[0]!.toolUses, turn.subagentToolUses)} tool(s)`;
 		}
@@ -282,9 +303,9 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 		carried = null;
 		const answer = step.kind === "ask-subagent" ? (turn?.agentCalls[0]?.report ?? "") : (turn?.text ?? "");
 		if (problem === null && answer.trim() === "") problem = "no answer";
-		const shown = quotes(answer, expected) ? expected : lastLine(answer);
-		if (problem !== null) verdicts.push({ checkpoint: step.name, expected, answer: shown, outcome: "INVALID", why: problem });
-		else verdicts.push({ checkpoint: step.name, expected, answer: shown, outcome: quotes(answer, expected) ? "PASS" : "FAIL", why: "" });
+		const shown = quotes(answer, want) ? want : lastLine(answer);
+		if (problem !== null) verdicts.push({ checkpoint: step.name, expected: want, answer: shown, outcome: "INVALID", why: problem });
+		else verdicts.push({ checkpoint: step.name, expected: want, answer: shown, outcome: quotes(answer, want) ? "PASS" : "FAIL", why: "" });
 	});
 	return verdicts;
 }
@@ -389,8 +410,25 @@ export function contextOf(vault: string, deliver: boolean): string {
 /** How long one turn may take before the session is abandoned. */
 const TURN_TIMEOUT_MS = 5 * 60_000;
 
-/** Run one paced session: each turn is sent once the previous one's result arrives. */
-function session(vault: string, steps: readonly Step[], options: { claude: string; model: string; withMod: boolean }): Promise<{ transcript: string; ending: Ending }> {
+/**
+ * Change the fixture so the context delivered from now on ends with a line
+ * not seen before: one more brain note moves the delivered size. Returns the
+ * new last line; throws if the size did not move, which would make the
+ * checkpoints after it unable to tell fresh delivery from memory.
+ */
+export function shiftFixture(vault: string, n: number, withMod: boolean, before: string): string {
+	writeFileSync(
+		join(vault, "brain", `Gate Shift ${n}.md`),
+		`---\ndescription: "Added mid-session (shift ${n}) so the context ends with a size nobody has quoted yet; ${"padding ".repeat(30)}"\ntags:\n  - brain\n---\n\n# Gate Shift ${n}\n`,
+	);
+	const after = lastLine(contextOf(vault, withMod));
+	const size = (line: string) => line.match(/\d+(?:\.\d+)?\s*kB/i)?.[0];
+	if (size(after) === undefined || size(after) === size(before)) throw new Error(`shift ${n} did not move the delivered size: ${after}`);
+	return after;
+}
+
+/** Run one paced session: each turn is sent once the previous one's result arrives, after `beforeSend` has run for it. */
+function session(vault: string, steps: readonly Step[], options: { claude: string; model: string; withMod: boolean }, beforeSend: (step: Step, index: number) => void = () => {}): Promise<{ transcript: string; ending: Ending }> {
 	return new Promise((resolvePromise, reject) => {
 		const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", options.model];
 		// The main loop has the Agent tool and nothing else: an answer cannot come from reading the vault.
@@ -408,8 +446,16 @@ function session(vault: string, steps: readonly Step[], options: { claude: strin
 		};
 		const send = () => {
 			if (exited) return;
-			const step = steps[sent++];
+			const index = sent++;
+			const step = steps[index];
 			if (!step) return child.stdin.end();
+			try {
+				beforeSend(step, index);
+			} catch (error) {
+				child.kill();
+				reject(error);
+				return;
+			}
 			clearTimeout(timer);
 			timer = setTimeout(() => stop("timeout"), TURN_TIMEOUT_MS);
 			child.stdin.write(`${JSON.stringify({ type: "user", message: { role: "user", content: step.prompt } })}\n`);
@@ -450,8 +496,15 @@ async function runSession(steps: readonly Step[], breakage: Breakage, options: {
 			if (context.length <= 12_000) throw new Error(`fixture too small to test the cap: ${context.length} characters`);
 			if (expected.includes("collapsed")) throw new Error(`fixture past the instruction budget, so the context collapsed: ${expected}`);
 		}
-		const { transcript, ending } = await session(vault, steps, options);
-		return judge(steps, parseTurns(transcript), expected, { withMod: options.withMod, ending });
+		// The line each step's answer must quote: the startup one until a step shifts the fixture.
+		const expectedByStep: string[] = [];
+		let current = expected;
+		let shifts = 0;
+		const { transcript, ending } = await session(vault, steps, options, (step, index) => {
+			if (step.shifts) current = shiftFixture(vault, ++shifts, options.withMod, current);
+			expectedByStep[index] = current;
+		});
+		return judge(steps, parseTurns(transcript), steps.map((_, i) => expectedByStep[i] ?? current), { withMod: options.withMod, ending });
 	} finally {
 		removeFixture(vault);
 	}
@@ -511,7 +564,8 @@ async function main(): Promise<void> {
 	if (invalid > 0) console.log(`\n${invalid} checkpoint(s) could not be judged.`);
 	if (failed > 0) console.log(`\n${failed} checkpoint(s) did not receive the whole context.`);
 	if (invalid === 0 && failed === 0) console.log("\nAll checkpoints received the whole context.");
-	process.exitCode = invalid > 0 ? 2 : failed > 0 ? 1 : 0;
+	// A FAIL needs nothing else to be judged: it wins over an INVALID elsewhere.
+	process.exitCode = failed > 0 ? 1 : invalid > 0 ? 2 : 0;
 }
 
 if (isMainModule(import.meta.url)) {
