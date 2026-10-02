@@ -49,7 +49,7 @@ import {
 	collectOpenTasks,
 } from "../lib/session-start.ts";
 
-import { CUT_LINE, fitHookOutput } from "../lib/hook-io.ts";
+import { CUT_LINE, fitHookOutput, HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
 import { rmTemp } from "./_helpers.ts";
 
 describe("take", () => {
@@ -1288,7 +1288,8 @@ describe("fitHookOutput", () => {
 
 describe("the eager layer end to end under the cap (#254)", () => {
 	test("sections totalling 30,000 characters degrade, fit, and the meter names what collapsed", () => {
-		// The issue's own test: the budget, the fit and the meter together.
+		// The issue's own test: the budget, the fit and the meter together. The
+		// budget alone brings this one under the cap, so no cut happens.
 		const sections: BudgetSection[] = [
 			{ header: "### Date", body: "Friday", priority: 0 },
 			{ header: "### North Star", body: "n".repeat(6_000), priority: 30, fallback: "(pointer)" },
@@ -1300,10 +1301,27 @@ describe("the eager layer end to end under the cap (#254)", () => {
 		const out = fitHookOutput(budgeted.text + "\n", (cut, bytes) =>
 			formatInjectionSize(bytes, { budgetBytes: budget.bytes, collapsed: budgeted.collapsed, clampedFrom: budget.clampedFrom, cut }),
 		);
-		assert.ok(out.length <= 9_500, `output is ${out.length} characters`);
+		assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `output is ${out.length} characters`);
+		assert.ok(!out.includes(CUT_LINE), "the budget was enough; nothing was cut");
 		const meter = out.trimEnd().split("\n").at(-1) ?? "";
 		assert.match(meter, /— collapsed: Vault File Listing, Brain Topics_$/);
 		assert.match(meter, /\(80\.0kB configured, held under the hook output cap\)/);
 		assert.ok(out.includes("n".repeat(6_000)), "North Star fits once the larger sections give way");
+	});
+
+	test("when sections that never degrade pass the cap after every collapse, the fit cuts and the meter says both", () => {
+		const sections: BudgetSection[] = [
+			{ header: "### Open Tasks", body: Array.from({ length: 40 }, (_, i) => `- [ ] task ${i} ${"t".repeat(300)}`).join("\n"), priority: 0 },
+			{ header: "### Vault File Listing", body: "l".repeat(15_000), priority: 50, fallback: "(pointer)" },
+		];
+		const budget = effectiveInjectionBudget(null);
+		const budgeted = applyInjectionBudget(sections, budget.bytes);
+		const out = fitHookOutput(budgeted.text + "\n", (cut, bytes) =>
+			formatInjectionSize(bytes, { budgetBytes: budget.bytes, collapsed: budgeted.collapsed, cut }),
+		);
+		assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `output is ${out.length} characters`);
+		assert.ok(out.includes(`\n${CUT_LINE}\n`), "the cut is marked");
+		const meter = out.trimEnd().split("\n").at(-1) ?? "";
+		assert.match(meter, /— collapsed: Vault File Listing — truncated to fit the hook output cap_$/);
 	});
 });

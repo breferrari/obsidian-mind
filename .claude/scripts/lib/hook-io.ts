@@ -63,17 +63,16 @@ export function writeHookOutput(
 	additionalContext: string,
 	policyResults?: readonly PolicyResult[],
 ): void {
-	// Claude Code measures additionalContext on its own against the output
-	// cap (#254); the encoded length is never shorter than the raw one.
-	const context = fitEncoded(additionalContext, HOOK_OUTPUT_MAX_CHARS);
-	process.stdout.write(
-		JSON.stringify({
-			hookSpecificOutput:
-				policyResults && policyResults.length > 0
-					? { hookEventName, additionalContext: context, policyResults }
-					: { hookEventName, additionalContext: context },
-		}),
-	);
+	// The whole stdout fits the cap, like every writer here (#254): the
+	// context gets what the envelope and any policy results leave.
+	const envelope = (context: string) => ({
+		hookSpecificOutput:
+			policyResults && policyResults.length > 0
+				? { hookEventName, additionalContext: context, policyResults }
+				: { hookEventName, additionalContext: context },
+	});
+	const overhead = JSON.stringify(envelope("")).length - 2;
+	process.stdout.write(JSON.stringify(envelope(fitEncoded(additionalContext, Math.max(0, HOOK_OUTPUT_MAX_CHARS - overhead)))));
 }
 
 /**

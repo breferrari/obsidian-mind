@@ -152,11 +152,18 @@ describe("writeSystemMessage — the output fits", () => {
 });
 
 describe("writeHookOutput — additionalContext fits the hook output cap (#254)", () => {
-	test("a huge context is cut with the marker; the envelope stays valid JSON", () => {
+	test("a huge context is cut with the marker, and the whole stdout fills the cap exactly", () => {
 		const out = captureStdout(() => writeHookOutput("PostToolUse", "x".repeat(20_000)));
+		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
 		const context = (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
-		assert.ok(JSON.stringify(context).length <= HOOK_OUTPUT_MAX_CHARS, `context encodes to ${JSON.stringify(context).length}`);
 		assert.match(context, /truncated to fit the hook output cap\)$/);
+	});
+
+	test("policy results take their share of the cap, not more of it", () => {
+		const policy = Array.from({ length: 3 }, (_, i) => ({ policy: `rule-${i}`, action: "warn" as const, message: "y".repeat(400) }));
+		const out = captureStdout(() => writeHookOutput("PostToolUse", "x".repeat(20_000), policy as never));
+		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
+		assert.equal((JSON.parse(out) as { hookSpecificOutput: { policyResults: unknown[] } }).hookSpecificOutput.policyResults.length, 3);
 	});
 
 	test("a short context is written unchanged", () => {
