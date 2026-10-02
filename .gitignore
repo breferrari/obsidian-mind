@@ -33,6 +33,13 @@ thinking/session-logs/
 node_modules/
 .claude/scripts/node_modules/
 
+# The Claude Code mod: the session context it delivers (rewritten every
+# session, read through /memory), and the typings and tsconfig Claude Code
+# writes into a mod folder when it is loaded for development.
+.claude/session-context.md
+.claude/skills/obsidian-mind/.claude-plugin/types/
+.claude/skills/obsidian-mind/tsconfig.json
+
 # Hook runtime state (local, self-pruning / debounce sentinel)
 .claude/scripts/.hint-state.json
 .claude/scripts/.checklist-state.json

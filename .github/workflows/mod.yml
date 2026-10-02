@@ -1,0 +1,50 @@
+name: Mod
+
+# The Claude Code mod in .claude/skills/obsidian-mind/ is checked by Claude
+# Code itself: `plugin validate --strict` reads its manifest and module the way
+# the engine will and refuses what the engine would, and `plugin test` runs its
+# *.test.ts files against the real engine. The CLI is installed at its latest
+# version on purpose: the mod API is young and moves between releases, and a
+# break should show here first.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.claude/skills/obsidian-mind/**'
+      - '.github/workflows/mod.yml'
+  pull_request:
+    paths:
+      - '.claude/skills/obsidian-mind/**'
+      - '.github/workflows/mod.yml'
+
+jobs:
+  mod:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code (CI-only, not shipped)
+        shell: bash
+        run: npm install -g @anthropic-ai/claude-code@latest && claude --version
+      - name: Validate the mod
+        shell: bash
+        run: claude plugin validate --strict .claude/skills/obsidian-mind
+      - name: Test the mod
+        shell: bash
+        run: claude plugin test .claude/skills/obsidian-mind
+      - name: The checks left nothing behind
+        shell: bash
+        run: |
+          residue=$(git status --porcelain --untracked-files=all)
+          if [ -n "$residue" ]; then
+            echo "::error::checking the mod left files behind in the working tree"
+            echo "$residue"
+            exit 1
+          fi

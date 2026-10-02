@@ -446,6 +446,8 @@ Five lifecycle hooks in `.claude/settings.json`:
 | PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
 | Stop | After every response | Checklist + concrete vault-hygiene drift findings (same scan as SessionStart), shown once per session and again only when the findings change; hands drift to `om-tidy`. A Stop `systemMessage` reaches only the user, and every Stop output that reaches the agent is also printed in full for the user. So a changed report shows the user a one-line-per-section summary and saves the full report for the next prompt, where the UserPromptSubmit hook hands it to the agent unseen; the agent deals with the user's message first, then acts, asks, or leaves it. If the report cannot be saved, it goes out as Stop feedback instead. SessionEnd and a Stop without a session id show the full report. Also triggers the debounced QMD refresh. For thorough review, use `/om-wrap-up` instead. |
 
+**On Claude Code 2.1.287+, the `obsidian-mind` mod** (`.claude/skills/obsidian-mind/`) delivers the SessionStart context as an instruction file instead: it runs `session-start.ts` itself and passes the settings hook `om_mod: "standdown"` for that event. The context then survives compaction whole and reaches subagents; `/memory` shows it as `.claude/session-context.md`. Wherever the mod does not load (Codex, Gemini, older Claude Code, an untrusted folder, a session started in a vault subfolder), the hooks above run unchanged.
+
 ## Write-Correctness Laws
 
 Each law exists because its absence caused real correction work in vaults running this template. Violating them re-creates documented failures.

@@ -203,6 +203,16 @@ QMD는 **세 개의 작은 모델을 로컬에서** 실행하므로, 설정할 A
 > [!TIP]
 > 그냥 이야기하세요. 훅이 라우팅을 처리합니다.
 
+### 🧩 Claude Code mod
+
+Claude Code 2.1.287 이상에서는 볼트가 mod도 함께 제공합니다. `.claude/skills/obsidian-mind/`에 있는, Claude Code 안에서 실행되는 플러그인입니다. 같은 훅 스크립트를 실행하고, 그 출력이 세션에 전달되는 경로만 바꿉니다.
+
+- **세션 컨텍스트가 `CLAUDE.md`처럼 instruction 파일로 전달됩니다.** 컴팩션과 `/clear` 후에도 전체가 다시 읽히고(훅 출력은 포인터로 줄어듭니다), 범용 서브에이전트에도 전달되며(훅 출력은 전달되지 않습니다), Claude Code 훅 출력의 10,000자 제한에 잘리지 않습니다. 크기는 `vault-manifest.json`의 `eager_layer_instruction_budget_bytes`로 정해집니다. `/memory`에는 `.claude/session-context.md`로 표시됩니다.
+
+mod는 처리하는 이벤트마다 해당 훅에 대기하라고 알립니다. mod가 로드되지 않는 곳에서는 훅이 이전과 똑같이 동작합니다. Codex와 Gemini, 이전 버전의 Claude Code, 볼트 하위 폴더에서 시작한 세션(볼트 루트에서 실행하거나, 그곳으로 `/cd`한 뒤 `/clear`), 신뢰하지 않은 폴더입니다. mod는 볼트에 대한 Claude Code의 신뢰 확인을 수락한 뒤에만 로드됩니다.
+
+mod는 샌드박스 없이 사용자의 권한으로 실행되는 코드이므로, 폴더를 신뢰하기 전에 내용을 확인하세요. `claude plugin validate .claude/skills/obsidian-mind`가 훅하는 모든 이벤트와 수행하는 모든 호출을 나열합니다(볼트 자체의 스크립트를 실행하고 컨텍스트 파일을 쓰는 것이 전부입니다). 끄려면 `.claude/settings.local.json`에 `"enabledPlugins": { "obsidian-mind@skills-dir": false }`를 추가하세요.
+
 ### ⚡ 토큰 효율성
 
 obsidian-mind는 전체 볼트를 컨텍스트에 로드하지 **않습니다**. 계층형 로딩으로 토큰 비용을 최소화합니다:

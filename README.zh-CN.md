@@ -203,6 +203,16 @@ QMD **在本地运行三个小模型**，因此不需要配置 API 密钥，没�
 > [!TIP]
 > 你只需要正常对话。钩子会处理路由。
 
+### 🧩 Claude Code mod
+
+在 Claude Code 2.1.287 及以上版本中,仓库还附带一个 mod:`.claude/skills/obsidian-mind/`,一个在 Claude Code 内部运行的插件。它运行同样的钩子脚本,只改变其输出到达会话的方式:
+
+- **会话上下文像 `CLAUDE.md` 一样以 instruction 文件的形式送达。** 压缩和 `/clear` 之后会被完整地重新读取(作为钩子输出时会缩减为一个指针),能送达通用子代理(钩子输出送达不了),也不会被 Claude Code 钩子输出的 10,000 字符上限截断。其大小由 `vault-manifest.json` 中的 `eager_layer_instruction_budget_bytes` 决定。`/memory` 中显示为 `.claude/session-context.md`。
+
+对于它处理的每个事件,mod 会通知对应的钩子让出。在 mod 未加载的地方,钩子与以前完全一样地运行:Codex 和 Gemini、旧版 Claude Code、在仓库子文件夹中启动的会话(请在仓库根目录启动,或 `/cd` 到根目录后执行 `/clear`)、以及未信任的文件夹。只有在你接受了 Claude Code 对该仓库的信任提示之后,mod 才会加载。
+
+mod 是没有沙箱、以你的权限运行的代码,因此在信任该文件夹之前请先检查它的行为:`claude plugin validate .claude/skills/obsidian-mind` 会列出它挂钩的每个事件和发出的每个调用(它只运行仓库自身的脚本并写入上下文文件)。要关闭它,在 `.claude/settings.local.json` 中加入 `"enabledPlugins": { "obsidian-mind@skills-dir": false }`。
+
 ### ⚡ Token 效率
 
 obsidian-mind **不会**将整个 vault 加载到上下文中。它使用分层加载来控制 token 成本：
