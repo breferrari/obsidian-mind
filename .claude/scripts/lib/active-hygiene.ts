@@ -1,6 +1,7 @@
 /**
- * Active-folder hygiene scan — shared by the SessionStart and Stop hooks
- * (#98/#103), plus the write-time detectors validate-write.ts consumes.
+ * Active-folder hygiene scan — shared by the SessionStart hook and the
+ * conversation-boundary hook (Stop on Claude Code and Codex, SessionEnd on
+ * Gemini; #98/#103), plus the write-time detectors validate-write.ts consumes.
  *
  * Drift modes surfaced:
  *
@@ -670,7 +671,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 
 	if (completedInActive.length > 0) {
 		lines.push(
-			`⚠️  ${completedInActive.length} note(s) marked done but still in active/ — archive to archive/YYYY/ (try /om-project-archive):`,
+			`⚠️  ${completedInActive.length} note(s) marked done but still in active/ — archive to archive/YYYY/ (ask the agent to run om-project-archive):`,
 		);
 		for (const p of completedInActive) lines.push(`   - ${p}`);
 	}
@@ -708,7 +709,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (inboxPressure !== null) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			`⚠️  ${inboxPressure.count} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days (oldest ${inboxPressure.oldestDays}d) — run /om-intake to drain the inbox.`,
+			`⚠️  ${inboxPressure.count} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days (oldest ${inboxPressure.oldestDays}d) — ask the agent to run om-intake to drain the inbox.`,
 		);
 	}
 

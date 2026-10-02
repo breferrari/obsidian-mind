@@ -125,30 +125,47 @@ describe("hook config — CWD-independent script resolution (issue #45)", () => 
 });
 
 /**
- * The session-end checklist is one script with one output contract. It used
- * to be tempting to give Codex a `--json` flag, because Codex is the only
- * agent that *fails* on plain-text stdout — but Gemini ignores it and Claude
- * Code buries it, so the flag would have encoded a per-agent difference that
- * does not exist. The script now always emits the JSON envelope, which means
- * no config may pass it agent-specific arguments.
+ * The checklist hook runs on the event that can actually show its message.
+ *
+ * Claude Code and Codex: Stop, deduped inside the script to once per session
+ * plus on change (#252). Not SessionEnd: Claude Code discards a SessionEnd
+ * hook's `systemMessage` ("Claude Code discards their JSON output fields,
+ * such as systemMessage" — hooks reference), and Codex documents SessionEnd
+ * as advisory and leaves it out of the events whose `systemMessage` it
+ * surfaces. Wiring the checklist there turns "every turn" into "never".
+ *
+ * Gemini CLI: SessionEnd, whose `systemMessage` is "Displayed to the user
+ * during shutdown" (best effort). Gemini's per-turn event is AfterAgent, and
+ * the checklist is not wired to it.
+ *
+ * Pin the routing so a config edit cannot move the message somewhere it
+ * silently disappears, or back to an undeduped per-turn surface.
  */
-describe("hook config — the checklist hook is invoked identically everywhere", () => {
-	for (const { label, path } of configs) {
-		const checklistCommands = eachNodeHookCommand(loadConfig(path))
-			.map(({ command }) => command)
-			.filter((command) => command.includes("stop-checklist.ts"));
+const CHECKLIST_EVENT: Readonly<Record<string, string>> = {
+	"Claude Code": "Stop",
+	"Codex CLI": "Stop",
+	"Gemini CLI": "SessionEnd",
+};
 
-		test(`${label} wires the checklist hook exactly once`, () => {
-			assert.equal(
-				checklistCommands.length,
-				1,
-				`expected ${path} to invoke stop-checklist.ts once — got ${checklistCommands.length}`,
+describe("hook config — the checklist runs where its message is shown", () => {
+	for (const { label, path } of configs) {
+		const checklistHooks = eachNodeHookCommand(loadConfig(path)).filter(
+			({ command }) => command.includes("stop-checklist.ts"),
+		);
+		const expected = CHECKLIST_EVENT[label];
+		const events = checklistHooks.map(({ event }) => event);
+
+		test(`${label} wires the checklist exactly once, on ${expected}`, () => {
+			assert.deepEqual(
+				events,
+				[expected],
+				`expected ${path} to invoke stop-checklist.ts once, on ${expected} — got ${JSON.stringify(events)}`,
 			);
 		});
 
 		test(`${label} passes the checklist hook no arguments`, () => {
 			assert.match(
-				checklistCommands[0] ?? "",
+				checklistHooks[0]?.command ?? "",
 				/stop-checklist\.ts"$/,
 				`${path} must invoke stop-checklist.ts with no trailing arguments — its output contract is the same for every agent`,
 			);

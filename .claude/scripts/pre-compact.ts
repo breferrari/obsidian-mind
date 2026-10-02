@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { debug, readStdinJson } from "./lib/hook-io.ts";
 import { isMainModule } from "./lib/main-guard.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
+import { resolveProjectDir } from "./lib/project-dir.ts";
 
 type HookInput = {
 	readonly transcript_path?: unknown;
@@ -90,7 +91,7 @@ if (isMainModule(import.meta.url)) {
 		process.exit(0);
 	}
 
-	const projectDir = process.env["CLAUDE_PROJECT_DIR"] ?? process.cwd();
+	const projectDir = resolveProjectDir(process.cwd());
 	const backupDir = join(projectDir, "thinking/session-logs");
 	mkdirSync(backupDir, { recursive: true });
 

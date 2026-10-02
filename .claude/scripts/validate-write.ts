@@ -34,6 +34,7 @@ import {
 	shouldRefreshForPath,
 	triggerDebouncedRefresh,
 } from "./lib/qmd-refresh.ts";
+import { resolveProjectDir } from "./lib/project-dir.ts";
 
 type HookInput = {
 	readonly tool_input?: unknown;
@@ -128,9 +129,9 @@ if (isBlockedMemoryPath(filePath) || isBlockedMemoryPath(resolvedPath)) {
 
 // Vault-root skip AFTER the memory guard (which must inspect outside-vault
 // paths): files outside the vault are not vault notes — no validation.
-// Boundary-safe: "/vault" must not match "/vaulting/…", and an empty env
-// value falls back to cwd (|| not ??).
-const vaultRoot = (process.env["CLAUDE_PROJECT_DIR"] || process.cwd())
+// Boundary-safe: "/vault" must not match "/vaulting/…"; an empty env value
+// falls back to cwd (lib/project-dir.ts).
+const vaultRoot = resolveProjectDir(process.cwd())
 	.replaceAll("\\", "/")
 	.replace(/\/+$/, "");
 const filePathFwd = filePath.replaceAll("\\", "/");

@@ -444,7 +444,7 @@ Five lifecycle hooks in `.claude/settings.json`:
 | UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints |
 | PostToolUse | After writing `.md` | Validates frontmatter + wikilinks, blocks misplaced memory files, flags notes crossing the 25KB organization threshold (split, don't trim) and write-time topic clusters |
 | PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
-| Stop | End of every session | Lightweight checklist reminder + concrete vault-hygiene drift findings (same scan as SessionStart). For thorough review, use `/om-wrap-up` instead. |
+| Stop | After every response | Checklist + concrete vault-hygiene drift findings (same scan as SessionStart), shown once per session and again only when the findings change; hands drift to `om-tidy`. Also triggers the debounced QMD refresh. For thorough review, use `/om-wrap-up` instead. |
 
 ## Write-Correctness Laws
 

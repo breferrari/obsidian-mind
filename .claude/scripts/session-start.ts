@@ -65,6 +65,7 @@ import {
 } from "./lib/active-hygiene.ts";
 
 import { readStdinJson } from "./lib/hook-io.ts";
+import { resolveProjectDir } from "./lib/project-dir.ts";
 
 type HookInput = { readonly source?: unknown };
 
@@ -103,11 +104,7 @@ function readManifestRaw(): string | null {
 	}
 }
 
-const cwd =
-	process.env["CLAUDE_PROJECT_DIR"] ??
-	process.env["CODEX_PROJECT_DIR"] ??
-	process.env["GEMINI_PROJECT_DIR"] ??
-	process.cwd();
+const cwd = resolveProjectDir(process.cwd());
 process.chdir(cwd);
 
 // Persist vault path for any downstream shell consumers (Claude Code feature).

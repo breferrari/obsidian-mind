@@ -1,9 +1,17 @@
 /**
- * Integration tests for the Stop hook entry point.
- * Locks the stop_hook_active bool-check semantics, the default-print
- * behavior on malformed or missing input, and the JSON output envelope.
+ * Integration tests for the shared Stop/SessionEnd hook entry point.
+ * Locks the once-per-session Stop report, the always-on SessionEnd report,
+ * stop_hook_active semantics, and the JSON output envelope.
  *
- * The envelope matters more than it looks. Session-end stdout is
+ * Why Stop dedupes instead of moving to SessionEnd (#252): Stop fires after
+ * every response on Claude Code and Codex, so an unconditional report repeats
+ * unchanged drift on every turn. SessionEnd cannot carry it there instead —
+ * Claude Code discards a SessionEnd hook's `systemMessage`, and Codex does
+ * not list SessionEnd among the events whose `systemMessage` it surfaces.
+ * So Stop reports once per session and again only when the report changes;
+ * SessionEnd (Gemini's wiring) reports every time.
+ *
+ * The envelope matters more than it looks. Session-boundary stdout is
  * JSON-or-nothing on all three agents, and each one fails differently when
  * it isn't: Codex reports a hook failure, Gemini ignores the output, and
  * Claude Code files it in the debug log — silently, which is why plain text
@@ -14,7 +22,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -40,6 +48,7 @@ const SCRIPT = resolve(
 // then correctly declines to spawn.
 let TMP_DIR = "";
 let SENTINEL = "";
+let stateCounter = 0;
 
 before(() => {
 	TMP_DIR = mkdtempSync(join(tmpdir(), "stop-checklist-"));
@@ -51,20 +60,41 @@ after(() => {
 	rmTemp(TMP_DIR);
 });
 
-const runScript = (stdin: string | object | null) =>
-	spawnHook(SCRIPT, stdin, { QMD_REFRESH_SENTINEL: SENTINEL });
+/** A fresh, isolated dedupe-state path, so no test sees another's history. */
+function freshState(): string {
+	stateCounter += 1;
+	return join(TMP_DIR, `checklist-state-${stateCounter}.json`);
+}
+
+/**
+ * Run the hook with an isolated sentinel and dedupe state. Pass the same
+ * `state` path to several calls to simulate one machine across turns.
+ */
+function run(
+	stdin: string | object | null,
+	opts: { readonly state?: string; readonly vault?: string } = {},
+) {
+	return spawnHook(SCRIPT, stdin, {
+		QMD_REFRESH_SENTINEL: SENTINEL,
+		STOP_CHECKLIST_STATE: opts.state ?? freshState(),
+		...(opts.vault ? { CLAUDE_PROJECT_DIR: opts.vault } : {}),
+	});
+}
 
 /** Parse stdout as the hook envelope, failing loudly if it isn't JSON. */
-function systemMessageOf(stdout: string): string {
-	let parsed: unknown;
+function envelopeOf(stdout: string): Record<string, unknown> {
 	try {
-		parsed = JSON.parse(stdout);
+		return JSON.parse(stdout) as Record<string, unknown>;
 	} catch {
-		assert.fail(
+		return assert.fail(
 			`stop-checklist must write a JSON envelope to stdout — got:\n  ${stdout}`,
 		);
 	}
-	const message = (parsed as { systemMessage?: unknown }).systemMessage;
+}
+
+/** The envelope's systemMessage, failing loudly if absent. */
+function systemMessageOf(stdout: string): string {
+	const message = envelopeOf(stdout)["systemMessage"];
 	assert.equal(
 		typeof message,
 		"string",
@@ -73,14 +103,30 @@ function systemMessageOf(stdout: string): string {
 	return message as string;
 }
 
+/** A vault with these completed notes left in work/active/ (none = clean). */
+function vault(name: string, ...completedNotes: string[]): string {
+	const root = join(TMP_DIR, name);
+	mkdirSync(join(root, "work/active"), { recursive: true });
+	for (const note of completedNotes) completeNote(root, note);
+	return root;
+}
+
+/** Leave `note` in work/active/ marked completed — one hygiene finding. */
+function completeNote(root: string, note: string): void {
+	writeFileSync(join(root, "work/active", note), "---\nstatus: completed\n---\n# Done\n");
+}
+
+// JSON.stringify drops an undefined session_id, so stop() is a Stop with none.
+const stop = (session_id?: string) => ({ session_id, hook_event_name: "Stop", stop_hook_active: false });
+
 describe("stop-checklist", () => {
 	test("re-entry on strict boolean true emits the empty envelope", () => {
-		const { stdout, code } = runScript({ stop_hook_active: true });
+		const { stdout, code } = run({ stop_hook_active: true });
 		assert.equal(code, 0);
 		// `{}` rather than zero bytes: stdout is JSON-or-nothing here and
 		// "nothing" is only documented by omission. The object carries no
 		// field, so nothing renders on any agent.
-		assert.deepEqual(JSON.parse(stdout), {});
+		assert.deepEqual(envelopeOf(stdout), {});
 	});
 
 	test("re-entry writes its envelope before exiting", () => {
@@ -88,50 +134,154 @@ describe("stop-checklist", () => {
 		// pipe, pipe writes are async on Windows, and this path writes and
 		// then immediately calls process.exit(). A non-sync write here
 		// arrives empty on Windows and passes everywhere else.
-		const { stdout } = runScript({ stop_hook_active: true });
+		const { stdout } = run({ stop_hook_active: true });
 		assert.equal(stdout, "{}");
 	});
 
-	test("emits the checklist when stop_hook_active is false", () => {
-		const { stdout, code } = runScript({ stop_hook_active: false });
+	test("the first Stop of a session reports the checklist and findings", () => {
+		const root = vault("first-stop", "Done.md");
+		const message = systemMessageOf(run(stop("s-first"), { vault: root }).stdout);
+		assert.match(message, /Wrap-up checklist:/);
+		assert.match(message, /work\/active\/Done\.md/);
+	});
+
+	test("a later Stop with an unchanged report is silent (#252)", () => {
+		const root = vault("unchanged", "Done.md");
+		const state = freshState();
+		const first = run(stop("s-same"), { vault: root, state });
+		const second = run(stop("s-same"), { vault: root, state });
+		const third = run(stop("s-same"), { vault: root, state });
+		assert.match(systemMessageOf(first.stdout), /work\/active\/Done\.md/);
+		assert.deepEqual(envelopeOf(second.stdout), {});
+		assert.deepEqual(envelopeOf(third.stdout), {});
+	});
+
+	test("a Stop whose findings changed reports again", () => {
+		const root = vault("changed", "Done.md");
+		const state = freshState();
+		run(stop("s-change"), { vault: root, state });
+		completeNote(root, "Also Done.md");
+		const message = systemMessageOf(run(stop("s-change"), { vault: root, state }).stdout);
+		assert.match(message, /work\/active\/Also Done\.md/);
+	});
+
+	test("a report that returns to an earlier one is shown again (A → B → A)", () => {
+		// Drift fixed, then reintroduced: the last report shown was the clean
+		// one, so the returning finding is a change and must reach the user.
+		const root = vault("revert", "Done.md");
+		const state = freshState();
+		const a1 = run(stop("s-revert"), { vault: root, state });
+		rmSync(join(root, "work/active/Done.md"));
+		const b = run(stop("s-revert"), { vault: root, state });
+		completeNote(root, "Done.md");
+		const a2 = run(stop("s-revert"), { vault: root, state });
+		assert.match(systemMessageOf(a1.stdout), /work\/active\/Done\.md/);
+		assert.doesNotMatch(systemMessageOf(b.stdout), /Vault Hygiene/);
+		assert.match(systemMessageOf(a2.stdout), /work\/active\/Done\.md/);
+	});
+
+	test("a note growing past the threshold does not re-show the report", () => {
+		// The message carries "(31KB)"-style sizes and day ages; those move
+		// with no new drift, so they are left out of the comparison. A note
+		// the agent keeps appending to must not bring back the per-turn repeat.
+		const root = vault("growing");
+		mkdirSync(join(root, "notes"), { recursive: true });
+		const log = join(root, "notes/Log.md");
+		writeFileSync(log, "x".repeat(26_000));
+		const state = freshState();
+		const first = run(stop("s-grow"), { vault: root, state });
+		writeFileSync(log, "x".repeat(40_000));
+		const second = run(stop("s-grow"), { vault: root, state });
+		assert.match(systemMessageOf(first.stdout), /notes\/Log\.md \(26KB\)/);
+		assert.deepEqual(envelopeOf(second.stdout), {});
+	});
+
+	test("a new session reports again even when nothing changed", () => {
+		const root = vault("new-session", "Done.md");
+		const state = freshState();
+		run(stop("s-one"), { vault: root, state });
+		const other = run(stop("s-two"), { vault: root, state });
+		assert.match(systemMessageOf(other.stdout), /work\/active\/Done\.md/);
+	});
+
+	test("a clean vault still gets the checklist once, then silence", () => {
+		const root = vault("clean-vault");
+		const state = freshState();
+		const first = run(stop("s-clean"), { vault: root, state });
+		const second = run(stop("s-clean"), { vault: root, state });
+		assert.match(systemMessageOf(first.stdout), /Wrap-up checklist:/);
+		assert.doesNotMatch(systemMessageOf(first.stdout), /Vault Hygiene/);
+		assert.deepEqual(envelopeOf(second.stdout), {});
+	});
+
+	test("a Stop without a session_id fails open and reports every time", () => {
+		// Same rule as the classifier's hint dedupe (#107): no key to
+		// remember by means today's behaviour, never silence.
+		const state = freshState();
+		const first = run(stop(), { state });
+		const second = run(stop(), { state });
+		assert.match(systemMessageOf(first.stdout), /Wrap-up checklist:/);
+		assert.match(systemMessageOf(second.stdout), /Wrap-up checklist:/);
+	});
+
+	test("an unreadable dedupe state fails open", () => {
+		const state = freshState();
+		writeFileSync(state, "not json{{");
+		const { stdout } = run(stop("s-corrupt"), { state });
+		assert.match(systemMessageOf(stdout), /Wrap-up checklist:/);
+	});
+
+	test("string stop_hook_active is not re-entry", () => {
+		const { stdout } = run({ ...stop("s-string"), stop_hook_active: "true" });
+		assert.match(systemMessageOf(stdout), /Wrap-up checklist:/);
+	});
+
+	test("SessionEnd reports every time — it is the last chance, not a turn", () => {
+		const root = vault("session-end", "Done.md");
+		const state = freshState();
+		const payload = { session_id: "s-end", hook_event_name: "SessionEnd" };
+		const first = run(payload, { vault: root, state });
+		const second = run(payload, { vault: root, state });
+		assert.match(systemMessageOf(first.stdout), /work\/active\/Done\.md/);
+		assert.match(systemMessageOf(second.stdout), /work\/active\/Done\.md/);
+	});
+
+	test("SessionEnd after a deduped Stop still reports", () => {
+		const root = vault("stop-then-end", "Done.md");
+		const state = freshState();
+		run(stop("s-mixed"), { vault: root, state });
+		const end = run({ session_id: "s-mixed", hook_event_name: "SessionEnd" }, { vault: root, state });
+		assert.match(systemMessageOf(end.stdout), /work\/active\/Done\.md/);
+	});
+
+	test("the checklist hands drift to om-tidy", () => {
+		const message = systemMessageOf(run(stop("s-handoff")).stdout);
+		assert.match(message, /ask the agent to run om-tidy/i);
+	});
+
+	test("malformed input emits a valid default", () => {
+		const { stdout, code } = run("garbage{{");
 		assert.equal(code, 0);
-		const message = systemMessageOf(stdout);
-		assert.match(message, /Session end checklist:/);
-		assert.match(message, /Archive completed projects/);
+		assert.match(systemMessageOf(stdout), /Wrap-up checklist:/);
 	});
 
-	test("emits the checklist when stop_hook_active is string 'true' (not strict)", () => {
-		const { stdout } = runScript({ stop_hook_active: "true" });
-		assert.match(systemMessageOf(stdout), /Session end checklist:/);
-	});
-
-	test("emits the checklist when the field is absent", () => {
-		const { stdout } = runScript({});
-		assert.match(systemMessageOf(stdout), /Session end checklist:/);
-	});
-
-	test("emits valid JSON on malformed input (safe default)", () => {
-		const { stdout, code } = runScript("garbage{{");
+	test("empty stdin emits a valid default", () => {
+		const { stdout, code } = run(null);
 		assert.equal(code, 0);
-		assert.match(systemMessageOf(stdout), /Session end checklist:/);
-	});
-
-	test("emits valid JSON on empty stdin", () => {
-		const { stdout, code } = runScript(null);
-		assert.equal(code, 0);
-		assert.match(systemMessageOf(stdout), /Session end checklist:/);
+		assert.match(systemMessageOf(stdout), /Wrap-up checklist:/);
 	});
 
 	test("does not terminate the message with a stray newline", () => {
 		// systemMessage is rendered by the agent's UI, not written to a
 		// stream — a trailing newline is padding in all three.
-		const message = systemMessageOf(runScript({}).stdout);
+		const message = systemMessageOf(run({}).stdout);
 		assert.equal(message, message.trimEnd());
 	});
 
-	// One script serves three agents whose session-end payloads differ in
-	// shape. None of those fields steer the output any more — that is the
-	// property under test. Payloads mirror each vendor's documented schema.
+	// One script serves three agents whose payloads differ in shape: Claude
+	// Code and Codex call it on Stop, Gemini on SessionEnd. Payloads mirror
+	// each vendor's documented schema. Each runs against fresh state, so the
+	// first report of each is the one compared.
 	const AGENT_PAYLOADS: ReadonlyArray<{
 		readonly label: string;
 		readonly payload: Record<string, unknown>;
@@ -176,10 +326,10 @@ describe("stop-checklist", () => {
 	const rendered = new Set<string>();
 	for (const { label, payload } of AGENT_PAYLOADS) {
 		test(`${label} receives the same JSON envelope`, () => {
-			const { stdout, code } = runScript(payload);
+			const { stdout, code } = run(payload);
 			assert.equal(code, 0);
 			const message = systemMessageOf(stdout);
-			assert.match(message, /Session end checklist:/);
+			assert.match(message, /Wrap-up checklist:/);
 			rendered.add(message);
 		});
 	}

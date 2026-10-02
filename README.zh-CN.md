@@ -198,7 +198,7 @@ QMD **在本地运行三个小模型**，因此不需要配置 API 密钥，没�
 | 💬 UserPromptSubmit | 每条消息 | 对内容分类（决策、事件、成就、1:1、架构、人员、项目更新）并注入路由提示 |
 | ✍️ PostToolUse | 写入 `.md` 后 | 验证 frontmatter＋wikilinks，拦截误放的记忆文件，标记过大笔记（拆分而非删减）与写入时的主题集群 |
 | 💾 PreCompact | 上下文压缩前 | 将会话记录备份到 `thinking/session-logs/` |
-| 🏁 Stop | 会话结束时 | 检查清单＋具体漂移发现（与 SessionStart 相同的卫生扫描） |
+| 🏁 Stop | 每次响应结束后 | 检查清单＋具体漂移发现（与 SessionStart 相同的卫生扫描），每个会话显示一次，仅在内容变化时再次显示；处理交给 `om-tidy` |
 
 > [!TIP]
 > 你只需要正常对话。钩子会处理路由。

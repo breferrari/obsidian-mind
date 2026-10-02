@@ -61,6 +61,7 @@ import {
 } from "./lib/active-hygiene.ts";
 import { generateMemoryIndex } from "./lib/automemory-index.ts";
 import { collectBrainNotes } from "./generate-memory-index.ts";
+import { resolveProjectDir } from "./lib/project-dir.ts";
 
 const ACTIVE_REL = "work/active";
 
@@ -262,7 +263,7 @@ function fixMisplacedMemory(
 
 function main(): void {
 	const apply = process.argv.includes("--apply");
-	const vaultRoot = (process.env["CLAUDE_PROJECT_DIR"] || process.cwd())
+	const vaultRoot = resolveProjectDir(process.cwd())
 		.replaceAll("\\", "/")
 		.replace(/\/+$/, "");
 

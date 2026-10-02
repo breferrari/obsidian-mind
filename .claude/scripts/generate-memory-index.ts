@@ -19,6 +19,7 @@ import {
 	isMarkdownFilename,
 } from "./lib/session-start.ts";
 import { generateMemoryIndex, type BrainNote } from "./lib/automemory-index.ts";
+import { resolveProjectDir } from "./lib/project-dir.ts";
 
 /**
  * Collect brain/ notes (name + description) for index generation. Exported
@@ -49,7 +50,7 @@ export function collectBrainNotes(root: string): BrainNote[] | null {
 }
 
 function main(): void {
-	const root = process.env["CLAUDE_PROJECT_DIR"] || process.cwd();
+	const root = resolveProjectDir(process.cwd());
 	const notes = collectBrainNotes(root);
 	if (notes === null) {
 		process.stderr.write("brain/ not found — run from the vault root.\n");

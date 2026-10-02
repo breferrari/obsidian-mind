@@ -49,12 +49,15 @@ For each note created or modified this session:
 - Any new people not added to People & Context?
 - Any thinking notes that should be promoted or deleted?
 
-### 5. Archive Check
+### 5. Status Check
 
-- Are there notes in `work/active/` that should be moved to `work/archive/YYYY/`?
-- Any status fields still `active` that should be `completed`?
+- Any status fields still `active` that should be `completed`? Mark them; step 6's `/om-tidy` moves completed notes out of `work/active/` to `work/archive/YYYY/`, so do not move them by hand here.
 
-### 6. Ways of Working Review
+### 6. Act on Vault Hygiene
+
+Invoke `/om-tidy` while the conversation and tools are still live. It runs the same vault-hygiene scan the hooks use; if that reports drift, complete its safe mechanical tier now and bring its judgment-tier findings to the user instead of leaving them to a reminder that cannot act on them. Fold the tidy receipt into this wrap-up report; do not create a second report unless the findings need to survive the session.
+
+### 7. Ways of Working Review
 
 **Index-first**: read each brain note's headline/one-liner structure, then open ONLY the topics this session actually touched — same knowledge transfer, a fraction of the tokens. Check if this session revealed:
 - A new pattern that should be in `brain/Patterns.md`?
@@ -64,7 +67,7 @@ For each note created or modified this session:
 - A new or improved slash command?
 - A hook that should be added or modified?
 
-### 7. Suggest Improvements
+### 8. Suggest Improvements
 
 Based on how the session went:
 - Were there friction points in the workflow?
@@ -73,7 +76,7 @@ Based on how the session went:
 - Are there Bases that should be created or updated?
 - Any frontmatter properties that would help future queries?
 
-### 8. Report
+### 9. Report
 
 Present a concise summary:
 - **Done**: what was captured this session

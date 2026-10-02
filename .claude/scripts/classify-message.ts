@@ -8,12 +8,11 @@
  * malformed input, missing prompt, or zero matches.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { debug, readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
 import { classify } from "./lib/matcher.ts";
-import { parseHintState, prune, record, unseen } from "./lib/hint-state.ts";
+import { claimUnseen } from "./lib/hint-state.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 // CLASSIFY_HINT_STATE routes the state file into a tmp path for tests
@@ -48,29 +47,10 @@ debug(`classify: matched ${signals.length} signal(s)`);
 let toEmit = signals;
 const sessionId = input.session_id;
 if (typeof sessionId === "string" && sessionId && signals.length > 0) {
-	let state = parseHintState(null);
-	try {
-		state = parseHintState(readFileSync(STATE_PATH, { encoding: "utf-8" }));
-	} catch {
-		/* missing/unreadable state → empty (fail open) */
-	}
-	const unseenHints = new Set(unseen(state, sessionId, signals));
-	toEmit = signals.filter((s) => unseenHints.has(s));
+	toEmit = claimUnseen(STATE_PATH, sessionId, signals);
 	debug(
 		`classify: ${signals.length - toEmit.length} signal(s) already fired this session`,
 	);
-	if (toEmit.length > 0) {
-		try {
-			const now = new Date();
-			const next = prune(
-				record(state, sessionId, toEmit, now.toISOString()),
-				now.getTime(),
-			);
-			writeFileSync(STATE_PATH, JSON.stringify(next));
-		} catch {
-			/* best-effort — a failed state write must never block the hint */
-		}
-	}
 }
 
 if (toEmit.length > 0) {

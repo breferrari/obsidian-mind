@@ -4,15 +4,21 @@
  * classify-message.test.ts via runScript + CLASSIFY_HINT_STATE.
  */
 
-import { test, describe } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	parseHintState,
 	unseen,
 	record,
 	prune,
+	claimUnseen,
+	claimChanged,
 	PRUNE_MAX_AGE_MS,
 } from "../lib/hint-state.ts";
+import { rmTemp } from "./_helpers.ts";
 
 describe("parseHintState — fail open on anything malformed", () => {
 	test("null input → empty state", () => {
@@ -106,5 +112,68 @@ describe("prune", () => {
 		}
 		const pruned = prune(parseHintState(JSON.stringify(entries)), NOW, PRUNE_MAX_AGE_MS, 3);
 		assert.deepEqual(Object.keys(pruned).sort(), ["s0", "s1", "s2"]);
+	});
+});
+
+describe("claimUnseen / claimChanged (state file I/O)", () => {
+	let dir = "";
+	let n = 0;
+	before(() => {
+		dir = mkdtempSync(join(tmpdir(), "hint-state-"));
+	});
+	after(() => rmTemp(dir));
+	const path = () => join(dir, `state-${++n}.json`);
+
+	test("claimUnseen returns each name once per session", () => {
+		const p = path();
+		assert.deepEqual(claimUnseen(p, "s", ["WIN", "DECISION"]), ["WIN", "DECISION"]);
+		assert.deepEqual(claimUnseen(p, "s", ["WIN", "PERSON"]), ["PERSON"]);
+		assert.deepEqual(claimUnseen(p, "other", ["WIN"]), ["WIN"]);
+	});
+
+	test("claimChanged is true on first sight and on change, false on repeat", () => {
+		const p = path();
+		assert.equal(claimChanged(p, "s", "A"), true);
+		assert.equal(claimChanged(p, "s", "A"), false);
+		assert.equal(claimChanged(p, "s", "B"), true);
+	});
+
+	test("claimChanged keeps only the last value, so A → B → A is a change", () => {
+		const p = path();
+		claimChanged(p, "s", "A");
+		claimChanged(p, "s", "B");
+		assert.equal(claimChanged(p, "s", "A"), true);
+		const stored = parseHintState(readFileSync(p, "utf-8"));
+		assert.deepEqual(stored["s"]?.seen, ["A"]);
+	});
+
+	test("a repeat refreshes the session's updated stamp, so an active session is not pruned", () => {
+		const p = path();
+		claimChanged(p, "s", "A", new Date("2026-10-01T00:00:00Z"));
+		assert.equal(claimChanged(p, "s", "A", new Date("2026-10-05T00:00:00Z")), false);
+		const stored = parseHintState(readFileSync(p, "utf-8"));
+		assert.equal(stored["s"]?.updated, "2026-10-05T00:00:00.000Z");
+	});
+
+	test("writes go through a temp file and leave none behind", () => {
+		const p = path();
+		claimChanged(p, "s", "A");
+		claimUnseen(p + ".u", "s", ["WIN"]);
+		const leftovers = readdirSync(dir).filter((f) => f.endsWith(".tmp"));
+		assert.deepEqual(leftovers, []);
+	});
+
+	test("an unreadable state file fails open for both", () => {
+		const p = path();
+		writeFileSync(p, "not json{{");
+		assert.deepEqual(claimUnseen(p, "s", ["WIN"]), ["WIN"]);
+		writeFileSync(p, "not json{{");
+		assert.equal(claimChanged(p, "s", "A"), true);
+	});
+
+	test("an unwritable state path still answers (best-effort write)", () => {
+		const p = join(dir, "no-such-dir", "state.json");
+		assert.deepEqual(claimUnseen(p, "s", ["WIN"]), ["WIN"]);
+		assert.equal(claimChanged(p, "s", "A"), true);
 	});
 });
