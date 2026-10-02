@@ -64,15 +64,19 @@ export function writeHookOutput(
 	policyResults?: readonly PolicyResult[],
 ): void {
 	// The whole stdout fits the cap, like every writer here (#254): the
-	// context gets what the envelope and any policy results leave.
-	const envelope = (context: string) => ({
+	// context gets what the envelope and any policy results leave. Policy
+	// results that cannot fit beside even the cut marker are dropped rather
+	// than carried over the cap (three raw paths can be 12 KB on Linux).
+	const envelope = (context: string, policies: readonly PolicyResult[]) => ({
 		hookSpecificOutput:
-			policyResults && policyResults.length > 0
-				? { hookEventName, additionalContext: context, policyResults }
+			policies.length > 0
+				? { hookEventName, additionalContext: context, policyResults: policies }
 				: { hookEventName, additionalContext: context },
 	});
-	const overhead = JSON.stringify(envelope("")).length - 2;
-	process.stdout.write(JSON.stringify(envelope(fitEncoded(additionalContext, Math.max(0, HOOK_OUTPUT_MAX_CHARS - overhead)))));
+	const overhead = (policies: readonly PolicyResult[]) => JSON.stringify(envelope("", policies)).length - 2;
+	const minimum = JSON.stringify(CUT_MARKER).length - 2;
+	const policies = policyResults && overhead(policyResults) + minimum <= HOOK_OUTPUT_MAX_CHARS ? policyResults : [];
+	process.stdout.write(JSON.stringify(envelope(fitEncoded(additionalContext, HOOK_OUTPUT_MAX_CHARS - overhead(policies)), policies)));
 }
 
 /**
