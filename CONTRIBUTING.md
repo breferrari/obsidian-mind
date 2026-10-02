@@ -126,11 +126,15 @@ Every other check confirms that a hook **ran**. The delivery gate confirms what 
 It needs a logged-in `claude` and costs a few model turns, so it runs by hand, not in CI. Run it on any Claude Code version before the README or `mod.yml` pins it:
 
 ```bash
-node --experimental-strip-types .github/scripts/delivery-gate.ts            # must print PASS at every checkpoint
-node --experimental-strip-types .github/scripts/delivery-gate.ts --self-test # must FAIL: the mod cuts its own context
+node --experimental-strip-types .github/scripts/delivery-gate.ts --self-test # first: exits 0 when the gate can still fail
+node --experimental-strip-types .github/scripts/delivery-gate.ts             # then: PASS at every checkpoint
 ```
 
-A `--self-test` that passes means the gate has stopped being able to fail; fix the gate before trusting the first run. The throwaway vault runs with qmd unresolvable, so it starts no search bootstrap and registers no index on your machine.
+The self-test runs two broken copies of the mod, one that cuts its context everywhere and one that delivers it whole only at startup, and every checkpoint must fail against both. If any passes, the gate is broken; fix it before trusting a normal run.
+
+Only the session's own events decide. An answer whose turn used a tool, a subagent checkpoint without the subagent's own report, and a `/compact` or `/clear` that left no event of its own are reported INVALID, never PASS, as is a session that errors or times out. Exit codes: 0 pass, 1 a checkpoint did not receive the context, 2 the run could not be judged.
+
+Two limits: the mod is loaded with `--plugin-dir` rather than found in the vault after the trust prompt, and the fixture's settings-hook context is too short to show a cut, so that path shows only that something arrived. The throwaway vaults run with qmd unresolvable, so they start no search bootstrap on your machine.
 
 ## Questions?
 
