@@ -88,9 +88,41 @@ export function writeHookOutput(
  * "must not print any plain text to stdout other than the final JSON",
  * and Claude Code routes non-exempt plain stdout to the debug log where
  * nobody reads it. So there is no text path worth keeping.
+ *
+ * To reach the model as well, a Stop hook uses `writeStopBlock` instead.
  */
 export function writeSystemMessage(message: string): void {
-	process.stdout.write(JSON.stringify({ systemMessage: message }));
+	process.stdout.write(JSON.stringify({ systemMessage: fitEncoded(message, HOOK_OUTPUT_MAX_CHARS - 17) }));
+}
+
+/**
+ * Claude Code turns hook output over 10,000 characters into a short preview
+ * (verified 2026-10-02, #254), so a report past it would reach the agent as
+ * its first couple of KB. Writers hold the whole stdout under this, with
+ * margin, measured after JSON escaping.
+ */
+export const HOOK_OUTPUT_MAX_CHARS = 9_500;
+
+const CUT_MARKER = "\n… (truncated to fit the hook output cap)";
+
+/**
+ * `text`, cut with a marker so that its JSON-encoded form is at most `max`
+ * characters. Escaping (`\n`, `\\`, quotes) is counted, which a cut on the
+ * raw length would miss. It never splits an emoji: JSON.stringify escapes a
+ * lone surrogate to six characters, so a cut inside a pair always costs more
+ * than keeping the whole pair, and the search keeps the longest prefix that
+ * fits.
+ */
+export function fitEncoded(text: string, max: number): string {
+	if (JSON.stringify(text).length <= max) return text;
+	let lo = 0;
+	let hi = text.length;
+	while (lo < hi) {
+		const mid = Math.ceil((lo + hi) / 2);
+		if (JSON.stringify(text.slice(0, mid) + CUT_MARKER).length <= max) lo = mid;
+		else hi = mid - 1;
+	}
+	return text.slice(0, lo) + CUT_MARKER;
 }
 
 /**
@@ -106,7 +138,12 @@ export function writeSystemMessage(message: string): void {
  * checklist on SessionEnd and never gets it.
  */
 export function writeStopBlock(reason: string, message: string): void {
-	process.stdout.write(JSON.stringify({ decision: "block", reason, systemMessage: message }));
+	// Both copies share one output cap: the user's gets at most a third, the
+	// agent's whatever is left.
+	const shown = fitEncoded(message, Math.floor(HOOK_OUTPUT_MAX_CHARS / 3));
+	const overhead = JSON.stringify({ decision: "block", reason: "", systemMessage: shown }).length - 2;
+	const handed = fitEncoded(reason, HOOK_OUTPUT_MAX_CHARS - overhead);
+	process.stdout.write(JSON.stringify({ decision: "block", reason: handed, systemMessage: shown }));
 }
 
 /**

@@ -32,8 +32,10 @@
  *
  * Output is JSON on every agent, never plain text. Codex rejects plain Stop
  * stdout, Gemini's SessionEnd contract requires a final JSON object, and
- * Claude Code otherwise files non-exempt stdout in the debug log. The report
- * uses the one user-facing field all three agents share, `systemMessage`.
+ * Claude Code otherwise files non-exempt stdout in the debug log. The user
+ * gets the report in `systemMessage`, the one user-facing field all three
+ * agents share; the agent gets it as a Stop block's `reason` (above). Both
+ * are held under Claude Code's hook output cap (lib/hook-io.ts).
  * The documented event name is the only branch — no agent sniffing and no
  * agent-specific argument.
  */

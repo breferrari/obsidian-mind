@@ -232,11 +232,23 @@ describe("stop-checklist", () => {
 	});
 
 	test("the forced turn's own Stop does not block again", () => {
+		// Fresh state, so the change check would block: only the
+		// stop_hook_active exit keeps the forced turn's Stop silent.
 		const root = vault("block-reentry", "Done.md");
-		const state = freshState();
-		run(stop("s-block-reentry"), { vault: root, state });
-		const reentry = run({ session_id: "s-block-reentry", hook_event_name: "Stop", stop_hook_active: true }, { vault: root, state });
+		const reentry = run({ session_id: "s-block-reentry", hook_event_name: "Stop", stop_hook_active: true }, { vault: root });
 		assert.deepEqual(envelopeOf(reentry.stdout), {});
+	});
+
+	test("a report too big for the hook output cap still fits, cut with a marker", () => {
+		// Completed notes left in work/active/ are listed uncapped; four hundred
+		// long names make a report several times the cap.
+		const names = Array.from({ length: 400 }, (_, i) => `A completed note with a deliberately long descriptive title ${i}.md`);
+		const root = vault("block-huge", ...names);
+		const { stdout } = run(stop("s-block-huge"), { vault: root });
+		assert.ok(stdout.length <= 9_500, `stdout is ${stdout.length} chars`);
+		const envelope = envelopeOf(stdout);
+		assert.equal(envelope["decision"], "block");
+		assert.match(String(envelope["reason"]), /truncated to fit the hook output cap\)$/);
 	});
 
 	test("SessionEnd and a Stop without a session_id never block", () => {
