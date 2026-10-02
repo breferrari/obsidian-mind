@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect, mock, test, type MockClock } from 'claude-code/testing'
 import { CONTEXT_BLOCK, withSessionContext } from './context.ts'
 
 // Run with `claude plugin test .claude/skills/obsidian-mind`. Each test's own
@@ -27,8 +27,11 @@ const lastContext = (seen: Seen) => seen.context.at(-1) ?? null
 function vault(
 	on: Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1],
 	script: { exitCode: number; stdout: string; stderr?: string } | (() => { exitCode: number; stdout: string; stderr?: string }),
-): Seen {
+	options: { hangFirstWrite?: boolean } = {},
+): Seen & { clock: MockClock } {
 	const seen: Seen = { runs: [], writes: [], passedDown: [], invalidated: [], context: [] }
+	// The write deadline waits on the mod's clock: a mocked one moves only when told.
+	const clock = mock.clock(on)
 	watchContext(on, seen)
 	// A call on `$` is answered `{ value }` (or `{ deny }`).
 	on('session.root', () => ({ value: ROOT }))
@@ -39,6 +42,8 @@ function vault(
 	})
 	on('fs.write', (_$, e) => {
 		seen.writes.push(e)
+		// A write that never settles, to prove it cannot stall the next one.
+		if (options.hangFirstWrite && seen.writes.length === 1) return new Promise<never>(() => {})
 		return { value: undefined }
 	})
 	on('ui.invalidate', (_$, e) => {
@@ -49,7 +54,7 @@ function vault(
 		seen.passedDown.push(e as unknown as Record<string, unknown>)
 		return {}
 	})
-	return seen
+	return { ...seen, clock }
 }
 
 describe('session context (#265)', () => {
@@ -87,6 +92,17 @@ describe('session context (#265)', () => {
 		expect(seen.runs.length).toBe(2)
 		expect(seen.passedDown[1]?.['om_mod']).toBe(undefined)
 		expect(lastContext(seen)).toBe(null)
+	})
+
+	test('a context-file write that never settles holds the next one only until its deadline', async ($, on) => {
+		const world = vault(on, { exitCode: 0, stdout: CONTEXT }, { hangFirstWrite: true })
+		await $.classic.SessionStart({ source: 'startup' })
+		await $.classic.SessionStart({ source: 'compact' })
+		await world.clock.settle()
+		expect(world.writes.length).toBe(1)
+
+		await world.clock.advance(5_000)
+		expect(world.writes.length).toBe(2)
 	})
 
 	test('when the script fails, the settings hook gets the original event and runs as without the mod', async ($, on) => {
