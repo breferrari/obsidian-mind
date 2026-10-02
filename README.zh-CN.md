@@ -208,7 +208,7 @@ QMD **在本地运行三个小模型**，因此不需要配置 API 密钥，没�
 在 Claude Code 2.1.287 及以上版本中，仓库还附带一个 mod：`.claude/skills/obsidian-mind/`，一个在 Claude Code 内部运行的插件。它运行仓库自身的钩子脚本，只改变其输出到达会话的方式：
 
 - **会话上下文像 `CLAUDE.md` 一样以 instruction 文件的形式送达。** 压缩和 `/clear` 之后会被完整地重新读取(作为钩子输出时会缩减为一个指针),能送达通用子代理(钩子输出送达不了),也不会被 Claude Code 钩子输出的 10,000 字符上限截断。其预算是 `vault-manifest.json` 中的 `eager_layer_instruction_budget_bytes`;像未完成任务这样不会缩减的部分仍可能超出它。`/memory` 中显示为 `.claude/session-context.md`。
-- **Stop 报告变成回答下方的一行。** 发现项变化时,你会在 Claude 的回复下方看到 `obsidian-mind: vault check: …`,而 Claude 会随你的下一条消息收到完整报告,对你不可见。标记为紧急的发现项则会立即送达 Claude;模板自身的报告中没有这类发现项。
+- **Stop 报告变成回答下方的一行。** 发现项变化时,你会在 Claude 的回复下方看到 `obsidian-mind: vault check: …`,而 Claude 会随你的下一条消息收到完整报告,对你不可见。标记为紧急的发现项则会立即送达 Claude(你每发送一条消息最多一次,第二个会在报告中等待);模板自身的报告中没有这类发现项。
 
 对于它处理的每个事件，mod 会通知对应的钩子让出。在 mod 未加载的地方，钩子与以前完全一样地运行：Codex 和 Gemini、旧版 Claude Code、在仓库子文件夹中启动的会话（请在仓库根目录启动，或 `/cd` 到根目录后执行 `/clear`）、以及未信任的文件夹。只有在你接受了 Claude Code 对该仓库的信任提示之后，mod 才会加载。
 

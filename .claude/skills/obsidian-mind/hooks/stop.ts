@@ -64,7 +64,7 @@ export function carriesReport(origin: PromptOrigin | undefined): boolean {
 	return fromPerson(origin) || (origin?.kind === 'plugin' && origin.name === 'obsidian-mind')
 }
 
-/** Whether the person sent this prompt: typed, over Remote Control, or through the SDK. */
+/** Whether the person sent this prompt: typed, over Remote Control, through the SDK, or as the session's owner pinging it from Slack. */
 export function fromPerson(origin: PromptOrigin | undefined): boolean {
-	return origin === undefined || origin.kind === 'composer' || origin.kind === 'bridge' || origin.kind === 'sdk'
+	return origin === undefined || origin.kind === 'composer' || origin.kind === 'bridge' || origin.kind === 'sdk' || origin.kind === 'slack-ping'
 }

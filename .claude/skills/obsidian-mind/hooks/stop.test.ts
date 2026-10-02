@@ -212,6 +212,17 @@ describe('the line under the answer (#266)', () => {
 		expect(world.submitted.length).toBe(0)
 	})
 
+	test('a report dropped by a resume is shown again when the same findings come back', async ($, on) => {
+		const world = vault(on, ok(report('k')))
+		await $.classic.Stop({ stop_hook_active: false, session_id: 'A' })
+		await $.classic.SessionStart({ source: 'resume' } as never)
+		await $.classic.SessionStart({ source: 'resume' } as never)
+		await $.classic.Stop({ stop_hook_active: false, session_id: 'A' })
+		await $.prompt.submit({ text: 'typed' })
+
+		expect(world.submitted[0]?.context).toEqual([HANDED('k')])
+	})
+
 	test('a compaction keeps what was queued', async ($, on) => {
 		vault(on, ok(report('k')))
 		await $.classic.Stop({ stop_hook_active: false })
@@ -341,6 +352,38 @@ describe('an urgent finding (#266)', () => {
 		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a', 'urgent b'])
 	})
 
+	test('a newer report queued while a prompt was entering keeps its own line and urgent turn', async ($, on) => {
+		let key = 'a'
+		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key, key === 'b' ? { urgent: 'urgent b' } : {}) }) }))
+		await $.classic.Stop({ stop_hook_active: false })
+		world.duringNext = async () => {
+			key = 'b'
+			await $.classic.Stop({ stop_hook_active: false })
+		}
+		await $.prompt.submit({ text: 'typed' })
+		expect(world.submitted[0]?.context).toEqual([HANDED('a')])
+
+		expect((await $.turn.complete(answered())).text).toBe(LINE)
+		await settle()
+		expect(world.submitted.map((p) => p.text)).toEqual(['typed', 'urgent b'])
+	})
+
+	test("a person's prompt dropped below does not renew the allowance: nothing of theirs reached the agent", async ($, on) => {
+		let key = 'a'
+		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key, { urgent: `urgent ${key}` }) }) }))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+		world.dropNext = true
+		await $.prompt.submit({ text: 'blocked' })
+		key = 'b'
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+
+		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a', 'blocked'])
+	})
+
 	test("a peer's message does not count as the person speaking", async ($, on) => {
 		let key = 'a'
 		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key, { urgent: `urgent ${key}` }) }) }))
@@ -397,7 +440,7 @@ describe('carriesReport', () => {
 	})
 
 	test("only the person's own prompts count as the person speaking, never a plugin's", () => {
-		for (const kind of ['composer', 'bridge', 'sdk'] as const) expect(fromPerson({ kind } as never)).toBe(true)
+		for (const kind of ['composer', 'bridge', 'sdk', 'slack-ping'] as const) expect(fromPerson({ kind } as never)).toBe(true)
 		expect(fromPerson(undefined)).toBe(true)
 		expect(fromPerson({ kind: 'plugin', name: 'obsidian-mind' } as never)).toBe(false)
 		expect(fromPerson({ kind: 'peer' } as never)).toBe(false)

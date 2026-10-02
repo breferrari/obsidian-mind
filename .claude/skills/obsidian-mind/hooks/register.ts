@@ -72,6 +72,8 @@ export const register: Register = (on) => {
 			await update($, pendingReport, () => null)
 			await update($, pendingUrgent, () => null)
 			await update($, urgentSpent, () => null)
+			// What was dropped was never shown here, so the same findings show again.
+			await update($, shownReport, () => null)
 		}
 		// Cleared first: if this run fails, the settings hook delivers fresh
 		// output and no earlier context may ride beside it.
@@ -142,9 +144,13 @@ export const register: Register = (on) => {
 	})
 
 	on('prompt.submit', async ($, e, next) => {
-		if (fromPerson(e.origin)) await update($, urgentSpent, () => null)
+		// The person speaking renews the urgent allowance, once their prompt has entered.
+		const renew = async (entered: Awaited<ReturnType<typeof next>>) => {
+			if (entered.drop === undefined && fromPerson(e.origin)) await update($, urgentSpent, () => null)
+			return entered
+		}
 		const report = await read($, pendingReport)
-		if (report === null || !carriesReport(e.origin)) return next(e)
+		if (report === null || !carriesReport(e.origin)) return renew(await next(e))
 		// Taken before `next`, so two prompts entering at once cannot both carry
 		// it; put back if this one never enters (dropped or blocked below, or a
 		// throw), unless a newer report was queued meanwhile.
@@ -162,9 +168,19 @@ export const register: Register = (on) => {
 			return entered
 		}
 		// The report is with the agent: a line still waiting would say it is
-		// coming, and an urgent finding still waiting is already in it.
-		await update($, pendingLine, () => null)
-		await update($, pendingUrgent, () => null)
-		return entered
+		// coming, and an urgent finding still waiting is already in it. Unless a
+		// newer report was queued while this prompt was entering: the line and
+		// the urgent finding waiting now are that one's. Checked through `update`,
+		// whose function sees writes made while `next` ran; `read` here may not.
+		let newer = false
+		await update($, pendingReport, (now) => {
+			newer = now !== null
+			return now
+		})
+		if (!newer) {
+			await update($, pendingLine, () => null)
+			await update($, pendingUrgent, () => null)
+		}
+		return renew(entered)
 	})
 }
