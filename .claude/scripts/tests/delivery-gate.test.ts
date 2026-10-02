@@ -14,7 +14,11 @@ const METER = "_context injected: 15.9kB / 20.0kB budget_";
 const stream = (...events: object[]) => events.map((e) => JSON.stringify(e)).join("\n");
 const said = (text: string) => ({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text }] } });
 const called = (name: string, id = `toolu_${name}`) => ({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", name, id }] } });
-const handedBack = (text: string, id = "toolu_Agent") => ({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: [{ type: "text", text: `[Subagent hand-back] The report follows:\n  ${text}` }] }] } });
+/** An Agent tool_result as 2.1.288 frames it: preamble, the indented report, then an id and usage footer. */
+const handedBack = (text: string, id = "toolu_Agent") => ({
+	type: "user",
+	message: { content: [{ type: "tool_result", tool_use_id: id, content: [{ type: "text", text: `[Subagent hand-back] The text below is the final report of a subagent. The report follows:\n  ${text}\nagentId: a1b2 (use SendMessage)\n<usage>total_tokens: 100\nduration_ms: 3140</usage>` }] }] },
+});
 const subagentDone = (toolUses: number) => ({ type: "system", subtype: "task_notification", usage: { tool_uses: toolUses } });
 const done = { type: "result", subtype: "success", is_error: false, result: "" };
 const compacted = { type: "system", subtype: "compact_boundary" };
@@ -84,6 +88,9 @@ describe("delivery gate", () => {
 		assert.match(selfAnswered.why, /no subagent answered/);
 		// The subagent says NONE and the parent "helpfully" quotes the line anyway.
 		assert.deepEqual(outcomes(continued, continuedStream({ subagent: [called("Agent"), subagentDone(0), handedBack("NONE"), said(METER)] }))[2], ["from a subagent", "FAIL"]);
+		// What is shown and judged is the subagent's words, not the hand-back frame or its footer.
+		const none = judge(continued, parseTurns(continuedStream({ subagent: [called("Agent"), subagentDone(0), handedBack("NONE")] })), METER)[2]!;
+		assert.equal(none.answer, "NONE");
 		// The subagent read the vault to answer.
 		assert.deepEqual(outcomes(continued, continuedStream({ subagent: [called("Agent"), subagentDone(2), handedBack(METER)] }))[2], ["from a subagent", "INVALID"]);
 	});

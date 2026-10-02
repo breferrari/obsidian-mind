@@ -123,6 +123,19 @@ type StreamEvent = {
 const textOf = (content: unknown): string =>
 	typeof content === "string" ? content : Array.isArray(content) ? content.map((b: Block) => (b.type === "text" ? (b.text ?? "") : "")).join("\n") : "";
 
+/**
+ * The subagent's own words from an Agent tool_result: what follows the
+ * hand-back frame's "The report follows:" line, up to the `agentId:` footer.
+ * Text without that frame is taken whole.
+ */
+export function subagentReport(handedBack: string): string {
+	const start = handedBack.indexOf("The report follows:");
+	if (start < 0) return handedBack.trim();
+	const body = handedBack.slice(start + "The report follows:".length);
+	const end = body.search(/\n\s*agentId:/);
+	return (end < 0 ? body : body.slice(0, end)).trim();
+}
+
 /** Split a stream-json transcript into turns, one per `result` event. */
 export function parseTurns(streamJson: string): Turn[] {
 	const turns: Turn[] = [];
@@ -153,7 +166,7 @@ export function parseTurns(streamJson: string): Turn[] {
 				}
 			}
 		} else if (event.type === "user") {
-			for (const block of blocks) if (block.type === "tool_result" && block.tool_use_id && agentIds.has(block.tool_use_id)) agentReports.push(textOf(block.content));
+			for (const block of blocks) if (block.type === "tool_result" && block.tool_use_id && agentIds.has(block.tool_use_id)) agentReports.push(subagentReport(textOf(block.content)));
 		} else if (event.type === "system" && event.subtype === "compact_boundary") compacted = true;
 		else if (event.type === "system" && event.subtype === "task_notification") subagentToolUses += event.usage?.tool_uses ?? 0;
 		else if (event.type === "conversation_reset") reset = true;
