@@ -123,6 +123,15 @@ describe("delivery gate: the subagent checkpoint", () => {
 		assert.equal(subagentVerdict([agentCall(), handedBack("NONE"), said(METER)]).answer, "NONE");
 	});
 
+	test("the raw result is preferred over the framed text, which a new frame could change", () => {
+		const reframed = {
+			type: "user",
+			message: { content: [{ type: "tool_result", tool_use_id: "toolu_Agent", content: [{ type: "text", text: `A new frame quoting the parent's context: ${METER}\n\nNONE` }] }] },
+			tool_use_result: { status: "completed", content: [{ type: "text", text: "NONE" }], totalToolUseCount: 0, agentType: "general-purpose" },
+		};
+		assert.equal(subagentVerdict([agentCall(), reframed]).outcome, "FAIL");
+	});
+
 	test("the parent answering itself is invalid", () => {
 		assert.match(subagentVerdict([said(METER)]).why, /no single subagent/);
 	});
