@@ -1,5 +1,5 @@
-// The mod's per-session state: what the host keeps for it across a hot reload
-// of the module, reset on /clear (where classic.SessionStart fills it again).
+// The mod's per-session state: what the host keeps for it for the session,
+// across a hot reload of the module.
 
 /** The session context this session's instruction file carries; null when none was delivered. */
 export type SessionContext = string | null

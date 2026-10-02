@@ -29,10 +29,17 @@ const CONTEXT_FILE = '.claude/session-context.md'
 
 /**
  * The context this session's instruction file carries. In `$.state`, not a
- * module variable: the host keeps it across a hot reload of this module, and
- * resets it on `/clear`, where classic.SessionStart fills it again.
+ * module variable: the host keeps it for the session, across a hot reload of
+ * this module. Each classic.SessionStart clears it before its run.
  */
 const sessionContext = atom({ plugin: 'obsidian-mind', key: 'context' } as const, null)
+
+/**
+ * The context file's writes, one after another: unawaited, two close runs
+ * (startup, then an early compact) could otherwise land out of order and
+ * leave /memory showing the older text.
+ */
+let writes: Promise<void> = Promise.resolve()
 
 /** Run one of the vault's hook scripts with `input` on stdin; its stdout, or a throw. */
 async function runScript($: EngineInterface, root: string, script: string, input: object): Promise<string> {
@@ -56,7 +63,7 @@ export const register: Register = (on) => {
 		await update($, sessionContext, () => text)
 		// Not awaited: delivery does not depend on the file, so a slow or failed
 		// write never holds up the session. It only backs /memory's view.
-		$.fs.write(`${root}/${CONTEXT_FILE}`, text).catch(() => {})
+		writes = writes.then(() => $.fs.write(`${root}/${CONTEXT_FILE}`, text)).catch(() => {})
 		$.ui.invalidate('prompt.context')
 		return next({ ...e, om_mod: 'standdown' } as typeof e)
 	})
