@@ -42,7 +42,7 @@ export function parseStopReport(stdout: string): StopReport {
  */
 export function summaryLine(report: StopReport): string {
 	const what = report.claims.length > 0 ? report.claims.join(' · ') : 'wrap-up checklist'
-	return `vault check: ${what} · the full report reaches the agent with your next message`
+	return `vault check: ${what} · the full report reaches the agent with the next message`
 }
 
 /**
@@ -61,7 +61,10 @@ export function withLine(textBelow: string, answer: string, line: string): strin
  * is not the person writing, and must not consume the report.
  */
 export function carriesReport(origin: PromptOrigin | undefined): boolean {
-	if (origin === undefined) return true
-	if (origin.kind === 'plugin') return origin.name === 'obsidian-mind'
-	return origin.kind === 'composer' || origin.kind === 'bridge' || origin.kind === 'sdk'
+	return fromPerson(origin) || (origin?.kind === 'plugin' && origin.name === 'obsidian-mind')
+}
+
+/** Whether the person sent this prompt: typed, over Remote Control, or through the SDK. */
+export function fromPerson(origin: PromptOrigin | undefined): boolean {
+	return origin === undefined || origin.kind === 'composer' || origin.kind === 'bridge' || origin.kind === 'sdk'
 }

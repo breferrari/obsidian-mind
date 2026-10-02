@@ -1,6 +1,6 @@
 import { atom, read, update, type EngineInterface, type Register } from 'claude-code'
 import { withSessionContext } from './context.ts'
-import { carriesReport, parseStopReport, summaryLine, withLine } from './stop.ts'
+import { carriesReport, fromPerson, parseStopReport, summaryLine, withLine } from './stop.ts'
 
 /**
  * obsidian-mind's Claude Code mod (#262).
@@ -41,13 +41,8 @@ const shownReport = atom({ plugin: 'obsidian-mind', key: 'shownReport' } as cons
 const pendingLine = atom({ plugin: 'obsidian-mind', key: 'pendingLine' } as const, null)
 const pendingReport = atom({ plugin: 'obsidian-mind', key: 'pendingReport' } as const, null)
 const pendingUrgent = atom({ plugin: 'obsidian-mind', key: 'pendingUrgent' } as const, null)
-/** Set while the turn our urgent prompt started is running, so it cannot start another. */
-const urgentTurn = atom({ plugin: 'obsidian-mind', key: 'urgentTurn' } as const, null)
-
-/** Fold an urgent finding that never got its own turn into the queued report, so it is not lost. */
-async function keepUrgent($: EngineInterface, urgent: string): Promise<void> {
-	await update($, pendingReport, (report) => `${report ?? ''}${report ? '\n\n' : ''}Urgent, not yet seen: ${urgent}`)
-}
+/** Set once an urgent finding got a turn of its own; cleared when the person next speaks. */
+const urgentSpent = atom({ plugin: 'obsidian-mind', key: 'urgentSpent' } as const, null)
 
 /** Run one of the vault's hook scripts with `input` on stdin; its stdout, or a throw. */
 async function runScript($: EngineInterface, root: string, script: string, input: object): Promise<string> {
@@ -67,16 +62,16 @@ async function runScript($: EngineInterface, root: string, script: string, input
 
 export const register: Register = (on) => {
 	on('classic.SessionStart', async ($, e, next) => {
-		// A new conversation (startup, /clear) drops what an earlier one queued:
-		// `/clear` keeps the process and its `$.state`, and a report about the
-		// old conversation must not ride the first prompt of the new one. A
-		// compaction or a resume continues the conversation, so it keeps it.
-		if (e.source === 'startup' || e.source === 'clear') {
+		// Only a compaction continues the same conversation. Every other start
+		// (`/clear`, an in-process `/resume` or fork) may keep this process and
+		// its `$.state`, and a report about another conversation must not ride
+		// the first prompt of this one, so what was queued is dropped.
+		if (e.source !== 'compact') {
 			// One call per atom: the validator reads each state source statically.
 			await update($, pendingLine, () => null)
 			await update($, pendingReport, () => null)
 			await update($, pendingUrgent, () => null)
-			await update($, urgentTurn, () => null)
+			await update($, urgentSpent, () => null)
 		}
 		// Cleared first: if this run fails, the settings hook delivers fresh
 		// output and no earlier context may ride beside it.
@@ -113,7 +108,9 @@ export const register: Register = (on) => {
 		if ((await read($, shownReport)) !== identity) {
 			await update($, shownReport, () => identity)
 			await update($, pendingLine, () => summaryLine(report))
-			await update($, pendingReport, () => report.agentText)
+			// The urgent finding rides inside the report too, so whatever happens
+			// to its own turn, the agent gets it with the report.
+			await update($, pendingReport, () => (report.urgent === undefined ? report.agentText : `${report.agentText}\n\nUrgent: ${report.urgent}`))
 			await update($, pendingUrgent, () => report.urgent ?? null)
 		}
 		return next({ ...e, om_mod: 'standdown' } as typeof e)
@@ -124,39 +121,28 @@ export const register: Register = (on) => {
 		// Only under a main-loop answer that completed: a subagent's turn, an
 		// interrupted one or one an error ended keeps the line for the next.
 		if (e.agentId !== undefined || e.reason !== 'answer') return done
-		// The turn our own urgent prompt started has ended: the next urgent
-		// finding waits for the person rather than starting another turn.
-		const wasUrgentTurn = (await read($, urgentTurn)) !== null
-		await update($, urgentTurn, () => null)
 		const line = await read($, pendingLine)
 		if (line === null) return done
 		await update($, pendingLine, () => null)
 		const urgent = await read($, pendingUrgent)
-		if (urgent !== null) {
-			await update($, pendingUrgent, () => null)
-			if (wasUrgentTurn) {
-				// At most one turn of our own in a row: findings that keep changing
-				// while the agent fixes them must not chain turns.
-				await keepUrgent($, urgent)
-			} else {
-				// Never from classic.Stop: the engine refuses a submit that would
-				// wait on the turn the hook may be holding, and names turn.complete
-				// instead. Framed as this plugin's message, so the model knows it is
-				// not the person speaking. The full report rides it (prompt.submit
-				// below). If it never enters, the finding joins the queued report.
-				await update($, urgentTurn, () => urgent)
-				$.prompt.submit({ text: urgent }).then(
-					async (entered) => {
-						if (entered.drop !== undefined) await keepUrgent($, urgent)
-					},
-					() => keepUrgent($, urgent),
-				)
-			}
+		await update($, pendingUrgent, () => null)
+		// One urgent turn per prompt the person sends: findings that keep
+		// changing while the agent fixes them must not chain turns. A finding
+		// that gets no turn still reaches the agent inside the queued report.
+		if (urgent !== null && (await read($, urgentSpent)) === null) {
+			await update($, urgentSpent, () => urgent)
+			// Never from classic.Stop: the engine refuses a submit that would wait
+			// on the turn the hook may be holding, and names turn.complete instead.
+			// Framed as this plugin's message, so the model knows it is not the
+			// person speaking. The report rides it (prompt.submit below); if the
+			// prompt never enters, the report stays queued for the next one.
+			$.prompt.submit({ text: urgent }).catch(() => {})
 		}
 		return { ...done, text: withLine(done.text, e.answer, line) }
 	})
 
 	on('prompt.submit', async ($, e, next) => {
+		if (fromPerson(e.origin)) await update($, urgentSpent, () => null)
 		const report = await read($, pendingReport)
 		if (report === null || !carriesReport(e.origin)) return next(e)
 		// Taken before `next`, so two prompts entering at once cannot both carry
@@ -171,7 +157,14 @@ export const register: Register = (on) => {
 			await putBack()
 			throw error
 		}
-		if (entered.drop !== undefined) await putBack()
+		if (entered.drop !== undefined) {
+			await putBack()
+			return entered
+		}
+		// The report is with the agent: a line still waiting would say it is
+		// coming, and an urgent finding still waiting is already in it.
+		await update($, pendingLine, () => null)
+		await update($, pendingUrgent, () => null)
 		return entered
 	})
 }

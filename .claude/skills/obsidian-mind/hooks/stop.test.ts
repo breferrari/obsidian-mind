@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { carriesReport, parseStopReport, summaryLine, withLine, type StopReport } from './stop.ts'
+import { carriesReport, fromPerson, parseStopReport, summaryLine, withLine, type StopReport } from './stop.ts'
 
 // Run with `claude plugin test .claude/skills/obsidian-mind`. Each test's own
 // `on` hooks sit beneath the mod and stand in for the engine and the vault.
@@ -23,11 +23,13 @@ type World = {
 	throwNext: boolean
 	/** A line another hook below sets under the answer, if any. */
 	lowerLine: string | null
+	/** Runs inside the next prompt's submit, before it enters or is dropped. */
+	duringNext: (() => Promise<unknown>) | null
 }
 
 /** The world beneath the mod. `reply` is what stop-checklist.ts prints, per call. */
 function vault(on: Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1], reply: () => { exitCode: number; stdout: string }): World {
-	const world: World = { runs: [], passedDown: [], submitted: [], dropNext: false, throwNext: false, lowerLine: null }
+	const world: World = { runs: [], passedDown: [], submitted: [], dropNext: false, throwNext: false, lowerLine: null, duringNext: null }
 	on('session.root', () => ({ value: ROOT }))
 	on('process.run', (_$, e) => {
 		world.runs.push(e.init?.stdin ?? '')
@@ -38,8 +40,11 @@ function vault(on: Parameters<Extract<Parameters<typeof test>[1], (...args: neve
 		world.passedDown.push(e as unknown as Record<string, unknown>)
 		return {}
 	})
-	on('prompt.submit', (_$, e) => {
+	on('prompt.submit', async (_$, e) => {
 		world.submitted.push({ text: e.text, context: e.context, origin: e.origin })
+		const during = world.duringNext
+		world.duringNext = null
+		if (during) await during()
 		if (world.throwNext) {
 			world.throwNext = false
 			throw new Error('failed below')
@@ -66,7 +71,7 @@ const answered = (extra: Record<string, unknown> = {}) => ({ answer: 'the answer
 /** Let an unawaited submit and its follow-up settle. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-const LINE = 'vault check: 1 note(s) marked done but still in active/ · the full report reaches the agent with your next message'
+const LINE = 'vault check: 1 note(s) marked done but still in active/ · the full report reaches the agent with the next message'
 const HANDED = (key: string) => `Stop hook report, handed over with this message: ${key}`
 
 describe('Stop report (#266)', () => {
@@ -207,21 +212,55 @@ describe('the line under the answer (#266)', () => {
 		expect(world.submitted.length).toBe(0)
 	})
 
-	test('/clear drops what the old conversation queued; a compaction keeps it', async ($, on) => {
-		const world = vault(on, ok(report('k')))
+	test('a compaction keeps what was queued', async ($, on) => {
+		vault(on, ok(report('k')))
 		await $.classic.Stop({ stop_hook_active: false })
 		await $.classic.SessionStart({ source: 'compact' } as never)
-		expect((await $.turn.complete(answered())).text).toBe(LINE)
 
-		await $.classic.SessionStart({ source: 'clear' } as never)
+		expect((await $.turn.complete(answered())).text).toBe(LINE)
+	})
+
+	for (const source of ['clear', 'resume', 'startup']) {
+		test(`a ${source} in this process drops what the old conversation queued`, async ($, on) => {
+			const world = vault(on, ok(report('k')))
+			await $.classic.Stop({ stop_hook_active: false })
+			await $.classic.SessionStart({ source } as never)
+
+			expect((await $.turn.complete(answered())).text).toBe('the answer')
+			await $.prompt.submit({ text: 'first in the new conversation' })
+			expect(world.submitted.at(-1)?.context ?? []).toEqual([])
+		})
+	}
+
+	test('once the person has the report, a line still waiting is dropped, not drawn late', async ($, on) => {
+		vault(on, ok(report('k')))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered({ reason: 'refusal' }))
+		await $.prompt.submit({ text: 'typed' })
+
 		expect((await $.turn.complete(answered())).text).toBe('the answer')
-		await $.prompt.submit({ text: 'first in the new conversation' })
-		expect(world.submitted.at(-1)?.context ?? []).toEqual([])
+	})
+
+	test('a prompt dropped while a newer report was queued keeps the newer one', async ($, on) => {
+		let key = 'old'
+		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key) }) }))
+		await $.classic.Stop({ stop_hook_active: false })
+		world.duringNext = async () => {
+			key = 'new'
+			await $.classic.Stop({ stop_hook_active: false })
+		}
+		world.dropNext = true
+		await $.prompt.submit({ text: 'blocked' })
+		await $.prompt.submit({ text: 'typed' })
+
+		expect(world.submitted[1]?.context).toEqual([HANDED('new')])
 	})
 })
 
 describe('an urgent finding (#266)', () => {
-	test("gets one turn of its own, framed as the plugin's, carrying the report", async ($, on) => {
+	const WITH_URGENT = (key: string, urgent: string) => `${HANDED(key)}\n\nUrgent: ${urgent}`
+
+	test("gets one turn of its own, framed as the plugin's, carrying the report with the finding in it", async ($, on) => {
 		const world = vault(on, ok(report('k', { urgent: 'push blocked' })))
 		await $.classic.Stop({ stop_hook_active: false })
 		await $.turn.complete(answered())
@@ -230,47 +269,91 @@ describe('an urgent finding (#266)', () => {
 		expect(world.submitted.length).toBe(1)
 		expect(world.submitted[0]?.text).toBe('push blocked')
 		expect(world.submitted[0]?.origin).toEqual(expect.objectContaining({ kind: 'plugin', name: 'obsidian-mind' }))
-		expect(world.submitted[0]?.context).toEqual([HANDED('k')])
+		expect(world.submitted[0]?.context).toEqual([WITH_URGENT('k', 'push blocked')])
 		await $.prompt.submit({ text: 'typed' })
 		expect(world.submitted[1]?.context ?? []).toEqual([])
 	})
 
-	test('dropped below, it joins the report the next prompt carries', async ($, on) => {
-		const world = vault(on, ok(report('k', { urgent: 'push blocked' })))
-		await $.classic.Stop({ stop_hook_active: false })
-		world.dropNext = true
-		await $.turn.complete(answered())
-		await settle()
-		await $.prompt.submit({ text: 'typed' })
+	for (const [how, set] of [['dropped', (w: World) => (w.dropNext = true)], ['failing', (w: World) => (w.throwNext = true)]] as const) {
+		test(`${how} below, its turn never starts and the next prompt carries the report with it`, async ($, on) => {
+			const world = vault(on, ok(report('k', { urgent: 'push blocked' })))
+			await $.classic.Stop({ stop_hook_active: false })
+			set(world)
+			await $.turn.complete(answered())
+			await settle()
+			await $.prompt.submit({ text: 'typed' })
 
-		expect(world.submitted[1]?.context).toEqual([`${HANDED('k')}\n\nUrgent, not yet seen: push blocked`])
-	})
+			expect(world.submitted[1]?.context).toEqual([WITH_URGENT('k', 'push blocked')])
+		})
+	}
 
-	test('failing below, it joins the report the next prompt carries', async ($, on) => {
-		const world = vault(on, ok(report('k', { urgent: 'push blocked' })))
-		await $.classic.Stop({ stop_hook_active: false })
-		world.throwNext = true
-		await $.turn.complete(answered())
-		await settle()
-		await $.prompt.submit({ text: 'typed' })
-
-		expect(world.submitted[1]?.context).toEqual([`${HANDED('k')}\n\nUrgent, not yet seen: push blocked`])
-	})
-
-	test('the turn it started cannot start another: a new urgent finding waits for the person', async ($, on) => {
+	test('one urgent turn per prompt the person sends: the next finding waits, and fires again once they speak', async ($, on) => {
 		let key = 'a'
 		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key, { urgent: `urgent ${key}` }) }) }))
 		await $.classic.Stop({ stop_hook_active: false })
 		await $.turn.complete(answered())
 		await settle()
+		// The urgent turn ends with changed findings: no second turn of our own.
+		key = 'b'
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a'])
+
+		// The person speaks and gets that report; their turn's new finding gets a turn again.
+		await $.prompt.submit({ text: 'typed' })
+		expect(world.submitted[1]?.context).toEqual([WITH_URGENT('b', 'urgent b')])
+		key = 'c'
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a', 'typed', 'urgent c'])
+	})
+
+	test('an urgent turn the person interrupts does not use up the next one', async ($, on) => {
+		let key = 'a'
+		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key, { urgent: `urgent ${key}` }) }) }))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+		await $.turn.complete(answered({ reason: 'aborted' }))
+		await $.prompt.submit({ text: 'typed' })
 		key = 'b'
 		await $.classic.Stop({ stop_hook_active: false })
 		await $.turn.complete(answered())
 		await settle()
 
-		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a'])
-		await $.prompt.submit({ text: 'typed' })
-		expect(world.submitted[1]?.context).toEqual([`${HANDED('b')}\n\nUrgent, not yet seen: urgent b`])
+		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a', 'typed', 'urgent b'])
+	})
+
+	test('/clear gives the new conversation its own urgent turn', async ($, on) => {
+		let key = 'a'
+		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key, { urgent: `urgent ${key}` }) }) }))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+		await $.classic.SessionStart({ source: 'clear' } as never)
+		key = 'b'
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+
+		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a', 'urgent b'])
+	})
+
+	test("a peer's message does not count as the person speaking", async ($, on) => {
+		let key = 'a'
+		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key, { urgent: `urgent ${key}` }) }) }))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+		await $.prompt.submit({ text: 'from a peer', origin: { kind: 'peer' } } as never)
+		key = 'b'
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+
+		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a', 'from a peer'])
 	})
 })
 
@@ -289,11 +372,11 @@ describe('parseStopReport', () => {
 
 describe('summaryLine', () => {
 	test('names each finding in its own words and says where the rest went', () => {
-		expect(summaryLine(report('k', { claims: ['a', 'b'] }))).toBe('vault check: a · b · the full report reaches the agent with your next message')
+		expect(summaryLine(report('k', { claims: ['a', 'b'] }))).toBe('vault check: a · b · the full report reaches the agent with the next message')
 	})
 
 	test('with no findings it still points at the checklist', () => {
-		expect(summaryLine(report('k', { claims: [] }))).toBe('vault check: wrap-up checklist · the full report reaches the agent with your next message')
+		expect(summaryLine(report('k', { claims: [] }))).toBe('vault check: wrap-up checklist · the full report reaches the agent with the next message')
 	})
 })
 
@@ -311,6 +394,13 @@ describe('carriesReport', () => {
 	test("the person's own prompts carry it: typed, over Remote Control, through the SDK", () => {
 		for (const kind of ['composer', 'bridge', 'sdk'] as const) expect(carriesReport({ kind } as never)).toBe(true)
 		expect(carriesReport(undefined)).toBe(true)
+	})
+
+	test("only the person's own prompts count as the person speaking, never a plugin's", () => {
+		for (const kind of ['composer', 'bridge', 'sdk'] as const) expect(fromPerson({ kind } as never)).toBe(true)
+		expect(fromPerson(undefined)).toBe(true)
+		expect(fromPerson({ kind: 'plugin', name: 'obsidian-mind' } as never)).toBe(false)
+		expect(fromPerson({ kind: 'peer' } as never)).toBe(false)
 	})
 
 	test("this mod's own prompt carries it; another plugin's does not", () => {
