@@ -20,7 +20,7 @@
  * substring that appears inside the JSON either way.
  */
 
-import { test, describe, before, after } from "node:test";
+import { test, describe, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
 import { takeHandoff } from "../lib/stop-handoff.ts";
@@ -507,6 +507,10 @@ describe("stop-checklist — om_mod (a Claude Code mod)", () => {
 	// shows on stderr. That makes "was the refresh triggered?" observable.
 	const DEBUG = { HOOK_DEBUG: "1" };
 	const refreshed = (stderr: string) => stderr.includes("stop-checklist: debounced");
+	// Re-touch the shared sentinel before each test: it was written once in
+	// before(), and on a slow runner the tests above can outlast the 30s
+	// debounce window, which would turn "debounced" into a real spawn.
+	beforeEach(() => writeFileSync(SENTINEL, ""));
 
 	test("standdown writes the empty envelope and touches no state, no handoff, no refresh", () => {
 		const root = vault("ommod-standdown", "Done.md");
