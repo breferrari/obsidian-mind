@@ -34,15 +34,6 @@ const CONTEXT_FILE = '.claude/session-context.md'
  */
 const sessionContext = atom({ plugin: 'obsidian-mind', key: 'context' } as const, null)
 
-/**
- * The context file's writes, one after another: unawaited, two close runs
- * (startup, then an early compact) could otherwise land out of order and
- * leave /memory showing the older text. Each write may hold the next for at
- * most WRITE_DEADLINE_MS, so one that never settles cannot stall the rest.
- */
-let writes: Promise<unknown> = Promise.resolve()
-const WRITE_DEADLINE_MS = 5_000
-
 /** Run one of the vault's hook scripts with `input` on stdin; its stdout, or a throw. */
 async function runScript($: EngineInterface, root: string, script: string, input: object): Promise<string> {
 	const run = await $.process.run(
@@ -63,11 +54,13 @@ export const register: Register = (on) => {
 		const root = await $.session.root()
 		const text = await runScript($, root, 'session-start.ts', { ...e, om_mod: 'deliver' })
 		await update($, sessionContext, () => text)
-		// Not awaited: delivery does not depend on the file, so a slow or failed
-		// write never holds up the session. It only backs /memory's view.
-		writes = writes
-			.then(() => Promise.race([$.fs.write(`${root}/${CONTEXT_FILE}`, text), $.clock.sleep(WRITE_DEADLINE_MS)]))
-			.catch(() => {})
+		// Not awaited: delivery does not depend on the file, so a slow, hung or
+		// failed write never holds up the session. The file only backs what
+		// /memory shows. Runs are minutes apart (startup, then a compaction), so
+		// two writes landing out of order is not a case worth machinery: a
+		// deadline would need a timer that outlives this hook, and a chain
+		// without one would let a hung write stall every later write.
+		$.fs.write(`${root}/${CONTEXT_FILE}`, text).catch(() => {})
 		$.ui.invalidate('prompt.context')
 		return next({ ...e, om_mod: 'standdown' } as typeof e)
 	})
