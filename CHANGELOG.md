@@ -1,5 +1,17 @@
 # Changelog
 
+## v8.5.0 — 2026-10-02
+
+### Added
+- a changed Stop report reaches the agent, which decides whether to act
+
+### Fixed
+- hold every hook writer under the output cap, with one cut routine
+- hold the eager layer under Claude Code's hook output cap
+- a Stop block carries the report once, as its reason
+- compare Stop findings without their order, cap open loops on raw age
+- route vault hygiene through actionable lifecycle hooks
+
 ## v8.4.0 — 2026-09-02
 
 ### Fixed
