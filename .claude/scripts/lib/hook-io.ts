@@ -127,8 +127,10 @@ export function fitEncoded(text: string, max: number): string {
 }
 
 /**
- * A Stop that hands `reason` to the agent now and gives it another turn,
- * while showing the user `message` (#256).
+ * A Stop that hands `reason` to the agent now and gives it another turn
+ * (#256). The user reads the same text: Claude Code prints a block's reason
+ * in the transcript, so a systemMessage beside it only showed the report
+ * twice, the second copy cut to a third of the cap.
  *
  * `decision: "block"` is the only Stop output that reaches the model; every
  * other field is for the user. It also gives the agent a turn nobody typed,
@@ -138,13 +140,9 @@ export function fitEncoded(text: string, max: number): string {
  * its UI even on success; Codex documents the same field. Gemini runs the
  * checklist on SessionEnd and never gets it.
  */
-export function writeStopBlock(reason: string, message: string): void {
-	// Both copies share one output cap: the user's gets at most a third, the
-	// agent's whatever is left.
-	const shown = fitEncoded(message, Math.floor(HOOK_OUTPUT_MAX_CHARS / 3));
-	const overhead = JSON.stringify({ decision: "block", reason: "", systemMessage: shown }).length - 2;
-	const handed = fitEncoded(reason, HOOK_OUTPUT_MAX_CHARS - overhead);
-	process.stdout.write(JSON.stringify({ decision: "block", reason: handed, systemMessage: shown }));
+export function writeStopBlock(reason: string): void {
+	const overhead = JSON.stringify({ decision: "block", reason: "" }).length - 2;
+	process.stdout.write(JSON.stringify({ decision: "block", reason: fitEncoded(reason, HOOK_OUTPUT_MAX_CHARS - overhead) }));
 }
 
 /**

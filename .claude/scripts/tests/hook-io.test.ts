@@ -129,14 +129,13 @@ function captureStdout(write: () => void): string {
 // "x" encodes to one character, so the cut can land exactly on the cap:
 // these tests assert the exact length, which catches an off-by-one either way.
 describe("writeStopBlock — the whole output fits", () => {
-	test("a huge report and message fill the cap exactly, both marked as cut", () => {
-		const out = captureStdout(() => writeStopBlock("x".repeat(20_000), "x".repeat(20_000)));
+	test("a huge report fills the cap exactly, marked as cut, and is the only field", () => {
+		const out = captureStdout(() => writeStopBlock("x".repeat(20_000)));
 		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
-		const parsed = JSON.parse(out) as { decision: string; reason: string; systemMessage: string };
-		assert.equal(parsed.decision, "block");
-		assert.match(parsed.reason, /truncated to fit the hook output cap\)$/);
-		assert.match(parsed.systemMessage, /truncated to fit the hook output cap\)$/);
-		assert.ok(parsed.reason.length > parsed.systemMessage.length, "the agent's copy gets the larger share");
+		const parsed = JSON.parse(out) as Record<string, string>;
+		assert.deepEqual(Object.keys(parsed), ["decision", "reason"]);
+		assert.equal(parsed["decision"], "block");
+		assert.match(parsed["reason"] ?? "", /truncated to fit the hook output cap\)$/);
 	});
 });
 

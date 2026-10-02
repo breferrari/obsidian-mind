@@ -32,10 +32,12 @@
  *
  * Output is JSON on every agent, never plain text. Codex rejects plain Stop
  * stdout, Gemini's SessionEnd contract requires a final JSON object, and
- * Claude Code otherwise files non-exempt stdout in the debug log. The user
- * gets the report in `systemMessage`, the one user-facing field all three
- * agents share; the agent gets it as a Stop block's `reason` (above). Both
- * are held under Claude Code's hook output cap (lib/hook-io.ts).
+ * Claude Code otherwise files non-exempt stdout in the debug log. Where no
+ * block is sent, the user gets the report in `systemMessage`, the one
+ * user-facing field all three agents share. A Stop block's `reason` (above)
+ * is printed in the transcript, so there the user reads the agent's copy and
+ * no systemMessage is sent beside it. Either is held under Claude Code's hook
+ * output cap (lib/hook-io.ts).
  * The documented event name is the only branch — no agent sniffing and no
  * agent-specific argument.
  */
@@ -154,7 +156,7 @@ const AGENT_PREFACE =
 	"Stop hook report: your response just ended, and these findings are new or changed since the last report this session; the user was shown the same report. Decide what it calls for: act on what bears on the current work, ask the user when something needs their call, or reply in one line that nothing needs doing now. Never move or delete notes without asking, and do not recite the report back.";
 
 if (!show) writeSilentHookOutput();
-else if (isStop && hasSession) writeStopBlock(`${AGENT_PREFACE}\n\n${message}`, message);
+else if (isStop && hasSession) writeStopBlock(`${AGENT_PREFACE}\n\n${message}`);
 else writeSystemMessage(message);
 
 triggerDebouncedRefresh({
