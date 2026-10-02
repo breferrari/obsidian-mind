@@ -672,10 +672,6 @@ export function namesCapped(names: readonly string[]): string {
 }
 
 /**
- * Render the report as markdown lines for hook output. Returns [] when the
- * vault is clean, so callers can skip emitting a section entirely.
- */
-/**
  * Each finding's claim: what it says, without its file list or instructions.
  * The formatter's headline opens with it, and a Stop summary is made of them
  * (lib/stop-report.ts), so the two cannot drift apart.
@@ -702,6 +698,10 @@ export function hygieneClaims(report: ActiveHygieneReport): string[] {
 	return out;
 }
 
+/**
+ * Render the report as markdown lines for hook output. Returns [] when the
+ * vault is clean, so callers can skip emitting a section entirely.
+ */
 export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	const {
 		completedInActive,

@@ -87,7 +87,7 @@ export function claimFile(
  * its temp file.
  */
 export function writeFileAtomic(path: string, text: string): void {
-	const tmp = `${path}.${process.pid}.tmp`;
+	const tmp = `${path}.${process.pid}-${++tmpSeq}.tmp`;
 	try {
 		writeFileSync(tmp, text, "utf8");
 		renameSync(tmp, path);
