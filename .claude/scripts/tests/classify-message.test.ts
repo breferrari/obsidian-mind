@@ -3,13 +3,16 @@
  * subprocess integration coverage.
  */
 
-import { test, describe } from "node:test";
+import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { takeHandoff, writeHandoff } from "../lib/stop-handoff.ts";
 import { SIGNALS } from "../lib/signals.ts";
 import { classify } from "../lib/matcher.ts";
-import { runScript as spawnHook } from "./_helpers.ts";
+import { rmTemp, runScript as spawnHook } from "./_helpers.ts";
 
 const SCRIPT = resolve(
 	dirname(fileURLToPath(import.meta.url)),
@@ -392,5 +395,52 @@ describe("classify — performance", () => {
 			`classify took ${elapsed.toFixed(1)}ms on ~1MB input (budget 500ms)`,
 		);
 		assert.ok(result.length > 0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// The Stop report handoff: Stop shows the user a summary and saves the full
+// report; the next prompt in the same session hands it to the agent through
+// UserPromptSubmit, the one channel the user never sees.
+// ---------------------------------------------------------------------------
+describe("classify — the Stop report handoff", () => {
+	let dir = "";
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "classify-handoff-"));
+	});
+	afterEach(() => {
+		rmTemp(dir);
+	});
+	const env = () => ({ STOP_HANDOFF_DIR: join(dir, "handoff"), CLASSIFY_HINT_STATE: join(dir, "hints.json") });
+	const ctxOf = (stdout: string): string =>
+		stdout ? ((JSON.parse(stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext) : "";
+
+	test("a prompt with no signals still delivers a waiting report, once", () => {
+		writeHandoff(join(dir, "handoff"), "s-1", "Stop hook report, handed over with this message: FULL-REPORT-7");
+		const first = spawnHook(SCRIPT, { session_id: "s-1", hook_event_name: "UserPromptSubmit", prompt: "the weather is mild" }, env());
+		assert.match(ctxOf(first.stdout), /FULL-REPORT-7/);
+		const second = spawnHook(SCRIPT, { session_id: "s-1", hook_event_name: "UserPromptSubmit", prompt: "the weather is mild" }, env());
+		assert.equal(second.stdout, "", "delivered once, then gone");
+	});
+
+	test("a prompt with no usable text still delivers a waiting report", () => {
+		writeHandoff(join(dir, "handoff"), "s-4", "FULL-REPORT-9");
+		const r = spawnHook(SCRIPT, { session_id: "s-4", hook_event_name: "UserPromptSubmit", prompt: "" }, env());
+		assert.match(ctxOf(r.stdout), /^FULL-REPORT-9$/);
+	});
+
+	test("the report rides beside routing hints in one context", () => {
+		writeHandoff(join(dir, "handoff"), "s-2", "FULL-REPORT-8");
+		const r = spawnHook(SCRIPT, { session_id: "s-2", hook_event_name: "UserPromptSubmit", prompt: "we decided to use Redis" }, env());
+		const ctx = ctxOf(r.stdout);
+		assert.match(ctx, /^Content classification hints[^\n]*\n- DECISION/);
+		assert.match(ctx, /\n\nFULL-REPORT-8$/);
+	});
+
+	test("another session's report is never delivered", () => {
+		writeHandoff(join(dir, "handoff"), "s-other", "NOT-YOURS");
+		const r = spawnHook(SCRIPT, { session_id: "s-3", hook_event_name: "UserPromptSubmit", prompt: "the weather is mild" }, env());
+		assert.equal(r.stdout, "");
+		assert.equal(takeHandoff(join(dir, "handoff"), "s-other"), "NOT-YOURS", "left for its own session");
 	});
 });

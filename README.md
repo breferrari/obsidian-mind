@@ -202,10 +202,10 @@ Five lifecycle hooks handle routing automatically:
 | Hook | When | What |
 |------|------|------|
 | 🚀 SessionStart | On startup/resume | QMD re-index + self-heal, inject North Star focus, active work, recent changes, tasks, file listing, vault-hygiene drift flags — held under a byte budget that fits Claude Code's hook output cap, ending with an injection-size meter |
-| 💬 UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints |
+| 💬 UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints; also hands the agent the Stop report from the previous turn |
 | ✍️ PostToolUse | After writing `.md` | Validates frontmatter + wikilinks, blocks misplaced memory files, flags oversized notes (split, don't trim) and write-time topic clusters |
 | 💾 PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
-| 🏁 Stop | After every response | Checklist + concrete drift findings (same hygiene scan as SessionStart), shown once per session and again only when they change, to you and to the agent, which decides whether to act; hands drift to `om-tidy` |
+| 🏁 Stop | After every response | Checklist + concrete drift findings (same hygiene scan as SessionStart), shown once per session and again only when they change: you see a short summary, one line per section, and the agent gets the full report with your next message and decides whether to act; hands drift to `om-tidy` |
 
 > [!TIP]
 > You just talk. The hooks handle the routing.

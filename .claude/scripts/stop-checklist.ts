@@ -22,22 +22,21 @@
  *
  * Who reads it: a Stop hook's systemMessage reaches the user and never the
  * agent, so the drift the agent is best placed to fix never reached it
- * (#256). On a Stop whose findings changed, the hook also returns
- * `decision: "block"` with the report as the reason, the one Stop output
- * that reaches the model: the agent gets a turn to act on it, ask the user,
- * or say in one line that nothing needs doing. The forced turn's own Stop
- * arrives with stop_hook_active and exits early, so it cannot loop.
- * SessionEnd and a Stop without a session_id never block: SessionEnd has no
- * turn to give, and without a session_id nothing stops a block repeating.
+ * (#256). On a Stop whose findings changed, the user gets a
+ * one-line-per-section summary as the `systemMessage`, and the full report is
+ * saved for the session's next prompt, where classify-message hands it to the
+ * agent (why that channel: lib/stop-handoff.ts). If the report cannot be
+ * saved, it goes out as Stop feedback instead: visible, but not lost (Claude
+ * Code; Codex's handling of Stop feedback is unverified, lib/hook-io.ts).
+ * SessionEnd and a Stop without a session_id have no next prompt to ride: the
+ * user gets the full report.
  *
  * Output is JSON on every agent, never plain text. Codex rejects plain Stop
  * stdout, Gemini's SessionEnd contract requires a final JSON object, and
- * Claude Code otherwise files non-exempt stdout in the debug log. Where no
- * block is sent, the user gets the report in `systemMessage`, the one
- * user-facing field all three agents share. A Stop block's `reason` (above)
- * is printed in the transcript, so there the user reads the agent's copy and
- * no systemMessage is sent beside it. Either is held under Claude Code's hook
- * output cap (lib/hook-io.ts).
+ * Claude Code otherwise files non-exempt stdout in the debug log.
+ * `systemMessage` is the one user-facing field all three agents share. Both it
+ * and the handed-over report are held under Claude Code's hook output cap
+ * (lib/hook-io.ts).
  * The documented event name is the only branch — no agent sniffing and no
  * agent-specific argument.
  */
@@ -48,12 +47,15 @@ import { fileURLToPath } from "node:url";
 import {
 	readStdinJson,
 	writeSilentHookOutput,
-	writeStopBlock,
+	writeStopFeedback,
 	writeSystemMessage,
 } from "./lib/hook-io.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
+import { HANDOFF_DIR, pruneHandoffs, writeHandoff } from "./lib/stop-handoff.ts";
+import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, stopSummary } from "./lib/stop-report.ts";
 import {
 	formatActiveHygiene,
+	hygieneClaims,
 	parseMemoryRoot,
 	parseOpenLoopConfig,
 	scanActiveHygiene,
@@ -85,8 +87,8 @@ type HookInput = {
 };
 
 const input = await readStdinJson<HookInput>();
-// Re-entry (the Stop after a turn this hook forced, or a secondary agent's):
-// say nothing, which is what keeps a block from looping, spawn no second refresh,
+// Re-entry (the Stop after a turn some Stop hook forced, or a secondary
+// agent's): say nothing, which keeps a forced turn from looping, spawn no second refresh,
 // but still emit the empty envelope rather than zero bytes — see
 // writeSilentHookOutput for why "sometimes silent, sometimes JSON" is the
 // weaker contract.
@@ -95,14 +97,16 @@ if (input?.stop_hook_active === true) {
 	process.exit(0);
 }
 
-const checklist = [
-	"Wrap-up checklist:",
-	"- Archive completed projects? (work/active/ -> work/archive/YYYY/)",
-	"- Update indexes? (Index.md, Memories.md, People & Context, Brag Doc)",
-	"- New notes linked? (orphans are bugs)",
-	"- Ask the agent to run om-vault-audit if many notes were created/modified",
-	"- To act on any drift, ask the agent to run om-tidy",
-].join("\n");
+// Each item as the full report says it and as the user's summary says it.
+const CHECKLIST_ITEMS: readonly (readonly [full: string, short: string])[] = [
+	["Archive completed projects? (work/active/ -> work/archive/YYYY/)", "archive completed work"],
+	["Update indexes? (Index.md, Memories.md, People & Context, Brag Doc)", "update indexes"],
+	["New notes linked? (orphans are bugs)", "link new notes"],
+	["Ask the agent to run om-vault-audit if many notes were created/modified", "om-vault-audit if many notes changed"],
+	["To act on any drift, ask the agent to run om-tidy", "ask the agent to run om-tidy for drift"],
+];
+const checklist = ["Wrap-up checklist:", ...CHECKLIST_ITEMS.map(([full]) => `- ${full}`)].join("\n");
+const CHECKLIST_SUMMARY = `Wrap-up checklist: ${CHECKLIST_ITEMS.map(([, short]) => short).join(" · ")}`;
 
 // Concrete drift findings beat a generic checklist (#98/#103/#106): the
 // same scan SessionStart runs, so the session closes against the same
@@ -151,12 +155,18 @@ const hasSession = typeof sessionId === "string" && sessionId !== "";
 const show =
 	!isStop || !hasSession || claimChanged(STATE_PATH, sessionId, reportKey({ checklist, report }, VOLATILE_FIELDS));
 
-/** Framing for the agent: it decides what the report calls for. */
-const AGENT_PREFACE =
-	"Stop hook report: your response just ended, and these findings are new or changed since the last report this session; the user was shown the same report. Decide what it calls for: act on what bears on the current work, ask the user when something needs their call, or reply in one line that nothing needs doing now. Never move or delete notes without asking, and do not recite the report back.";
-
 if (!show) writeSilentHookOutput();
-else if (isStop && hasSession) writeStopBlock(`${AGENT_PREFACE}\n\n${message}`);
+else if (isStop && hasSession) {
+	// The summary now, the full report with the next prompt; Stop feedback if it cannot be saved.
+	const claims = hygieneClaims(report);
+	try {
+		pruneHandoffs(HANDOFF_DIR, Date.now());
+		writeHandoff(HANDOFF_DIR, sessionId, `${AGENT_PREFACE}\n\n${message}`);
+		writeSystemMessage(stopSummary(CHECKLIST_SUMMARY, claims));
+	} catch {
+		writeStopFeedback(`${FEEDBACK_PREFACE}\n\n${message}`, stopSummary(CHECKLIST_SUMMARY, claims, FEEDBACK_TRAILER));
+	}
+}
 else writeSystemMessage(message);
 
 triggerDebouncedRefresh({

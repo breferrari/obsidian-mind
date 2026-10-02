@@ -672,6 +672,33 @@ export function namesCapped(names: readonly string[]): string {
 }
 
 /**
+ * Each finding's claim: what it says, without its file list or instructions.
+ * The formatter's headline opens with it, and a Stop summary is made of them
+ * (lib/stop-report.ts), so the two cannot drift apart.
+ */
+const claims = {
+	completed: (n: number) => `${n} note(s) marked done but still in active/`,
+	clusters: () => "Loose active/ notes that look like one topic",
+	oversized: (n: number) => `${n} note(s) past the ${MONOLITH_BYTES / 1000}KB organization threshold`,
+	openLoops: (n: number) => `${n} note(s) with open follow-ups untouched ${OPEN_LOOP_DAYS}+ days`,
+	inbox: (n: number) => `${n} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days`,
+	memoryInbox: (n: number) => `${n} cross-repo memory capture(s) awaiting review`,
+};
+
+/** The claim of every finding in `report`, in the order the formatter lists them. */
+export function hygieneClaims(report: ActiveHygieneReport): string[] {
+	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox } = report;
+	const out: string[] = [];
+	if (completedInActive.length > 0) out.push(claims.completed(completedInActive.length));
+	if (ungroupedClusters.length > 0) out.push(claims.clusters());
+	if (oversizedNotes.length > 0) out.push(claims.oversized(oversizedNotes.length));
+	if (openLoops.length > 0) out.push(claims.openLoops(openLoops.length));
+	if (inboxPressure !== null) out.push(claims.inbox(inboxPressure.count));
+	if (memoryInbox !== null) out.push(claims.memoryInbox(memoryInbox.count));
+	return out;
+}
+
+/**
  * Render the report as markdown lines for hook output. Returns [] when the
  * vault is clean, so callers can skip emitting a section entirely.
  */
@@ -698,7 +725,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 
 	if (completedInActive.length > 0) {
 		lines.push(
-			`⚠️  ${completedInActive.length} note(s) marked done but still in active/ — archive to archive/YYYY/ (ask the agent to run om-project-archive):`,
+			`⚠️  ${claims.completed(completedInActive.length)} — archive to archive/YYYY/ (ask the agent to run om-project-archive):`,
 		);
 		lines.push(...listCapped(completedInActive, (p) => `   - ${p}`));
 	}
@@ -706,7 +733,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (ungroupedClusters.length > 0) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			"⚠️  Loose active/ notes that look like one topic — consider a folder (active/<Topic>/):",
+			`⚠️  ${claims.clusters()} — consider a folder (active/<Topic>/):`,
 		);
 		lines.push(...listCapped(ungroupedClusters, ({ token, files }) => `   - "${token}": ${namesCapped(files)}`));
 	}
@@ -714,7 +741,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (oversizedNotes.length > 0) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			`⚠️  ${oversizedNotes.length} note(s) past the ${MONOLITH_BYTES / 1000}KB organization threshold — do NOT trim content; SPLIT (domain notes / event-log satellites / a cluster folder, verbatim, one-liner index behind):`,
+			`⚠️  ${claims.oversized(oversizedNotes.length)} — do NOT trim content; SPLIT (domain notes / event-log satellites / a cluster folder, verbatim, one-liner index behind):`,
 		);
 		lines.push(...listCapped(oversizedNotes, ({ path, sizeKb }) => `   - ${path} (${sizeKb}KB)`));
 	}
@@ -722,7 +749,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (openLoops.length > 0) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			`⚠️  ${openLoops.length} note(s) with open follow-ups untouched ${OPEN_LOOP_DAYS}+ days — close, chase, or consciously park (paths + counts only by design):`,
+			`⚠️  ${claims.openLoops(openLoops.length)} — close, chase, or consciously park (paths + counts only by design):`,
 		);
 		for (const { path, ageDays, openItems } of openLoops) {
 			lines.push(`   - ${path} (${ageDays}d, ${openItems} open item(s))`);
@@ -732,7 +759,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (inboxPressure !== null) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			`⚠️  ${inboxPressure.count} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days (oldest ${inboxPressure.oldestDays}d) — ask the agent to run om-intake to drain the inbox.`,
+			`⚠️  ${claims.inbox(inboxPressure.count)} (oldest ${inboxPressure.oldestDays}d) — ask the agent to run om-intake to drain the inbox.`,
 		);
 	}
 
@@ -742,7 +769,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (memoryInbox !== null) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			`⚠️  ${memoryInbox.count} cross-repo memory capture(s) awaiting review (oldest ${memoryInbox.oldestDays}d). Promote a durable one by COPYING it into the right brain/ note and adding \`promoted: "brain/Note#^om-a1b2c3"\` to the capture's frontmatter, pointing at the block you copied — the entry stays, because recall reaches brain/ only THROUGH a capture, so deleting it takes the lesson away from every repo that cannot read brain/ at all. The ANCHOR is what lets recall serve the corrected text; a bare \`promoted: <note>\` clears this count but serves nothing.`,
+			`⚠️  ${claims.memoryInbox(memoryInbox.count)} (oldest ${memoryInbox.oldestDays}d). Promote a durable one by COPYING it into the right brain/ note and adding \`promoted: "brain/Note#^om-a1b2c3"\` to the capture's frontmatter, pointing at the block you copied — the entry stays, because recall reaches brain/ only THROUGH a capture, so deleting it takes the lesson away from every repo that cannot read brain/ at all. The ANCHOR is what lets recall serve the corrected text; a bare \`promoted: <note>\` clears this count but serves nothing.`,
 		);
 		// Evidence for the sentence above, from this vault rather than in the
 		// abstract. Told once the flag is already firing — it never raises one of

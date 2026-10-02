@@ -86,9 +86,10 @@ export function writeHookOutput(
  * `systemMessage` is the one output field all three agents implement with
  * the same meaning — "show this to the human" — which makes it the only
  * portable channel for a hook that has something to say at session end.
- * The alternative, `hookSpecificOutput.additionalContext`, is Claude-Code-
- * only and is documented as feedback that *continues the conversation* —
- * wrong semantics for a wrap-up reminder, and a re-entry risk on Stop.
+ * On Stop, `hookSpecificOutput.additionalContext` is not an alternative: it is
+ * feedback for the model that *continues the conversation*, and Claude Code
+ * prints it in full for the user too, so it is used only as a fallback
+ * (`writeStopFeedback`).
  *
  * Session-end stdout is JSON-or-nothing on every agent we ship configs for:
  * Codex rejects plain text outright, Gemini's SessionEnd contract is
@@ -96,7 +97,8 @@ export function writeHookOutput(
  * and Claude Code routes non-exempt plain stdout to the debug log where
  * nobody reads it. So there is no text path worth keeping.
  *
- * To reach the model as well, a Stop hook uses `writeStopBlock` instead.
+ * A Stop hook's full report reaches the model with the next prompt instead
+ * (lib/stop-handoff.ts); `writeStopFeedback` is its fallback.
  */
 export function writeSystemMessage(message: string): void {
 	const overhead = JSON.stringify({ systemMessage: "" }).length - 2;
@@ -171,22 +173,32 @@ export function fitHookOutput(
 }
 
 /**
- * A Stop that hands `reason` to the agent now and gives it another turn
- * (#256). The user reads the same text: Claude Code prints a block's reason
- * in the transcript, so a systemMessage beside it only showed the report
- * twice, the second copy cut to a third of the cap.
+ * The fallback when a Stop report cannot be saved for the next prompt: the
+ * agent gets `report` now, and the user is shown `summary`.
  *
- * `decision: "block"` is the only Stop output that reaches the model; every
- * other field is for the user. It also gives the agent a turn nobody typed,
- * so stop-checklist uses it only when its findings change, and relies on
- * `stop_hook_active` to keep the forced turn's own Stop from blocking again.
- * Claude Code honours it on Stop, and labels it "Stop hook error occurred" in
- * its UI even on success; Codex documents the same field. Gemini runs the
- * checklist on SessionEnd and never gets it.
+ * Stop's `hookSpecificOutput.additionalContext` is "non-error feedback for
+ * Claude: the conversation continues so Claude can act on it", under the same
+ * loop protections as a block (`stop_hook_active`, the continuation cap). It is
+ * not labelled an error, but Claude Code prints it in full in the transcript
+ * as "Stop hook feedback", so the user reads the whole report too. That is why
+ * it is the fallback and not the path: the next prompt's UserPromptSubmit is
+ * the one channel the user never sees (lib/stop-handoff.ts). A
+ * `decision: "block"` reason is printed in full as well, and labelled a hook
+ * error.
+ *
+ * Both fields share one output cap: the summary gets at most a third, the
+ * report whatever is left. Gemini runs the checklist on SessionEnd and never
+ * gets this. Codex documents Stop's `decision`, but whether it honours Stop
+ * `additionalContext` is unverified.
  */
-export function writeStopBlock(reason: string): void {
-	const overhead = JSON.stringify({ decision: "block", reason: "" }).length - 2;
-	process.stdout.write(JSON.stringify({ decision: "block", reason: fitEncoded(reason, HOOK_OUTPUT_MAX_CHARS - overhead) }));
+export function writeStopFeedback(report: string, summary: string): void {
+	const shown = fitEncoded(summary, Math.floor(HOOK_OUTPUT_MAX_CHARS / 3));
+	const envelope = (context: string) => ({
+		systemMessage: shown,
+		hookSpecificOutput: { hookEventName: "Stop", additionalContext: context },
+	});
+	const overhead = JSON.stringify(envelope("")).length - 2;
+	process.stdout.write(JSON.stringify(envelope(fitEncoded(report, HOOK_OUTPUT_MAX_CHARS - overhead))));
 }
 
 /**
