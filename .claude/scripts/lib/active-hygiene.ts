@@ -620,7 +620,7 @@ export function newNoteClusterCandidate(
 
 export function formatClusterHint(cluster: TopicCluster): string {
 	return [
-		`🗂️  This note joins ${cluster.files.length - 1} loose sibling(s) in active/ sharing "${cluster.token}": ${cluster.files.join(", ")}.`,
+		`🗂️  This note joins ${cluster.files.length - 1} loose sibling(s) in active/ sharing "${cluster.token}": ${namesCapped(cluster.files)}.`,
 		"Convention: once a workstream has >1 note it gets a folder (active/<Topic>/, `git mv`, mirror the folder in archive/ later).",
 		"Token overlap is BLIND — judge whether these genuinely share context before grouping; if they don't, say so and move on.",
 	].join("\n");
@@ -645,6 +645,25 @@ export function scanActiveHygiene(
 		inboxPressure: findInboxPressure(root, nowMs),
 		memoryInbox: findMemoryInbox(root, memoryRoot, nowMs),
 	};
+}
+
+/**
+ * How many entries a hygiene list prints before "… and N more". The flag's
+ * headline keeps the full count. Hygiene never degrades under the injection
+ * budget, so an uncapped list could fill the hook output cap by itself (#254).
+ */
+export const HYGIENE_LIST_CAP = 10;
+
+function listCapped<T>(items: readonly T[], render: (item: T) => string): string[] {
+	const lines = items.slice(0, HYGIENE_LIST_CAP).map(render);
+	if (items.length > HYGIENE_LIST_CAP) lines.push(`   - … and ${items.length - HYGIENE_LIST_CAP} more`);
+	return lines;
+}
+
+/** A cluster's file names on one line, capped the same way. */
+export function namesCapped(names: readonly string[]): string {
+	const shown = names.slice(0, HYGIENE_LIST_CAP).join(", ");
+	return names.length > HYGIENE_LIST_CAP ? `${shown}, … and ${names.length - HYGIENE_LIST_CAP} more` : shown;
 }
 
 /**
@@ -676,7 +695,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		lines.push(
 			`⚠️  ${completedInActive.length} note(s) marked done but still in active/ — archive to archive/YYYY/ (ask the agent to run om-project-archive):`,
 		);
-		for (const p of completedInActive) lines.push(`   - ${p}`);
+		lines.push(...listCapped(completedInActive, (p) => `   - ${p}`));
 	}
 
 	if (ungroupedClusters.length > 0) {
@@ -684,9 +703,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		lines.push(
 			"⚠️  Loose active/ notes that look like one topic — consider a folder (active/<Topic>/):",
 		);
-		for (const { token, files } of ungroupedClusters) {
-			lines.push(`   - "${token}": ${files.join(", ")}`);
-		}
+		lines.push(...listCapped(ungroupedClusters, ({ token, files }) => `   - "${token}": ${namesCapped(files)}`));
 	}
 
 	if (oversizedNotes.length > 0) {
@@ -694,9 +711,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		lines.push(
 			`⚠️  ${oversizedNotes.length} note(s) past the ${MONOLITH_BYTES / 1000}KB organization threshold — do NOT trim content; SPLIT (domain notes / event-log satellites / a cluster folder, verbatim, one-liner index behind):`,
 		);
-		for (const { path, sizeKb } of oversizedNotes) {
-			lines.push(`   - ${path} (${sizeKb}KB)`);
-		}
+		lines.push(...listCapped(oversizedNotes, ({ path, sizeKb }) => `   - ${path} (${sizeKb}KB)`));
 	}
 
 	if (openLoops.length > 0) {

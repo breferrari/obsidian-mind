@@ -13,7 +13,7 @@
     "action items",
     "what to watch"
   ],
-  "eager_layer_budget_bytes": 80000,
+  "eager_layer_budget_bytes": 9100,
   "listing_collapse_threshold": 12,
   "memory_root": "memories",
   "mcp_exposed_roots": [],

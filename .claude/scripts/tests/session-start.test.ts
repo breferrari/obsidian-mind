@@ -23,6 +23,10 @@ import {
 	shouldCollapseDir,
 	formatCollapsedDir,
 	parseInjectionBudget,
+	effectiveInjectionBudget,
+	fitHookOutput,
+	INJECTION_CEILING_BYTES,
+	CUT_LINE,
 	parseListingCollapseThreshold,
 	DEFAULT_LISTING_COLLAPSE_THRESHOLD,
 	type BudgetSection,
@@ -1200,4 +1204,85 @@ describe("injectionMode", () => {
 			assert.equal(injectionMode(source), expected);
 		});
 	}
+});
+
+describe("the injection budget under the hook output cap (#254)", () => {
+	test("the ceiling leaves the meter its headroom under the 9,500-character output cap", () => {
+		assert.equal(INJECTION_CEILING_BYTES, 9_100);
+	});
+
+	const cases: ReadonlyArray<readonly [number | null, number, number | null]> = [
+		[80_000, 9_100, 80_000], // the old default: clamped, and reported
+		[9_101, 9_100, 9_101], // one over: clamped
+		[9_100, 9_100, null], // exactly the ceiling: kept as configured
+		[4_000, 4_000, null], // under: kept
+		[null, 9_100, null], // unset: the ceiling, with nothing to report
+	];
+	for (const [configured, bytes, clampedFrom] of cases) {
+		test(`effectiveInjectionBudget(${String(configured)}) → ${bytes}${clampedFrom === null ? "" : " (clamped)"}`, () => {
+			assert.deepEqual(effectiveInjectionBudget(configured), { bytes, clampedFrom });
+		});
+	}
+
+	test("the meter names a clamp, a collapse and a cut, in that order", () => {
+		assert.equal(
+			formatInjectionSize(9_000, { budgetBytes: 9_100, clampedFrom: 80_000, collapsed: ["Vault File Listing"], cut: true }),
+			"_context injected: 9.0kB / 9.1kB budget (80.0kB configured, held under the hook output cap) — collapsed: Vault File Listing — cut to fit the hook output cap_",
+		);
+		assert.equal(formatInjectionSize(9_000, { budgetBytes: 9_100, clampedFrom: null }), "_context injected: 9.0kB / 9.1kB budget_");
+	});
+});
+
+describe("fitHookOutput", () => {
+	const meter = (cut: boolean, bytes: number) => `_meter ${bytes}${cut ? " cut" : ""}_`;
+
+	test("output under the cap is the body and the meter, unchanged", () => {
+		assert.equal(fitHookOutput("a\nb\n", meter, 100), "a\nb\n\n_meter 4_\n");
+	});
+
+	test("output over the cap is cut on a line, marked, and closed by the meter", () => {
+		const body = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n") + "\n";
+		const out = fitHookOutput(body, meter, 500);
+		assert.ok(out.length <= 500, `output is ${out.length} characters`);
+		assert.ok(out.includes(`\n${CUT_LINE}\n`), "the cut is marked");
+		const lines = out.split("\n");
+		assert.match(lines.at(-2) ?? "", /^_meter \d+ cut_$/);
+		// Every kept line is a whole line of the body.
+		for (const l of lines.slice(0, lines.indexOf(CUT_LINE))) assert.match(l, /^line \d+$/);
+	});
+
+	test("the cut keeps as much as fits: an all-newline body lands one under the cap", () => {
+		// Every position is a line boundary, so the kept prefix is the longest
+		// the arithmetic allows; an off-by-one either way moves this length.
+		// A fixed-width meter, so a size with fewer digits cannot move it too.
+		const out = fitHookOutput("\n".repeat(2_000), (cut) => (cut ? "_m cut_" : "_m_"), 500);
+		assert.equal(out.length, 499);
+	});
+
+	test("a body with no line to cut on keeps the partial line, filling the cap exactly", () => {
+		const out = fitHookOutput("x".repeat(2_000), (cut) => (cut ? "_m cut_" : "_m_"), 500);
+		assert.equal(out.length, 500);
+		assert.ok(out.startsWith("x".repeat(100)), "the partial line is kept, not dropped");
+	});
+
+	test("a partial line never ends in half of a surrogate pair", () => {
+		// Each emoji is two UTF-16 units; one of the two parities lands mid-pair.
+		for (const cap of [500, 501]) {
+			const out = fitHookOutput("😀".repeat(1_000), (cut) => (cut ? "_m cut_" : "_m_"), cap);
+			assert.ok(out.length <= cap);
+			assert.doesNotThrow(() => encodeURIComponent(out), `a lone surrogate at cap ${cap}`);
+		}
+	});
+
+	test("a meter longer than the cap is cut too: the cap holds for any input", () => {
+		const out = fitHookOutput("a\nb\n", () => "m".repeat(600), 500);
+		assert.ok(out.length <= 500, `output is ${out.length} characters`);
+	});
+
+	test("the meter reports the size of what was kept, not of the whole body", () => {
+		const body = "x\n".repeat(1_000);
+		const out = fitHookOutput(body, meter, 300);
+		const kept = out.slice(0, out.lastIndexOf("\n\n_meter") + 1);
+		assert.match(out, new RegExp(`_meter ${Buffer.byteLength(kept, "utf-8")} cut_\n$`));
+	});
 });

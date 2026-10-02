@@ -249,16 +249,17 @@ describe("stop-checklist", () => {
 		assert.deepEqual(envelopeOf(reentry.stdout), {});
 	});
 
-	test("a report too big for the hook output cap still fits, cut with a marker", () => {
-		// Completed notes left in work/active/ are listed uncapped; four hundred
-		// long names make a report several times the cap.
+	test("a long hygiene list is capped, so the report stays under the hook output cap (#254)", () => {
+		// Four hundred long names made a report several times the cap before
+		// hygiene lists were capped; the headline keeps the full count.
 		const names = Array.from({ length: 400 }, (_, i) => `A completed note with a deliberately long descriptive title ${i}.md`);
 		const root = vault("block-huge", ...names);
 		const { stdout } = run(stop("s-block-huge"), { vault: root });
 		assert.ok(stdout.length <= 9_500, `stdout is ${stdout.length} chars`);
-		const envelope = envelopeOf(stdout);
-		assert.equal(envelope["decision"], "block");
-		assert.match(String(envelope["reason"]), /truncated to fit the hook output cap\)$/);
+		const reason = String(envelopeOf(stdout)["reason"]);
+		assert.match(reason, /⚠️ {2}400 note\(s\) marked done but still in active\//);
+		assert.match(reason, /^ {3}- … and 390 more$/m);
+		assert.doesNotMatch(reason, /truncated to fit/);
 	});
 
 	test("SessionEnd and a Stop without a session_id never block", () => {

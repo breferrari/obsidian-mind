@@ -45,6 +45,8 @@ import {
 	isMarkdownFilename,
 	collectOpenTasks,
 	applyInjectionBudget,
+	effectiveInjectionBudget,
+	fitHookOutput,
 	parseInjectionBudget,
 	parseListingCollapseThreshold,
 	shouldCollapseDir,
@@ -615,18 +617,21 @@ if (hygieneLines.length > 0) {
 	});
 }
 
-// The eager layer is held under a byte ceiling. Unset budget = measure only,
-// which is the pre-budget behaviour, so an un-migrated vault is unaffected.
-const budgetBytes = parseInjectionBudget(manifestJson);
-const budgeted = applyInjectionBudget(sections, budgetBytes ?? 0);
+// The eager layer is held under a byte budget, and the budget under Claude
+// Code's hook output cap: past the cap the session gets a 2,000-character
+// preview, so a larger budget never binds (#254). An unset or larger
+// manifest value is clamped, and the meter says so. fitHookOutput is the
+// backstop for the sections that never degrade.
+const budget = effectiveInjectionBudget(parseInjectionBudget(manifestJson));
+const budgeted = applyInjectionBudget(sections, budget.bytes);
 
-const body = budgeted.text + "\n";
 process.stdout.write(
-	body +
-		"\n" +
-		formatInjectionSize(Buffer.byteLength(body, "utf-8"), {
-			budgetBytes: budgetBytes ?? undefined,
+	fitHookOutput(budgeted.text + "\n", (cut, bodyBytes) =>
+		formatInjectionSize(bodyBytes, {
+			budgetBytes: budget.bytes,
 			collapsed: budgeted.collapsed,
-		}) +
-		"\n",
+			clampedFrom: budget.clampedFrom,
+			cut,
+		}),
+	),
 );

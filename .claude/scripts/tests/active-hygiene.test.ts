@@ -17,12 +17,14 @@ import {
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+	HYGIENE_LIST_CAP,
 	MONOLITH_BYTES,
 	OPEN_LOOP_DAYS,
 	countOpenLoops,
 	formatActiveHygiene,
 	formatClusterHint,
 	formatMonolithHint,
+	namesCapped,
 	isMonolithExempt,
 	newNoteClusterCandidate,
 	parseMemoryRoot,
@@ -433,6 +435,37 @@ describe("scanActiveHygiene — detectors", () => {
 		assert.match(text, /promoted: "brain\/Note#\^om-a1b2c3"/);
 		assert.match(text, /a bare `promoted: <note>` clears this count but serves nothing/);
 		assert.doesNotMatch(text, /om-intake/);
+	});
+
+	test("each previously uncapped hygiene list prints ten entries, then a count of the rest (#254)", () => {
+		const report = (n: number) =>
+			formatActiveHygiene({
+				completedInActive: Array.from({ length: n }, (_, i) => `work/active/Done ${i}.md`),
+				ungroupedClusters: Array.from({ length: n }, (_, i) => ({ token: `topic${i}`, files: ["a.md", "b.md"] })),
+				oversizedNotes: Array.from({ length: n }, (_, i) => ({ path: `notes/Big ${i}.md`, sizeKb: 30 })),
+				openLoops: [],
+				inboxPressure: null,
+				memoryInbox: null,
+			});
+		const atCap = report(HYGIENE_LIST_CAP);
+		assert.equal(atCap.filter((l) => l.startsWith("   - ")).length, 3 * HYGIENE_LIST_CAP);
+		assert.ok(!atCap.some((l) => l.includes("more")), "a full list at the cap gets no count line");
+
+		const over = report(HYGIENE_LIST_CAP + 1).join("\n");
+		assert.match(over, /11 note\(s\) marked done/, "the headline keeps the full count");
+		assert.match(over, /11 note\(s\) past the/);
+		assert.equal(over.match(/^ {3}- … and 1 more$/gm)?.length, 3, "one count line per list");
+		assert.doesNotMatch(over, /Done 10\.md|topic10|Big 10\.md/);
+	});
+
+	test("a cluster's file names are capped on its line and in the write-time hint (#254)", () => {
+		const files = Array.from({ length: HYGIENE_LIST_CAP + 3 }, (_, i) => `n${i}.md`);
+		assert.equal(namesCapped(files.slice(0, HYGIENE_LIST_CAP)), files.slice(0, HYGIENE_LIST_CAP).join(", "));
+		assert.match(namesCapped(files), /, n9\.md, … and 3 more$/);
+		const hint = formatClusterHint({ token: "topic", files });
+		assert.match(hint, /joins 12 loose sibling\(s\)/, "the count stays whole");
+		assert.match(hint, /… and 3 more\./);
+		assert.doesNotMatch(hint, /n10\.md/);
 	});
 
 	test("missing folders produce an empty report, not errors", () => {
