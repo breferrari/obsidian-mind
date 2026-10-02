@@ -160,7 +160,7 @@ export function fitHookOutput(
 	const room = cap - `\n${CUT_LINE}\n\n${meter(true, bodyBytes)}\n`.length;
 	// A meter that cannot fit beside any body is itself cut: never in practice
 	// (it is a few hundred characters), but the cap must hold for any input.
-	if (room < 0) return `${meter(true, 0).slice(0, Math.max(0, cap - 1))}\n`;
+	if (room < 0) return `${meter(true, 0).slice(0, Math.max(0, cap - 1)).replace(/[\uD800-\uDBFF]$/, "")}\n`;
 	let head = body.slice(0, room);
 	const lastBreak = head.lastIndexOf("\n");
 	if (lastBreak >= 0) head = head.slice(0, lastBreak);

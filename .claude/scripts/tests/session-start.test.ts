@@ -1273,6 +1273,14 @@ describe("fitHookOutput", () => {
 		}
 	});
 
+	test("an oversized meter is cut without leaving half of a surrogate pair", () => {
+		for (const cap of [500, 501]) {
+			const out = fitHookOutput("x".repeat(2_000), () => "😀".repeat(600), cap);
+			assert.ok(out.length <= cap);
+			assert.doesNotThrow(() => encodeURIComponent(out), `a lone surrogate at cap ${cap}`);
+		}
+	});
+
 	test("a meter longer than the cap is cut too: the cap holds for any input", () => {
 		const out = fitHookOutput("a\nb\n", () => "m".repeat(600), 500);
 		assert.ok(out.length <= 500, `output is ${out.length} characters`);
