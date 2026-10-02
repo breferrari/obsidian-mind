@@ -179,7 +179,7 @@ sequenceDiagram
         User->>Agent: prompt
         Agent->>Hooks: UserPromptSubmit
         Hooks->>Hooks: classify (decision, incident, win, 1:1, ...)
-        Hooks-->>Agent: routing hints
+        Hooks-->>Agent: routing hints + any Stop report saved last turn
     end
 
     loop each Write/Edit to .md
@@ -196,8 +196,8 @@ sequenceDiagram
     loop each completed response
         Agent->>Hooks: Stop
         Hooks->>QMD: debounced refresh (detached)
-        Hooks-->>User: checklist + hygiene, first time this session or when changed
-        Hooks-->>Agent: same report as a block reason, one turn to act, ask, or pass
+        Hooks-->>User: short summary, one line per section, first time this session or when changed
+        Hooks->>Hooks: save the full report for the next prompt
     end
 ```
 
@@ -208,7 +208,7 @@ A few specific design choices are worth calling out:
 - **QMD refresh is shared, debounced, and detached.** Three hook entries fire the same refresh helper — `PostToolUse` (after `.md` writes), `PreCompact` (before transcript backup; writes tend to cluster before compaction), and `Stop` (after a response) — sharing one sentinel file so a burst of events produces at most one worker per debounce window. The actual indexing runs in `.claude/scripts/qmd-refresh-run.ts` as a detached, stdio-silent worker (`qmd update` → `qmd embed` → tail-chase `qmd update`), so the parent hook returns in milliseconds and nothing flows to the agent's context.
 - **`PreCompact` also backs up the transcript.** In addition to kicking the QMD refresh, it copies the current session transcript out to `thinking/session-logs/` so long conversations remain recoverable after compaction.
 - **`Stop` reports once, not every turn.** Claude and Codex fire it whenever the agent finishes a response, not when the session ends (#252). It triggers the shared refresh every time, but shows the checklist and hygiene findings only the first time a session sees that exact report, and again when the findings change; otherwise it returns the empty JSON envelope. A warning that repeats unchanged is one users learn to ignore (#155). The dedupe reuses the classifier's per-session state shape (#107): one self-pruning file, failing open to "show" on a missing `session_id` or unreadable state.
-- **A changed `Stop` report reaches the agent too (#256).** A `systemMessage` is shown to the user and never added to the model's context, so the drift the agent is best placed to fix never reached it. When the findings change, `Stop` returns `decision: "block"` instead, with the report as the reason, the one `Stop` output that reaches the model. Claude Code prints that reason in the transcript, so the user reads the same report and no `systemMessage` is sent beside it; one was, at first, and it only showed the report twice. The agent gets a turn to act on it, ask the user, or say in one line that nothing needs doing. The forced turn's own `Stop` arrives with `stop_hook_active` and exits early, so it cannot loop. `SessionEnd` has no turn to give, and a `Stop` without a `session_id` has nothing to stop a block repeating, so neither blocks.
+- **A changed `Stop` report reaches the agent too (#256).** A `systemMessage` is shown to the user and never added to the model's context, so the drift the agent is best placed to fix never reached it. And every `Stop` output that does reach the model is printed in full for the user: a `decision: "block"` reason under a "Stop hook error" label (v8.5.0 shipped that), `Stop` `additionalContext` under "Stop hook feedback". `UserPromptSubmit` `additionalContext` is the one channel that reaches the model and is never shown. So when the findings change, `Stop` shows the user a one-line-per-section summary and saves the full report for the session (`lib/stop-handoff.ts`: written atomically, claimed by rename so it is delivered once, the newest report wins, a week-old one is pruned). The next prompt's `classify-message` takes it and hands it to the agent beside any routing hints, with a preface telling it to deal with the user's message first. If the report cannot be saved, `Stop` sends it as feedback instead (Claude Code; Codex's handling of Stop feedback is unverified): visible, but never lost. `SessionEnd` and a `Stop` without a `session_id` have no next prompt to ride, so the user gets the full report.
 - **Why not `SessionEnd`.** It looks like the natural home for an end-of-session checklist, but Claude Code discards a SessionEnd hook's `systemMessage`, and Codex documents SessionEnd as advisory and does not surface its `systemMessage`. Wired there, the checklist would reach nobody on two of the three agents. Gemini does display it during shutdown, so Gemini keeps its SessionEnd wiring. The acting path is `/om-wrap-up`, which runs the hygiene pass while tools are still live.
 
 ---
@@ -878,7 +878,7 @@ Step 2 is not documentation garnish. Measured: with the server wired and no repo
 
 The same scripts serve three agents. Each agent has its own config file mapping equivalent lifecycle events to the shared scripts. The checklist runs on `Stop` for Claude Code and Codex (per response, deduped) and on `SessionEnd` for Gemini (at shutdown). The script branches on the documented event name, never on an agent-specific payload field.
 
-Session-boundary output is JSON-or-nothing on all three agents. `stop-checklist.ts` emits `{}` when a Stop has nothing new to say. When it reports without blocking, the user gets the report in `systemMessage`, the one user-facing field all three agents share. On a Stop whose findings changed, it goes out once, as a block `reason`: the one Stop output that reaches the model, with a turn to act, ask, or say nothing needs doing, and printed in the transcript for the user too. SessionEnd (Gemini) has no turn to give, so there the report is `systemMessage` only. `om-wrap-up` still owns the deliberate acting pass at the end of a session.
+Session-boundary output is JSON-or-nothing on all three agents. `stop-checklist.ts` emits `{}` when a Stop has nothing new to say. What the user sees is `systemMessage`, the one user-facing field all three agents share: on a Stop whose findings changed, a one-line-per-section summary, with the full report saved for the next prompt's `UserPromptSubmit` to hand to the agent unseen. Only when the report cannot be saved does it go out as Stop feedback, which Claude Code prints in full; whether Codex honours Stop feedback is unverified. SessionEnd (Gemini) has no next prompt, so there the full report is `systemMessage` only. `om-wrap-up` still owns the deliberate acting pass at the end of a session.
 
 ```mermaid
 flowchart TB

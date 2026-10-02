@@ -22,22 +22,24 @@
  *
  * Who reads it: a Stop hook's systemMessage reaches the user and never the
  * agent, so the drift the agent is best placed to fix never reached it
- * (#256). On a Stop whose findings changed, the hook also returns
- * `decision: "block"` with the report as the reason, the one Stop output
- * that reaches the model: the agent gets a turn to act on it, ask the user,
- * or say in one line that nothing needs doing. The forced turn's own Stop
- * arrives with stop_hook_active and exits early, so it cannot loop.
- * SessionEnd and a Stop without a session_id never block: SessionEnd has no
- * turn to give, and without a session_id nothing stops a block repeating.
+ * (#256). And every Stop output that does reach the model is printed in full
+ * for the user: a `decision: "block"` reason under a "Stop hook error" label,
+ * Stop `additionalContext` under "Stop hook feedback". So on a Stop whose
+ * findings changed, the user gets a one-line-per-section summary as the
+ * `systemMessage`, and the full report is saved for the session's next prompt
+ * (lib/stop-handoff.ts). There classify-message hands it to the agent through
+ * UserPromptSubmit, the one channel the user never sees, and the agent deals
+ * with the user's message first. If the report cannot be saved, it goes out as
+ * Stop feedback instead: visible, but not lost (Claude Code; Codex's handling of Stop feedback is unverified, lib/hook-io.ts). SessionEnd and a Stop
+ * without a session_id have no next prompt to ride: the user gets the full
+ * report.
  *
  * Output is JSON on every agent, never plain text. Codex rejects plain Stop
  * stdout, Gemini's SessionEnd contract requires a final JSON object, and
- * Claude Code otherwise files non-exempt stdout in the debug log. Where no
- * block is sent, the user gets the report in `systemMessage`, the one
- * user-facing field all three agents share. A Stop block's `reason` (above)
- * is printed in the transcript, so there the user reads the agent's copy and
- * no systemMessage is sent beside it. Either is held under Claude Code's hook
- * output cap (lib/hook-io.ts).
+ * Claude Code otherwise files non-exempt stdout in the debug log.
+ * `systemMessage` is the one user-facing field all three agents share. Both it
+ * and the handed-over report are held under Claude Code's hook output cap
+ * (lib/hook-io.ts).
  * The documented event name is the only branch — no agent sniffing and no
  * agent-specific argument.
  */
@@ -48,10 +50,12 @@ import { fileURLToPath } from "node:url";
 import {
 	readStdinJson,
 	writeSilentHookOutput,
-	writeStopBlock,
+	writeStopFeedback,
 	writeSystemMessage,
 } from "./lib/hook-io.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
+import { pruneHandoffs, writeHandoff } from "./lib/stop-handoff.ts";
+import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, stopSummary } from "./lib/stop-report.ts";
 import {
 	formatActiveHygiene,
 	parseMemoryRoot,
@@ -77,6 +81,9 @@ const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
 const STATE_PATH =
 	process.env["STOP_CHECKLIST_STATE"] ??
 	join(SCRIPT_DIR, ".checklist-state.json");
+// Where a Stop report waits for the next prompt. STOP_HANDOFF_DIR routes it to
+// a tmp path for tests; classify-message reads the same variable.
+const HANDOFF_DIR = process.env["STOP_HANDOFF_DIR"] ?? join(SCRIPT_DIR, ".stop-handoff");
 
 type HookInput = {
 	readonly hook_event_name?: unknown;
@@ -85,8 +92,8 @@ type HookInput = {
 };
 
 const input = await readStdinJson<HookInput>();
-// Re-entry (the Stop after a turn this hook forced, or a secondary agent's):
-// say nothing, which is what keeps a block from looping, spawn no second refresh,
+// Re-entry (the Stop after a turn some Stop hook forced, or a secondary
+// agent's): say nothing, which keeps a forced turn from looping, spawn no second refresh,
 // but still emit the empty envelope rather than zero bytes — see
 // writeSilentHookOutput for why "sometimes silent, sometimes JSON" is the
 // weaker contract.
@@ -103,6 +110,8 @@ const checklist = [
 	"- Ask the agent to run om-vault-audit if many notes were created/modified",
 	"- To act on any drift, ask the agent to run om-tidy",
 ].join("\n");
+const CHECKLIST_SUMMARY =
+	"Wrap-up checklist: archive completed work · update indexes · link new notes · om-vault-audit if many notes changed · ask the agent to run om-tidy for drift";
 
 // Concrete drift findings beat a generic checklist (#98/#103/#106): the
 // same scan SessionStart runs, so the session closes against the same
@@ -151,12 +160,20 @@ const hasSession = typeof sessionId === "string" && sessionId !== "";
 const show =
 	!isStop || !hasSession || claimChanged(STATE_PATH, sessionId, reportKey({ checklist, report }, VOLATILE_FIELDS));
 
-/** Framing for the agent: it decides what the report calls for. */
-const AGENT_PREFACE =
-	"Stop hook report: your response just ended, and these findings are new or changed since the last report this session; the user was shown the same report. Decide what it calls for: act on what bears on the current work, ask the user when something needs their call, or reply in one line that nothing needs doing now. Never move or delete notes without asking, and do not recite the report back.";
-
 if (!show) writeSilentHookOutput();
-else if (isStop && hasSession) writeStopBlock(`${AGENT_PREFACE}\n\n${message}`);
+else if (isStop && hasSession) {
+	// The user sees the summary now; the agent gets the full report with the
+	// next prompt, through UserPromptSubmit, the one channel the user never
+	// sees (lib/stop-handoff.ts). If it cannot be saved, it goes out now as
+	// Stop feedback instead: visible, but not lost (Claude Code; Codex's handling of Stop feedback is unverified, lib/hook-io.ts).
+	try {
+		pruneHandoffs(HANDOFF_DIR, Date.now());
+		writeHandoff(HANDOFF_DIR, sessionId, `${AGENT_PREFACE}\n\n${message}`);
+		writeSystemMessage(stopSummary(CHECKLIST_SUMMARY, hygieneLines));
+	} catch {
+		writeStopFeedback(`${FEEDBACK_PREFACE}\n\n${message}`, stopSummary(CHECKLIST_SUMMARY, hygieneLines, FEEDBACK_TRAILER));
+	}
+}
 else writeSystemMessage(message);
 
 triggerDebouncedRefresh({

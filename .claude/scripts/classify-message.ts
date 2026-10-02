@@ -4,8 +4,10 @@
  *
  * Reads the hook JSON payload from stdin, inspects the `prompt` field for
  * signal patterns (see lib/signals.ts), and emits a hookSpecificOutput
- * envelope on stdout with one hint per matched signal. Exits 0 silently on
- * malformed input, missing prompt, or zero matches.
+ * envelope on stdout with one hint per matched signal. Also hands the agent
+ * the previous turn's Stop report when one is waiting (lib/stop-handoff.ts).
+ * Exits 0 silently on malformed input, a missing prompt, or zero matches with
+ * no report waiting.
  */
 
 import { dirname, join } from "node:path";
@@ -13,8 +15,12 @@ import { fileURLToPath } from "node:url";
 import { debug, readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
 import { classify } from "./lib/matcher.ts";
 import { claimUnseen } from "./lib/hint-state.ts";
+import { takeHandoff } from "./lib/stop-handoff.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+// Where Stop leaves its report for this prompt (see stop-checklist.ts).
+// STOP_HANDOFF_DIR routes it to a tmp path for tests.
+const HANDOFF_DIR = process.env["STOP_HANDOFF_DIR"] ?? join(SCRIPT_DIR, ".stop-handoff");
 // CLASSIFY_HINT_STATE routes the state file into a tmp path for tests
 // (mirrors the QMD_REFRESH_SENTINEL pattern). Production never sets it.
 const STATE_PATH =
@@ -53,19 +59,30 @@ if (typeof sessionId === "string" && sessionId && signals.length > 0) {
 	);
 }
 
+// The previous turn's Stop report, if one is waiting: Stop showed the user a
+// summary and saved the full report for this prompt (lib/stop-handoff.ts).
+// UserPromptSubmit context is the one channel the agent reads and the user
+// never sees, so the report rides here even when the prompt matched nothing.
+const stopReport = typeof sessionId === "string" && sessionId ? takeHandoff(HANDOFF_DIR, sessionId) : null;
+
+const parts: string[] = [];
 if (toEmit.length > 0) {
 	const hints = toEmit.map((s) => `- ${s}`).join("\n");
-	const additionalContext =
+	parts.push(
 		"Content classification hints (act on these if the user's message contains relevant info):\n" +
-		hints +
-		"\n\nRemember: use proper templates, add [[wikilinks]], follow CLAUDE.md conventions.";
+			hints +
+			"\n\nRemember: use proper templates, add [[wikilinks]], follow CLAUDE.md conventions.",
+	);
+}
+if (stopReport !== null) parts.push(stopReport);
 
+if (parts.length > 0) {
 	const eventName =
 		typeof input.hook_event_name === "string"
 			? input.hook_event_name
 			: "UserPromptSubmit";
 
-	writeHookOutput(eventName, additionalContext);
+	writeHookOutput(eventName, parts.join("\n\n"));
 }
 
 process.exit(0);

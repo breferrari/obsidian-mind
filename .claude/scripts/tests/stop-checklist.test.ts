@@ -23,7 +23,9 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { takeHandoff } from "../lib/stop-handoff.ts";
+import { FEEDBACK_PREFACE, FEEDBACK_TRAILER, SUMMARY_TRAILER } from "../lib/stop-report.ts";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -33,6 +35,7 @@ const SCRIPT = resolve(
 	dirname(fileURLToPath(import.meta.url)),
 	"../stop-checklist.ts",
 );
+const CLASSIFY = resolve(dirname(fileURLToPath(import.meta.url)), "../classify-message.ts");
 
 // Route the debounce sentinel through a per-file tmp path. Every run of this
 // hook calls triggerDebouncedRefresh, and without an override that lands on
@@ -50,6 +53,7 @@ const SCRIPT = resolve(
 let TMP_DIR = "";
 let SENTINEL = "";
 let stateCounter = 0;
+let handoffCounter = 0;
 
 before(() => {
 	TMP_DIR = mkdtempSync(join(tmpdir(), "stop-checklist-"));
@@ -73,13 +77,25 @@ function freshState(): string {
  */
 function run(
 	stdin: string | object | null,
-	opts: { readonly state?: string; readonly vault?: string } = {},
+	opts: { readonly state?: string; readonly vault?: string; readonly handoffDir?: string; readonly keep?: boolean } = {},
 ) {
-	return spawnHook(SCRIPT, stdin, {
+	handoffCounter += 1;
+	const handoffDir = opts.handoffDir ?? join(TMP_DIR, `handoff-${handoffCounter}`);
+	const result = spawnHook(SCRIPT, stdin, {
 		QMD_REFRESH_SENTINEL: SENTINEL,
 		STOP_CHECKLIST_STATE: opts.state ?? freshState(),
+		STOP_HANDOFF_DIR: handoffDir,
 		...(opts.vault ? { CLAUDE_PROJECT_DIR: opts.vault } : {}),
 	});
+	// What the agent receives: the report Stop saved for the next prompt.
+	const sid = typeof stdin === "object" && stdin !== null ? (stdin as { session_id?: unknown }).session_id : undefined;
+	const handed = typeof sid === "string" && sid && opts.keep !== true ? takeHandoff(handoffDir, sid) : null;
+	return { ...result, handed };
+}
+
+/** The full report of a run: the handed-over report after its preface, or the systemMessage where nothing was handed over. */
+function reportOf(r: { readonly stdout: string; readonly handed: string | null }): string {
+	return r.handed === null ? shownOf(r.stdout) : r.handed.slice(r.handed.indexOf("\n\n") + 2);
 }
 
 /** Parse stdout as the hook envelope, failing loudly if it isn't JSON. */
@@ -93,17 +109,9 @@ function envelopeOf(stdout: string): Record<string, unknown> {
 	}
 }
 
-/**
- * The report the user is shown, failing loudly if absent: a Stop block's
- * reason after the agent preface (Claude Code prints the reason in the
- * transcript), otherwise the systemMessage.
- */
+/** What the user sees: the systemMessage, failing loudly if absent. */
 function shownOf(stdout: string): string {
 	const envelope = envelopeOf(stdout);
-	if (envelope["decision"] === "block") {
-		const reason = String(envelope["reason"]);
-		return reason.slice(reason.indexOf("\n\n") + 2);
-	}
 	const message = envelope["systemMessage"];
 	assert.equal(
 		typeof message,
@@ -150,7 +158,7 @@ describe("stop-checklist", () => {
 
 	test("the first Stop of a session reports the checklist and findings", () => {
 		const root = vault("first-stop", "Done.md");
-		const message = shownOf(run(stop("s-first"), { vault: root }).stdout);
+		const message = reportOf(run(stop("s-first"), { vault: root }));
 		assert.match(message, /Wrap-up checklist:/);
 		assert.match(message, /work\/active\/Done\.md/);
 	});
@@ -161,7 +169,7 @@ describe("stop-checklist", () => {
 		const first = run(stop("s-same"), { vault: root, state });
 		const second = run(stop("s-same"), { vault: root, state });
 		const third = run(stop("s-same"), { vault: root, state });
-		assert.match(shownOf(first.stdout), /work\/active\/Done\.md/);
+		assert.match(reportOf(first), /work\/active\/Done\.md/);
 		assert.deepEqual(envelopeOf(second.stdout), {});
 		assert.deepEqual(envelopeOf(third.stdout), {});
 	});
@@ -171,7 +179,7 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		run(stop("s-change"), { vault: root, state });
 		completeNote(root, "Also Done.md");
-		const message = shownOf(run(stop("s-change"), { vault: root, state }).stdout);
+		const message = reportOf(run(stop("s-change"), { vault: root, state }));
 		assert.match(message, /work\/active\/Also Done\.md/);
 	});
 
@@ -185,9 +193,9 @@ describe("stop-checklist", () => {
 		const b = run(stop("s-revert"), { vault: root, state });
 		completeNote(root, "Done.md");
 		const a2 = run(stop("s-revert"), { vault: root, state });
-		assert.match(shownOf(a1.stdout), /work\/active\/Done\.md/);
-		assert.doesNotMatch(shownOf(b.stdout), /Vault Hygiene/);
-		assert.match(shownOf(a2.stdout), /work\/active\/Done\.md/);
+		assert.match(reportOf(a1), /work\/active\/Done\.md/);
+		assert.doesNotMatch(reportOf(b), /Vault Hygiene/);
+		assert.match(reportOf(a2), /work\/active\/Done\.md/);
 	});
 
 	test("a note growing past the threshold does not re-show the report", () => {
@@ -202,7 +210,7 @@ describe("stop-checklist", () => {
 		const first = run(stop("s-grow"), { vault: root, state });
 		writeFileSync(log, "x".repeat(40_000));
 		const second = run(stop("s-grow"), { vault: root, state });
-		assert.match(shownOf(first.stdout), /notes\/Log\.md \(26KB\)/);
+		assert.match(reportOf(first), /notes\/Log\.md \(26KB\)/);
 		assert.deepEqual(envelopeOf(second.stdout), {});
 	});
 
@@ -217,37 +225,78 @@ describe("stop-checklist", () => {
 		const first = run(stop("s-two-grow"), { vault: root, state });
 		writeFileSync(join(root, "notes/B.md"), "x".repeat(34_000));
 		const second = run(stop("s-two-grow"), { vault: root, state });
-		assert.match(shownOf(first.stdout), /notes\/A\.md \(30KB\)[\s\S]*notes\/B\.md \(26KB\)/);
+		assert.match(reportOf(first), /notes\/A\.md \(30KB\)[\s\S]*notes\/B\.md \(26KB\)/);
 		assert.deepEqual(envelopeOf(second.stdout), {});
 	});
 
-	test("a changed Stop report reaches the agent: decision block with the report as the reason (#256)", () => {
-		// A Stop systemMessage never reaches the model. decision "block" is the
-		// one Stop output that does, with a turn to act, ask, or say nothing
-		// needs doing. Claude Code prints the reason in the transcript, so the
-		// user reads it there; a systemMessage beside it showed the report twice.
+	test("a changed Stop shows the user a summary and saves the full report for the next prompt (#256)", () => {
+		// Every Stop output that reaches the model is printed in full for the
+		// user: a block reason as a "Stop hook error", Stop additionalContext as
+		// "Stop hook feedback". So Stop shows a summary, and the next prompt's
+		// UserPromptSubmit, which the user never sees, hands the report over.
 		const root = vault("block", "Done.md");
-		const envelope = envelopeOf(run(stop("s-block"), { vault: root }).stdout);
-		assert.deepEqual(Object.keys(envelope), ["decision", "reason"]);
-		assert.equal(envelope["decision"], "block");
-		const reason = String(envelope["reason"]);
-		assert.match(reason, /^Stop hook report: .*ask the user when something needs their call/);
-		assert.match(reason, /work\/active\/Done\.md/);
+		const result = run(stop("s-block"), { vault: root });
+		const envelope = envelopeOf(result.stdout);
+		assert.deepEqual(Object.keys(envelope), ["systemMessage"], "no decision, no additionalContext: both are printed in full");
+		const summary = String(envelope["systemMessage"]);
+		assert.match(summary, /^Wrap-up checklist: archive completed work/);
+		assert.match(summary, /^Hygiene: 1 note\(s\) marked done but still in active\/$/m);
+		assert.doesNotMatch(summary, /work\/active\/Done\.md/, "the user sees the summary, not the listing");
+		assert.match(summary, /The full report reaches the agent with your next message\.$/);
+		assert.match(result.handed ?? "", /^Stop hook report, handed over with this message: .*ask the user when something needs their call/);
+		assert.match(result.handed ?? "", /work\/active\/Done\.md/);
 	});
 
-	test("an unchanged Stop sends the agent nothing", () => {
-		const root = vault("block-quiet", "Done.md");
+	test("a report that cannot be saved goes out as Stop feedback, framed for a turn with no user message", () => {
+		// A regular file where the directory should be: mkdir fails, so the
+		// next prompt would have nothing to hand over.
+		const root = vault("block-unsaved", "Done.md");
+		const blocked = join(TMP_DIR, "handoff-is-a-file");
+		writeFileSync(blocked, "");
+		const result = run(stop("s-unsaved"), { vault: root, handoffDir: blocked });
+		const envelope = envelopeOf(result.stdout);
+		// Both readers are told what is true here: the report went to the agent
+		// now, in a turn with no user message, and the user sees it in full.
+		const summary = String(envelope["systemMessage"]);
+		assert.match(summary, /^Hygiene: 1 note\(s\) marked done/m);
+		assert.ok(summary.endsWith(FEEDBACK_TRAILER), summary);
+		assert.ok(!summary.includes(SUMMARY_TRAILER), "it does not wait for the next message");
+		const output = envelope["hookSpecificOutput"] as Record<string, unknown>;
+		assert.equal(output["hookEventName"], "Stop");
+		const context = String(output["additionalContext"]);
+		assert.ok(context.startsWith(FEEDBACK_PREFACE), context.slice(0, 120));
+		assert.doesNotMatch(context, /handed over with this message/);
+		assert.match(context, /work\/active\/Done\.md/);
+	});
+
+	test("a saved report prunes the week-old ones a session never collected", () => {
+		const root = vault("block-prune", "Done.md");
+		const dir = join(TMP_DIR, "handoff-prune");
+		mkdirSync(dir, { recursive: true });
+		const stale = join(dir, "abandoned.txt");
+		writeFileSync(stale, "an old report");
+		const eightDaysAgo = (Date.now() - 8 * 24 * 60 * 60 * 1000) / 1000;
+		utimesSync(stale, eightDaysAgo, eightDaysAgo);
+		run(stop("s-prune"), { vault: root, handoffDir: dir });
+		assert.equal(existsSync(stale), false);
+	});
+
+	test("an unchanged Stop saves nothing for the next prompt", () => {
+		const root = vault("block-quiet-2", "Done.md");
 		const state = freshState();
-		run(stop("s-block-quiet"), { vault: root, state });
-		assert.deepEqual(envelopeOf(run(stop("s-block-quiet"), { vault: root, state }).stdout), {});
+		run(stop("s-quiet-2"), { vault: root, state });
+		const second = run(stop("s-quiet-2"), { vault: root, state });
+		assert.deepEqual(envelopeOf(second.stdout), {});
+		assert.equal(second.handed, null);
 	});
 
-	test("the forced turn's own Stop does not block again", () => {
-		// Fresh state, so the change check would block: only the
-		// stop_hook_active exit keeps the forced turn's Stop silent.
+	test("a re-entered Stop is silent and saves nothing", () => {
+		// Fresh state, so the change check would report: only the
+		// stop_hook_active exit keeps a forced turn's Stop silent.
 		const root = vault("block-reentry", "Done.md");
 		const reentry = run({ session_id: "s-block-reentry", hook_event_name: "Stop", stop_hook_active: true }, { vault: root });
 		assert.deepEqual(envelopeOf(reentry.stdout), {});
+		assert.equal(reentry.handed, null);
 	});
 
 	test("a long hygiene list is capped, so the report stays under the hook output cap (#254)", () => {
@@ -255,22 +304,34 @@ describe("stop-checklist", () => {
 		// hygiene lists were capped; the headline keeps the full count.
 		const names = Array.from({ length: 400 }, (_, i) => `A completed note with a deliberately long descriptive title ${i}.md`);
 		const root = vault("block-huge", ...names);
-		const { stdout } = run(stop("s-block-huge"), { vault: root });
-		assert.ok(stdout.length <= HOOK_OUTPUT_MAX_CHARS, `stdout is ${stdout.length} chars`);
-		const reason = String(envelopeOf(stdout)["reason"]);
-		assert.match(reason, /⚠️ {2}400 note\(s\) marked done but still in active\//);
-		assert.match(reason, /^ {3}- … and 390 more$/m);
-		assert.doesNotMatch(reason, /truncated to fit/);
+		// The report is saved whole and cut only where it is delivered, beside the
+		// routing hints, so measure it there: a prompt that raises every hint at once.
+		const dir = join(TMP_DIR, "handoff-huge");
+		const stopRun = run(stop("s-block-huge"), { vault: root, handoffDir: dir, keep: true });
+		assert.ok(stopRun.stdout.length <= HOOK_OUTPUT_MAX_CHARS, `Stop stdout is ${stopRun.stdout.length} chars`);
+		const prompt =
+			"We decided on the new architecture after the outage incident. In my 1:1 with my manager we agreed we shipped it, a big win, and the project milestone is done.";
+		const delivered = spawnHook(CLASSIFY, { session_id: "s-block-huge", hook_event_name: "UserPromptSubmit", prompt }, {
+			STOP_HANDOFF_DIR: dir,
+			CLASSIFY_HINT_STATE: join(TMP_DIR, "hints-huge.json"),
+		});
+		assert.ok(delivered.stdout.length <= HOOK_OUTPUT_MAX_CHARS, `UserPromptSubmit stdout is ${delivered.stdout.length} chars`);
+		const context = String((envelopeOf(delivered.stdout)["hookSpecificOutput"] as Record<string, unknown>)["additionalContext"]);
+		assert.ok((context.match(/^- /gm) ?? []).length >= 5, "the prompt raised most of the routing hints");
+		assert.match(context, /⚠️ {2}400 note\(s\) marked done but still in active\//);
+		assert.match(context, /^ {3}- … and 390 more$/m);
+		assert.doesNotMatch(context, /truncated to fit/);
 	});
 
-	test("SessionEnd and a Stop without a session_id never block", () => {
-		// SessionEnd has no turn to give, and without a session_id nothing
-		// stops a block from repeating every turn.
+	test("SessionEnd and a Stop without a session_id show the full report and save nothing", () => {
+		// Neither has a next prompt in this session for the report to ride.
 		const root = vault("block-never", "Done.md");
 		for (const payload of [stop(), { session_id: "s-end", hook_event_name: "SessionEnd" }]) {
-			const envelope = envelopeOf(run(payload, { vault: root }).stdout);
-			assert.equal(envelope["decision"], undefined);
+			const result = run(payload, { vault: root });
+			const envelope = envelopeOf(result.stdout);
+			assert.deepEqual(Object.keys(envelope), ["systemMessage"]);
 			assert.match(String(envelope["systemMessage"]), /work\/active\/Done\.md/);
+			assert.equal(result.handed, null);
 		}
 	});
 
@@ -279,7 +340,7 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		run(stop("s-one"), { vault: root, state });
 		const other = run(stop("s-two"), { vault: root, state });
-		assert.match(shownOf(other.stdout), /work\/active\/Done\.md/);
+		assert.match(reportOf(other), /work\/active\/Done\.md/);
 	});
 
 	test("a clean vault still gets the checklist once, then silence", () => {
@@ -287,8 +348,8 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		const first = run(stop("s-clean"), { vault: root, state });
 		const second = run(stop("s-clean"), { vault: root, state });
-		assert.match(shownOf(first.stdout), /Wrap-up checklist:/);
-		assert.doesNotMatch(shownOf(first.stdout), /Vault Hygiene/);
+		assert.match(reportOf(first), /Wrap-up checklist:/);
+		assert.doesNotMatch(reportOf(first), /Vault Hygiene/);
 		assert.deepEqual(envelopeOf(second.stdout), {});
 	});
 
@@ -298,8 +359,8 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		const first = run(stop(), { state });
 		const second = run(stop(), { state });
-		assert.match(shownOf(first.stdout), /Wrap-up checklist:/);
-		assert.match(shownOf(second.stdout), /Wrap-up checklist:/);
+		assert.match(reportOf(first), /Wrap-up checklist:/);
+		assert.match(reportOf(second), /Wrap-up checklist:/);
 	});
 
 	test("an unreadable dedupe state fails open", () => {
@@ -320,8 +381,8 @@ describe("stop-checklist", () => {
 		const payload = { session_id: "s-end", hook_event_name: "SessionEnd" };
 		const first = run(payload, { vault: root, state });
 		const second = run(payload, { vault: root, state });
-		assert.match(shownOf(first.stdout), /work\/active\/Done\.md/);
-		assert.match(shownOf(second.stdout), /work\/active\/Done\.md/);
+		assert.match(reportOf(first), /work\/active\/Done\.md/);
+		assert.match(reportOf(second), /work\/active\/Done\.md/);
 	});
 
 	test("SessionEnd after a deduped Stop still reports", () => {
@@ -329,11 +390,11 @@ describe("stop-checklist", () => {
 		const state = freshState();
 		run(stop("s-mixed"), { vault: root, state });
 		const end = run({ session_id: "s-mixed", hook_event_name: "SessionEnd" }, { vault: root, state });
-		assert.match(shownOf(end.stdout), /work\/active\/Done\.md/);
+		assert.match(reportOf(end), /work\/active\/Done\.md/);
 	});
 
 	test("the checklist hands drift to om-tidy", () => {
-		const message = shownOf(run(stop("s-handoff")).stdout);
+		const message = reportOf(run(stop("s-handoff")));
 		assert.match(message, /ask the agent to run om-tidy/i);
 	});
 
@@ -352,7 +413,7 @@ describe("stop-checklist", () => {
 	test("does not terminate the message with a stray newline", () => {
 		// systemMessage is rendered by the agent's UI, not written to a
 		// stream — a trailing newline is padding in all three.
-		const message = shownOf(run({}).stdout);
+		const message = reportOf(run({}));
 		assert.equal(message, message.trimEnd());
 	});
 
@@ -401,22 +462,25 @@ describe("stop-checklist", () => {
 		},
 	];
 
+	// A Stop shows the user a summary and hands the full report over with the
+	// next prompt; SessionEnd (Gemini) shows the full report. The full report
+	// itself must not vary by agent.
 	const rendered = new Set<string>();
 	for (const { label, payload } of AGENT_PAYLOADS) {
-		test(`${label} receives the same JSON envelope`, () => {
-			const { stdout, code } = run(payload);
-			assert.equal(code, 0);
-			const message = shownOf(stdout);
+		test(`${label} receives the same full report`, () => {
+			const result = run(payload);
+			assert.equal(result.code, 0);
+			const message = reportOf(result);
 			assert.match(message, /Wrap-up checklist:/);
 			rendered.add(message);
 		});
 	}
 
-	test("output does not vary by calling agent", () => {
+	test("the full report does not vary by calling agent", () => {
 		assert.equal(
 			rendered.size,
 			1,
-			`every agent must get byte-identical output — got ${rendered.size} variants`,
+			`every agent must get the same full report — got ${rendered.size} variants`,
 		);
 	});
 });

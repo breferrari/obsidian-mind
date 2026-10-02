@@ -7,7 +7,7 @@
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { debug, fitEncoded, HOOK_OUTPUT_MAX_CHARS, warn, writeHookOutput, writeStopBlock, writeSystemMessage, type PolicyResult } from "../lib/hook-io.ts";
+import { debug, fitEncoded, HOOK_OUTPUT_MAX_CHARS, warn, writeHookOutput, writeStopFeedback, writeSystemMessage, type PolicyResult } from "../lib/hook-io.ts";
 
 /**
  * Replace process.stderr.write with a capturer that records calls and returns
@@ -128,14 +128,16 @@ function captureStdout(write: () => void): string {
 
 // "x" encodes to one character, so the cut can land exactly on the cap:
 // these tests assert the exact length, which catches an off-by-one either way.
-describe("writeStopBlock — the whole output fits", () => {
-	test("a huge report fills the cap exactly, marked as cut, and is the only field", () => {
-		const out = captureStdout(() => writeStopBlock("x".repeat(20_000)));
+describe("writeStopFeedback — the whole output fits", () => {
+	test("a huge report and summary fill the cap exactly, both marked as cut, and never as a block", () => {
+		const out = captureStdout(() => writeStopFeedback("x".repeat(20_000), "x".repeat(20_000)));
 		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
-		const parsed = JSON.parse(out) as Record<string, string>;
-		assert.deepEqual(Object.keys(parsed), ["decision", "reason"]);
-		assert.equal(parsed["decision"], "block");
-		assert.match(parsed["reason"] ?? "", /truncated to fit the hook output cap\)$/);
+		const parsed = JSON.parse(out) as { decision?: string; systemMessage: string; hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+		assert.equal(parsed.decision, undefined, "a block is printed in full and labelled an error");
+		assert.equal(parsed.hookSpecificOutput.hookEventName, "Stop");
+		assert.match(parsed.hookSpecificOutput.additionalContext, /truncated to fit the hook output cap\)$/);
+		assert.match(parsed.systemMessage, /truncated to fit the hook output cap\)$/);
+		assert.ok(parsed.hookSpecificOutput.additionalContext.length > parsed.systemMessage.length, "the agent's copy gets the larger share");
 	});
 });
 
