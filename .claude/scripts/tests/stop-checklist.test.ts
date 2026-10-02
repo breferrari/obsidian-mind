@@ -24,7 +24,7 @@ import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
 import { takeHandoff } from "../lib/stop-handoff.ts";
-import { FEEDBACK_PREFACE, FEEDBACK_TRAILER, SUMMARY_TRAILER } from "../lib/stop-report.ts";
+import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, SUMMARY_TRAILER } from "../lib/stop-report.ts";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -95,7 +95,9 @@ function run(
 
 /** The full report of a run: the handed-over report after its preface, or the systemMessage where nothing was handed over. */
 function reportOf(r: { readonly stdout: string; readonly handed: string | null }): string {
-	return r.handed === null ? shownOf(r.stdout) : r.handed.slice(r.handed.indexOf("\n\n") + 2);
+	if (r.handed === null) return shownOf(r.stdout);
+	assert.ok(r.handed.startsWith(`${AGENT_PREFACE}\n\n`), `handed report lacks the preface: ${r.handed.slice(0, 80)}`);
+	return r.handed.slice(AGENT_PREFACE.length + 2);
 }
 
 /** Parse stdout as the hook envelope, failing loudly if it isn't JSON. */

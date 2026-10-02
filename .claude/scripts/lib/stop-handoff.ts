@@ -25,8 +25,18 @@
  * the same findings again, and the prune removes the orphan after a week.
  */
 
-import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { writeFileAtomic } from "./atomic-write.ts";
+
+/**
+ * Where a Stop report waits for the next prompt: one place for the writer
+ * (stop-checklist) and the reader (classify-message), so they cannot drift
+ * apart. STOP_HANDOFF_DIR routes it to a tmp path for tests.
+ */
+export const HANDOFF_DIR =
+	process.env["STOP_HANDOFF_DIR"] ?? join(dirname(fileURLToPath(import.meta.url)), "..", ".stop-handoff");
 
 /** Reports nobody picked up are removed after this long. */
 export const HANDOFF_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -39,10 +49,7 @@ export function handoffPath(dir: string, sessionId: string): string {
 /** Save `text` for the session's next prompt, replacing any unread report. Throws if it cannot. */
 export function writeHandoff(dir: string, sessionId: string, text: string): void {
 	mkdirSync(dir, { recursive: true });
-	const target = handoffPath(dir, sessionId);
-	const tmp = `${target}.${process.pid}.tmp`;
-	writeFileSync(tmp, text, "utf8");
-	renameSync(tmp, target);
+	writeFileAtomic(handoffPath(dir, sessionId), text);
 }
 
 /** Take the session's report, once. Null when there is none or it cannot be claimed. */

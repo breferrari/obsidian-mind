@@ -25,7 +25,8 @@
  *    worst case is one duplicate hint, which is acceptable.
  */
 
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { writeFileAtomic } from "./atomic-write.ts";
 import { debug } from "./hook-io.ts";
 
 export type HintSessionEntry = {
@@ -131,17 +132,10 @@ function loadHintState(path: string): HintState {
  * must never block a hook, and the caller then fails open (shows again).
  */
 function saveHintState(path: string, state: HintState, now: Date): void {
-	const tmp = `${path}.${process.pid}.tmp`;
 	try {
-		writeFileSync(tmp, JSON.stringify(prune(state, now.getTime())));
-		renameSync(tmp, path);
+		writeFileAtomic(path, JSON.stringify(prune(state, now.getTime())));
 	} catch (err) {
 		debug(`hint-state: could not write ${path} (${(err as Error).message}); the next run fails open`);
-		try {
-			unlinkSync(tmp);
-		} catch {
-			/* nothing was written */
-		}
 	}
 }
 

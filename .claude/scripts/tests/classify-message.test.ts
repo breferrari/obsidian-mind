@@ -7,12 +7,12 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { takeHandoff, writeHandoff } from "../lib/stop-handoff.ts";
 import { SIGNALS } from "../lib/signals.ts";
 import { classify } from "../lib/matcher.ts";
-import { runScript as spawnHook } from "./_helpers.ts";
+import { rmTemp, runScript as spawnHook } from "./_helpers.ts";
 
 const SCRIPT = resolve(
 	dirname(fileURLToPath(import.meta.url)),
@@ -409,7 +409,7 @@ describe("classify — the Stop report handoff", () => {
 		dir = mkdtempSync(join(tmpdir(), "classify-handoff-"));
 	});
 	afterEach(() => {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	});
 	const env = () => ({ STOP_HANDOFF_DIR: join(dir, "handoff"), CLASSIFY_HINT_STATE: join(dir, "hints.json") });
 	const ctxOf = (stdout: string): string =>
@@ -421,6 +421,12 @@ describe("classify — the Stop report handoff", () => {
 		assert.match(ctxOf(first.stdout), /FULL-REPORT-7/);
 		const second = spawnHook(SCRIPT, { session_id: "s-1", hook_event_name: "UserPromptSubmit", prompt: "the weather is mild" }, env());
 		assert.equal(second.stdout, "", "delivered once, then gone");
+	});
+
+	test("a prompt with no usable text still delivers a waiting report", () => {
+		writeHandoff(join(dir, "handoff"), "s-4", "FULL-REPORT-9");
+		const r = spawnHook(SCRIPT, { session_id: "s-4", hook_event_name: "UserPromptSubmit", prompt: "" }, env());
+		assert.match(ctxOf(r.stdout), /^FULL-REPORT-9$/);
 	});
 
 	test("the report rides beside routing hints in one context", () => {

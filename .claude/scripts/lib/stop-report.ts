@@ -1,14 +1,6 @@
 /**
  * The Stop report in two forms: a short summary for the user and the full
- * report for the agent.
- *
- * Every Stop output that reaches the model is also printed in full for the
- * user: a `decision: "block"` reason under a "Stop hook error" label, and Stop
- * `additionalContext` under "Stop hook feedback". So on a changed Stop the
- * user sees `stopSummary` (one line per section, as the `systemMessage`), and
- * the full report is saved for the session's next prompt, where
- * UserPromptSubmit hands it to the agent (lib/stop-handoff.ts). UserPromptSubmit
- * context is the one channel the agent reads and the user never sees.
+ * report for the agent. Why two, and how the full one travels: lib/stop-handoff.ts.
  */
 
 /** Framing for the agent, which reads the report alongside the user's next message. */
@@ -27,29 +19,14 @@ export const FEEDBACK_PREFACE =
 	"Stop hook report: your response just ended, and these findings are new or changed since the last report this session; the user is shown this report too. Decide what it calls for: act on what bears on the current work, ask the user when something needs their call, or reply in one line that nothing needs doing now. Never move or delete notes without asking, and do not recite the report back.";
 export const FEEDBACK_TRAILER = "The full report went to the agent now, as Stop hook feedback.";
 
-/** A finding's first line opens with ⚠️ at the margin; its detail lines are indented. */
-const MARKER = /^⚠️\s*/u;
-
-/**
- * "5 notes past the threshold — SPLIT it (…):" → "5 notes past the threshold",
- * keeping "(s)" plurals. The claim ends at the first dash or sentence end,
- * whichever comes first: the memory-inbox finding's first sentence is the
- * claim and the rest is instructions for the agent.
- */
-function headline(line: string): string {
-	const claim = line.replace(MARKER, "").split(/ — |\. /)[0] ?? "";
-	return claim.replace(/ \([^)]*\)/g, "").replace(/[:.]$/, "").trim();
-}
-
 /**
  * The user's copy: the checklist reduced to one line, one line naming each
- * hygiene finding by its claim (no file lists, no instructions), and where the
- * full report went (`trailer`).
+ * hygiene finding by its claim (`hygieneClaims` in lib/active-hygiene.ts: no
+ * file lists, no instructions), and where the full report went (`trailer`).
  */
-export function stopSummary(checklistLine: string, hygieneLines: readonly string[], trailer: string = SUMMARY_TRAILER): string {
+export function stopSummary(checklistLine: string, claims: readonly string[], trailer: string = SUMMARY_TRAILER): string {
 	const lines = [checklistLine];
-	const findings = hygieneLines.filter((l) => MARKER.test(l)).map(headline);
-	if (findings.length > 0) lines.push(`Hygiene: ${findings.join(" · ")}`);
+	if (claims.length > 0) lines.push(`Hygiene: ${claims.join(" · ")}`);
 	lines.push(trailer);
 	return lines.join("\n");
 }

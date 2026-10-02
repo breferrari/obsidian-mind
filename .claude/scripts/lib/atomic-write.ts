@@ -18,7 +18,7 @@
  * half-written note for the indexer to pick up.
  */
 
-import { writeFileSync, copyFileSync, unlinkSync, constants } from "node:fs";
+import { writeFileSync, copyFileSync, renameSync, unlinkSync, constants } from "node:fs";
 import { join } from "node:path";
 
 /** Per-process counter, so two in-flight writes cannot share a temp name. */
@@ -77,5 +77,26 @@ export function claimFile(
 		} catch {
 			/* temp cleanup is best-effort */
 		}
+	}
+}
+
+/**
+ * Replace `path` with `text` through a temp file and a rename, so a reader
+ * never sees half a file and a process killed mid-write leaves the previous
+ * one. Unlike `claimFile`, it overwrites. Throws if it cannot, after removing
+ * its temp file.
+ */
+export function writeFileAtomic(path: string, text: string): void {
+	const tmp = `${path}.${process.pid}.tmp`;
+	try {
+		writeFileSync(tmp, text, "utf8");
+		renameSync(tmp, path);
+	} catch (err) {
+		try {
+			unlinkSync(tmp);
+		} catch {
+			/* nothing was written */
+		}
+		throw err;
 	}
 }

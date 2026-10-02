@@ -5,7 +5,8 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync, utimesSync } from "node:fs";
+import { mkdtempSync, readdirSync, utimesSync } from "node:fs";
+import { rmTemp } from "./_helpers.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HANDOFF_MAX_AGE_MS, handoffPath, pruneHandoffs, takeHandoff, writeHandoff } from "../lib/stop-handoff.ts";
@@ -15,7 +16,7 @@ function withDir(fn: (dir: string) => void): void {
 	try {
 		fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		rmTemp(dir);
 	}
 }
 

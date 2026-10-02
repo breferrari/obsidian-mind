@@ -22,17 +22,14 @@
  *
  * Who reads it: a Stop hook's systemMessage reaches the user and never the
  * agent, so the drift the agent is best placed to fix never reached it
- * (#256). And every Stop output that does reach the model is printed in full
- * for the user: a `decision: "block"` reason under a "Stop hook error" label,
- * Stop `additionalContext` under "Stop hook feedback". So on a Stop whose
- * findings changed, the user gets a one-line-per-section summary as the
- * `systemMessage`, and the full report is saved for the session's next prompt
- * (lib/stop-handoff.ts). There classify-message hands it to the agent through
- * UserPromptSubmit, the one channel the user never sees, and the agent deals
- * with the user's message first. If the report cannot be saved, it goes out as
- * Stop feedback instead: visible, but not lost (Claude Code; Codex's handling of Stop feedback is unverified, lib/hook-io.ts). SessionEnd and a Stop
- * without a session_id have no next prompt to ride: the user gets the full
- * report.
+ * (#256). On a Stop whose findings changed, the user gets a
+ * one-line-per-section summary as the `systemMessage`, and the full report is
+ * saved for the session's next prompt, where classify-message hands it to the
+ * agent (why that channel: lib/stop-handoff.ts). If the report cannot be
+ * saved, it goes out as Stop feedback instead: visible, but not lost (Claude
+ * Code; Codex's handling of Stop feedback is unverified, lib/hook-io.ts).
+ * SessionEnd and a Stop without a session_id have no next prompt to ride: the
+ * user gets the full report.
  *
  * Output is JSON on every agent, never plain text. Codex rejects plain Stop
  * stdout, Gemini's SessionEnd contract requires a final JSON object, and
@@ -54,10 +51,11 @@ import {
 	writeSystemMessage,
 } from "./lib/hook-io.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
-import { pruneHandoffs, writeHandoff } from "./lib/stop-handoff.ts";
+import { HANDOFF_DIR, pruneHandoffs, writeHandoff } from "./lib/stop-handoff.ts";
 import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, stopSummary } from "./lib/stop-report.ts";
 import {
 	formatActiveHygiene,
+	hygieneClaims,
 	parseMemoryRoot,
 	parseOpenLoopConfig,
 	scanActiveHygiene,
@@ -81,9 +79,6 @@ const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
 const STATE_PATH =
 	process.env["STOP_CHECKLIST_STATE"] ??
 	join(SCRIPT_DIR, ".checklist-state.json");
-// Where a Stop report waits for the next prompt. STOP_HANDOFF_DIR routes it to
-// a tmp path for tests; classify-message reads the same variable.
-const HANDOFF_DIR = process.env["STOP_HANDOFF_DIR"] ?? join(SCRIPT_DIR, ".stop-handoff");
 
 type HookInput = {
 	readonly hook_event_name?: unknown;
@@ -102,16 +97,16 @@ if (input?.stop_hook_active === true) {
 	process.exit(0);
 }
 
-const checklist = [
-	"Wrap-up checklist:",
-	"- Archive completed projects? (work/active/ -> work/archive/YYYY/)",
-	"- Update indexes? (Index.md, Memories.md, People & Context, Brag Doc)",
-	"- New notes linked? (orphans are bugs)",
-	"- Ask the agent to run om-vault-audit if many notes were created/modified",
-	"- To act on any drift, ask the agent to run om-tidy",
-].join("\n");
-const CHECKLIST_SUMMARY =
-	"Wrap-up checklist: archive completed work · update indexes · link new notes · om-vault-audit if many notes changed · ask the agent to run om-tidy for drift";
+// Each item as the full report says it and as the user's summary says it.
+const CHECKLIST_ITEMS: readonly (readonly [full: string, short: string])[] = [
+	["Archive completed projects? (work/active/ -> work/archive/YYYY/)", "archive completed work"],
+	["Update indexes? (Index.md, Memories.md, People & Context, Brag Doc)", "update indexes"],
+	["New notes linked? (orphans are bugs)", "link new notes"],
+	["Ask the agent to run om-vault-audit if many notes were created/modified", "om-vault-audit if many notes changed"],
+	["To act on any drift, ask the agent to run om-tidy", "ask the agent to run om-tidy for drift"],
+];
+const checklist = ["Wrap-up checklist:", ...CHECKLIST_ITEMS.map(([full]) => `- ${full}`)].join("\n");
+const CHECKLIST_SUMMARY = `Wrap-up checklist: ${CHECKLIST_ITEMS.map(([, short]) => short).join(" · ")}`;
 
 // Concrete drift findings beat a generic checklist (#98/#103/#106): the
 // same scan SessionStart runs, so the session closes against the same
@@ -162,16 +157,14 @@ const show =
 
 if (!show) writeSilentHookOutput();
 else if (isStop && hasSession) {
-	// The user sees the summary now; the agent gets the full report with the
-	// next prompt, through UserPromptSubmit, the one channel the user never
-	// sees (lib/stop-handoff.ts). If it cannot be saved, it goes out now as
-	// Stop feedback instead: visible, but not lost (Claude Code; Codex's handling of Stop feedback is unverified, lib/hook-io.ts).
+	// The summary now, the full report with the next prompt; Stop feedback if it cannot be saved.
+	const claims = hygieneClaims(report);
 	try {
 		pruneHandoffs(HANDOFF_DIR, Date.now());
 		writeHandoff(HANDOFF_DIR, sessionId, `${AGENT_PREFACE}\n\n${message}`);
-		writeSystemMessage(stopSummary(CHECKLIST_SUMMARY, hygieneLines));
+		writeSystemMessage(stopSummary(CHECKLIST_SUMMARY, claims));
 	} catch {
-		writeStopFeedback(`${FEEDBACK_PREFACE}\n\n${message}`, stopSummary(CHECKLIST_SUMMARY, hygieneLines, FEEDBACK_TRAILER));
+		writeStopFeedback(`${FEEDBACK_PREFACE}\n\n${message}`, stopSummary(CHECKLIST_SUMMARY, claims, FEEDBACK_TRAILER));
 	}
 }
 else writeSystemMessage(message);
