@@ -92,7 +92,7 @@ export function answersByTurn(streamJson: string): string[] {
 	return answers;
 }
 
-/** A throwaway vault: the template's tracked files plus brain notes enough to pass the hook cap. */
+/** A throwaway vault: the template's tracked files plus brain notes enough to put the context well past the hook cap. */
 function buildFixture(selfTest: boolean): string {
 	const vault = mkdtempSync(join(tmpdir(), "om-delivery-gate-"));
 	const tracked = spawnSync("git", ["-C", REPO, "ls-files", "-z"], { encoding: "utf8" }).stdout.split("\0").filter(Boolean);
@@ -100,7 +100,7 @@ function buildFixture(selfTest: boolean): string {
 		mkdirSync(dirname(join(vault, file)), { recursive: true });
 		cpSync(join(REPO, file), join(vault, file));
 	}
-	for (let i = 1; i <= 70; i++) {
+	for (let i = 1; i <= 150; i++) {
 		const n = String(i).padStart(2, "0");
 		writeFileSync(
 			join(vault, "brain", `Gate Rule ${n}.md`),
@@ -174,12 +174,13 @@ async function main(): Promise<void> {
 	};
 	const selfTest = argv.includes("--self-test");
 	const options = { claude: flag("--claude", "claude"), model: flag("--model", "opus") };
-	const version = spawnSync(options.claude, ["--version"], { encoding: "utf8", shell: process.platform === "win32" }).stdout.trim();
+	const version = spawnSync(options.claude, ["--version"], { encoding: "utf8" }).stdout?.trim() || "unknown version";
 	const vault = buildFixture(selfTest);
 	try {
 		const delivered = contextOf(vault, true);
 		const hooked = contextOf(vault, false);
-		if (delivered.length <= 10_000) throw new Error(`fixture too small to test the cap: ${delivered.length} characters`);
+		// Well past the cap, so a cut anywhere near it shows as a different last line.
+		if (delivered.length <= 15_000) throw new Error(`fixture too small to test the cap: ${delivered.length} characters`);
 
 		const verdicts: Verdict[] = [];
 		const withMod = plan(true);
@@ -196,7 +197,13 @@ async function main(): Promise<void> {
 		console.log(`\n${failed === 0 ? "All checkpoints received the whole context." : `${failed} checkpoint(s) did not receive the whole context.`}`);
 		process.exitCode = failed === 0 ? 0 : 1;
 	} finally {
-		rmSync(vault, { recursive: true, force: true });
+		// On Windows the exited session can hold the folder briefly. A cleanup
+		// failure must not turn a verdict into a crash, so it is only reported.
+		try {
+			rmSync(vault, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+		} catch (error) {
+			console.warn(`Could not remove the fixture ${vault}: ${(error as Error).message}`);
+		}
 	}
 }
 
