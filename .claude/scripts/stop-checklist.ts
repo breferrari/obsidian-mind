@@ -59,7 +59,7 @@ import {
 import { readOmMod } from "./lib/om-mod.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 import { HANDOFF_DIR, pruneHandoffs, writeHandoff } from "./lib/stop-handoff.ts";
-import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, stopSummary } from "./lib/stop-report.ts";
+import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, MOD_PREFACE, stopSummary } from "./lib/stop-report.ts";
 import {
 	formatActiveHygiene,
 	hygieneClaims,
@@ -184,7 +184,7 @@ if (omMod === "report") {
 				key: reportKey({ checklist, report }, VOLATILE_FIELDS),
 				summary: stopSummary(CHECKLIST_SUMMARY, claims),
 				claims,
-				agentText: `${AGENT_PREFACE}\n\n${message}`,
+				agentText: `${MOD_PREFACE}\n\n${message}`,
 			},
 		}),
 	);

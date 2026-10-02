@@ -24,7 +24,7 @@ import { test, describe, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
 import { takeHandoff } from "../lib/stop-handoff.ts";
-import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, SUMMARY_TRAILER } from "../lib/stop-report.ts";
+import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, MOD_PREFACE, SUMMARY_TRAILER } from "../lib/stop-report.ts";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -543,7 +543,7 @@ describe("stop-checklist — om_mod (a Claude Code mod)", () => {
 		assert.match(report.key, /^[0-9a-f]{16,}$/);
 		assert.match(report.summary, /^Wrap-up checklist: /);
 		assert.ok(report.claims.length > 0, "the drift is a claim");
-		assert.ok(report.agentText.startsWith(`${AGENT_PREFACE}\n\n`));
+		assert.ok(report.agentText.startsWith(`${MOD_PREFACE}\n\n`), "the mod's report carries the mod's framing, not the settings hook's");
 		assert.match(report.agentText, /work\/active\/Done\.md/);
 		assert.equal(existsSync(state), false, "the mod decides when the report changed");
 		assert.equal(existsSync(dir), false, "the mod hands the report over");
