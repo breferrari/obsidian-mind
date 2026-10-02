@@ -23,7 +23,8 @@
  * Only the stream decides, and every other road the answer could take is
  * closed in the judge, not in the prompt. A checkpoint is INVALID, never
  * PASS, when: its turn used a tool; the `/compact` summary itself carried the
- * new line's size; a `/compact` or `/clear` left no event of its own; the subagent was
+ * new line's size, or could not be read; a `/compact` or `/clear` left no
+ * event of its own; the subagent was
  * not a general-purpose one, was handed the line in its prompt, used tools,
  * or did not report its tool count; with the mod, the settings hook printed
  * the context instead of standing down (or, without it, printed nothing); or
@@ -32,7 +33,8 @@
  * What it does not cover: the mod is loaded with `--plugin-dir`, not found in
  * the vault's skills folder after the trust prompt as a user's is; and the
  * hook path's context in the fixture (under 1,000 characters) only shows that
- * something arrived, not that a long output was cut.
+ * something arrived, not that a long output was cut; and only the last line
+ * is asked for, so a cut that drops the middle and keeps the tail passes.
  *
  * Run it by hand on any Claude Code version before it is recommended, with a
  * logged-in `claude`:
@@ -591,7 +593,7 @@ async function main(): Promise<void> {
 	const failed = verdicts.filter((v) => v.outcome === "FAIL").length;
 	if (invalid > 0) console.log(`\n${invalid} checkpoint(s) could not be judged.`);
 	if (failed > 0) console.log(`\n${failed} checkpoint(s) did not receive the current context: cut, missing, or stale from before a shift.`);
-	if (invalid === 0 && failed === 0) console.log("\nAll checkpoints received the whole context.");
+	if (invalid === 0 && failed === 0) console.log("\nEvery checkpoint quoted the current context's last line.");
 	// A FAIL needs nothing else to be judged: it wins over an INVALID elsewhere.
 	process.exitCode = failed > 0 ? 1 : invalid > 0 ? 2 : 0;
 }

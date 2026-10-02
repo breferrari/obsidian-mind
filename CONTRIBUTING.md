@@ -127,18 +127,18 @@ It needs a logged-in `claude` and costs a few model turns, so it runs by hand, n
 
 ```bash
 node --experimental-strip-types .github/scripts/delivery-gate.ts --self-test # first: exits 0 when the gate can still fail
-node --experimental-strip-types .github/scripts/delivery-gate.ts             # then: PASS at every checkpoint
+node --experimental-strip-types .github/scripts/delivery-gate.ts             # then: every checkpoint PASS
 ```
 
 The self-test runs two broken copies of the mod, one that cuts its context everywhere and one that delivers it whole only at startup. Every checkpoint must fail against both, except the startup-only copy's own startup, which must pass: that control proves the copy delivered at all. Any other outcome means the gate is broken; fix it before trusting a normal run.
 
 Each `/compact` and `/clear` first adds a note to the throwaway vault, so the context delivered after it ends with a size nobody has quoted yet: a compaction summary or an earlier answer cannot supply the new line, only a fresh delivery can.
 
-Only the session's own events decide, and every other road an answer could take counts as INVALID, never PASS: a turn that used a tool, a `/compact` summary that itself carried the new size, a `/compact` or `/clear` that left no event of its own, a subagent that was not general-purpose, was handed the line, used tools or did not report its tool count, a settings hook that printed the context when the mod should have delivered it, and a session that errored, timed out or ran an extra turn. Exit codes: 0 pass; 1 a checkpoint did not receive the current context (cut, missing, or stale from before a shift, which means the mod did not deliver it again); 2 the run could not be judged. A FAIL wins over an INVALID elsewhere in the run. With `--self-test`: 0 the gate can fail, 1 the gate is broken (any checkpoint passed against a broken mod, or the control failed), 2 the run could not be judged.
+Only the session's own events decide, and every other road an answer could take counts as INVALID, never PASS: a turn that used a tool, a `/compact` summary that itself carried the new size or could not be read, a `/compact` or `/clear` that left no event of its own, a subagent that was not general-purpose, was handed the line, used tools or did not report its tool count, a settings hook that printed the context when the mod should have delivered it, and a session that errored, timed out or ran an extra turn. Exit codes: 0 pass; 1 a checkpoint did not receive the current context (cut, missing, or stale from before a shift, which means the mod did not deliver it again); 2 the run could not be judged. A FAIL wins over an INVALID elsewhere in the run. With `--self-test`: 0 the gate can fail, 1 the gate is broken (any checkpoint passed against a broken mod, or the control failed), 2 the run could not be judged.
 
 The gate therefore requires the mod to deliver the context again on `/compact` and `/clear`, from the vault as it is then.
 
-Two limits: the mod is loaded with `--plugin-dir` rather than found in the vault after the trust prompt, and the fixture's settings-hook context is too short to show a cut, so that path shows only that something arrived. The throwaway vaults run with qmd unresolvable, so they start no search bootstrap on your machine.
+Three limits: the mod is loaded with `--plugin-dir` rather than found in the vault after the trust prompt; the fixture's settings-hook context is too short to show a cut, so that path shows only that something arrived; and only the last line is asked for, so a cut that drops the middle and keeps the tail would pass. The throwaway vaults run with qmd unresolvable, so they start no search bootstrap on your machine.
 
 ## Questions?
 

@@ -170,6 +170,10 @@ describe("delivery gate: verdicts", () => {
 		assert.match(v.why, /summary itself carried/);
 	});
 
+	test("a broken preparing step spoils only the checkpoint right after it", () => {
+		assert.deepEqual(run(continued, continuedStream({ compact: [stoodDown, compacted] })).map((v) => v.outcome), ["INVALID", "PASS", "PASS"]);
+	});
+
 	test("a summary sent as blocks is still read; a compaction with no readable summary is invalid", () => {
 		const blocks = { type: "user", isSynthetic: true, message: { role: "user", content: [{ type: "text", text: `It ended at ${METER}.` }] } };
 		assert.match(run(continued, continuedStream({ compact: [stoodDown, compacted, blocks] }))[0]!.why, /summary itself carried/);
