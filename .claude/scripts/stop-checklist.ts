@@ -151,7 +151,7 @@ const show =
 
 /** Framing for the agent: it decides what the report calls for. */
 const AGENT_PREFACE =
-	"Stop hook report: your response just ended and these findings changed since the last report; the user sees the same report. Decide what it calls for: act on what bears on the current work, ask the user when something needs their call, or reply in one line that nothing needs doing now. Never move or delete notes without asking, and do not recite the report back.";
+	"Stop hook report: your response just ended, and these findings are new or changed since the last report this session; the user was shown the same report. Decide what it calls for: act on what bears on the current work, ask the user when something needs their call, or reply in one line that nothing needs doing now. Never move or delete notes without asking, and do not recite the report back.";
 
 if (!show) writeSilentHookOutput();
 else if (isStop && hasSession) writeStopBlock(`${AGENT_PREFACE}\n\n${message}`, message);

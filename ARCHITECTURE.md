@@ -195,6 +195,7 @@ sequenceDiagram
         Agent->>Hooks: Stop
         Hooks->>QMD: debounced refresh (detached)
         Hooks-->>User: checklist + hygiene, first time this session or when changed
+        Hooks-->>Agent: same report as a block reason, one turn to act, ask, or pass
     end
 ```
 
@@ -875,7 +876,7 @@ Step 2 is not documentation garnish. Measured: with the server wired and no repo
 
 The same scripts serve three agents. Each agent has its own config file mapping equivalent lifecycle events to the shared scripts. The checklist runs on `Stop` for Claude Code and Codex (per response, deduped) and on `SessionEnd` for Gemini (at shutdown). The script branches on the documented event name, never on an agent-specific payload field.
 
-Session-boundary output is JSON-or-nothing on all three agents. `stop-checklist.ts` emits `{"systemMessage": ...}` when it reports and `{}` when a Stop has nothing new to say. `systemMessage` is intentionally a user warning rather than model context: it tells the user what to ask for, but it cannot make the agent act. That is why `om-wrap-up` owns the acting path and the hook owns only the report.
+Session-boundary output is JSON-or-nothing on all three agents. `stop-checklist.ts` emits `{}` when a Stop has nothing new to say. When it reports, the user gets the report in `systemMessage`, the one user-facing field all three agents share. On a Stop whose findings changed, the agent also gets it as a block `reason`, the one Stop output that reaches the model, with a turn to act, ask, or say nothing needs doing. SessionEnd (Gemini) has no turn to give, so there the report is `systemMessage` only. `om-wrap-up` still owns the deliberate acting pass at the end of a session.
 
 ```mermaid
 flowchart TB
