@@ -3,20 +3,35 @@ name: Mod
 # The Claude Code mod in .claude/skills/obsidian-mind/ is checked by Claude
 # Code itself: `plugin validate --strict` reads its manifest and module the way
 # the engine will and refuses what the engine would, and `plugin test` runs its
-# *.test.ts files against the real engine. The CLI is installed at its latest
-# version on purpose: the mod API is young and moves between releases, and a
-# break should show here first.
+# *.test.ts files against the real engine.
+#
+# Pushes and pull requests use a pinned CLI, so main never turns red without a
+# change in the repo. A weekly run uses the latest CLI: the mod API is young
+# and moves between releases, and a break should show there first.
 
 on:
   push:
     branches: [main]
     paths:
       - '.claude/skills/obsidian-mind/**'
+      - '.claude/scripts/session-start.ts'
+      - '.claude/scripts/stop-checklist.ts'
+      - '.claude/scripts/lib/om-mod.ts'
       - '.github/workflows/mod.yml'
   pull_request:
     paths:
       - '.claude/skills/obsidian-mind/**'
+      - '.claude/scripts/session-start.ts'
+      - '.claude/scripts/stop-checklist.ts'
+      - '.claude/scripts/lib/om-mod.ts'
       - '.github/workflows/mod.yml'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+env:
+  # The version the mod is known to work on; the weekly run overrides it.
+  CLAUDE_CODE_VERSION: ${{ github.event_name == 'schedule' && 'latest' || '2.1.288' }}
 
 jobs:
   mod:
@@ -32,7 +47,7 @@ jobs:
           node-version: 22
       - name: Install Claude Code (CI-only, not shipped)
         shell: bash
-        run: npm install -g @anthropic-ai/claude-code@latest && claude --version
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && claude --version
       - name: Validate the mod
         shell: bash
         run: claude plugin validate --strict .claude/skills/obsidian-mind
@@ -42,7 +57,9 @@ jobs:
       - name: The checks left nothing behind
         shell: bash
         run: |
-          residue=$(git status --porcelain --untracked-files=all)
+          # --ignored too: the engine's typings and tsconfig are gitignored, and
+          # a check that writes them should still be seen.
+          residue=$(git status --porcelain --ignored --untracked-files=all)
           if [ -n "$residue" ]; then
             echo "::error::checking the mod left files behind in the working tree"
             echo "$residue"

@@ -7,22 +7,44 @@ import { CONTEXT_BLOCK, withSessionContext } from './context.ts'
 const ROOT = '/vault'
 const CONTEXT = '## Session Context\n\n### Date\n2026-10-03 (Saturday)\n\n_context injected: 0.1kB / 20.0kB budget_\n'
 
-type Seen = { runs: Array<{ argv: readonly string[]; init?: { cwd?: string; env?: Record<string, string>; stdin?: string } }>; writes: Array<{ path: string; text: string }>; passedDown: Array<Record<string, unknown>> }
+type Seen = { runs: Array<{ argv: readonly string[]; init?: { cwd?: string; env?: Record<string, string>; stdin?: string } }>; writes: Array<{ path: string; text: string }>; passedDown: Array<Record<string, unknown>>; invalidated: string[]; context: unknown[] }
+
+/**
+ * Record each value the mod stores as this session's context, and pass the
+ * write on to the host. The kit's `$` has no state noun to read it back, so
+ * the writes are what a test can see; the last one is what prompt.context reads.
+ */
+function watchContext(on: Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1], seen: Seen): void {
+	on('state.set', (_$, e, next) => {
+		const write = e as { plugin?: string; key?: string; value?: unknown }
+		if (write.plugin === 'obsidian-mind' && write.key === 'context') seen.context.push(write.value)
+		return next(e)
+	})
+}
+const lastContext = (seen: Seen) => seen.context.at(-1) ?? null
 
 /** The world beneath the mod: the vault root, the script run, the file write and the settings hook. */
-function vault(on: Parameters<Parameters<typeof test>[1] & ((...a: never[]) => unknown)>[1], script: { exitCode: number; stdout: string; stderr?: string }): Seen {
-	const seen: Seen = { runs: [], writes: [], passedDown: [] }
+function vault(
+	on: Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1],
+	script: { exitCode: number; stdout: string; stderr?: string } | (() => { exitCode: number; stdout: string; stderr?: string }),
+): Seen {
+	const seen: Seen = { runs: [], writes: [], passedDown: [], invalidated: [], context: [] }
+	watchContext(on, seen)
 	// A call on `$` is answered `{ value }` (or `{ deny }`).
 	on('session.root', () => ({ value: ROOT }))
 	on('process.run', (_$, e) => {
 		seen.runs.push(e as Seen['runs'][number])
-		return { value: { exitCode: script.exitCode, stdout: script.stdout, stderr: script.stderr ?? '', isStdoutTruncated: false, isStderrTruncated: false } }
+		const reply = typeof script === 'function' ? script() : script
+		return { value: { exitCode: reply.exitCode, stdout: reply.stdout, stderr: reply.stderr ?? '', isStdoutTruncated: false, isStderrTruncated: false } }
 	})
 	on('fs.write', (_$, e) => {
 		seen.writes.push(e)
 		return { value: undefined }
 	})
-	on('ui.invalidate', () => ({ value: undefined }))
+	on('ui.invalidate', (_$, e) => {
+		seen.invalidated.push(e.event)
+		return { value: undefined }
+	})
 	on('classic.SessionStart', (_$, e) => {
 		seen.passedDown.push(e as unknown as Record<string, unknown>)
 		return {}
@@ -47,6 +69,24 @@ describe('session context (#265)', () => {
 		expect(seen.writes[0]?.text).toBe(CONTEXT)
 		expect(seen.passedDown.length).toBe(1)
 		expect(seen.passedDown[0]?.['om_mod']).toBe('standdown')
+
+		// What prompt.context will add, and the re-render that makes it add it.
+		expect(lastContext(seen)).toBe(CONTEXT)
+		expect(seen.invalidated).toEqual(['prompt.context'])
+	})
+
+	test('a run that fails after one that worked clears the old context, so it cannot ride beside fresh hook output', async ($, on) => {
+		let fail = false
+		const seen = vault(on, () => (fail ? { exitCode: 1, stdout: '' } : { exitCode: 0, stdout: CONTEXT }))
+
+		await $.classic.SessionStart({ source: 'startup' })
+		expect(lastContext(seen)).toBe(CONTEXT)
+		fail = true
+		await $.classic.SessionStart({ source: 'clear' })
+
+		expect(seen.runs.length).toBe(2)
+		expect(seen.passedDown[1]?.['om_mod']).toBe(undefined)
+		expect(lastContext(seen)).toBe(null)
 	})
 
 	test('when the script fails, the settings hook gets the original event and runs as without the mod', async ($, on) => {
@@ -55,6 +95,7 @@ describe('session context (#265)', () => {
 
 		// The mod ran and its script failed: not skipped for some other reason.
 		expect(seen.runs.length).toBe(1)
+		expect(lastContext(seen)).toBe(null)
 		expect(seen.passedDown.length).toBe(1)
 		expect(seen.passedDown[0]?.['om_mod']).toBe(undefined)
 		expect(seen.writes.length).toBe(0)
@@ -89,6 +130,14 @@ describe('withSessionContext', () => {
 		const out = withSessionContext({ blocks: [{ name: 'claudeMd', text: 'rewritten' }] }, PATH, CONTEXT)
 		expect(out.instructionFiles).toBe(undefined)
 		expect(out.blocks).toEqual([{ name: 'claudeMd', text: 'rewritten' }, { name: CONTEXT_BLOCK, text: CONTEXT }])
+	})
+
+	test('a copy spelled with the other separator or drive case is still the same file', () => {
+		const once = withSessionContext({ blocks: [], instructionFiles: [] }, 'C:\\vault/.claude/session-context.md', 'old')
+		const respelled = { ...once, instructionFiles: once.instructionFiles?.map((f) => ({ ...f, path: 'c:\\vault\\.claude\\session-context.md' })) }
+		const twice = withSessionContext(respelled, 'C:\\vault/.claude/session-context.md', CONTEXT)
+		expect(twice.instructionFiles?.length).toBe(1)
+		expect(twice.instructionFiles?.[0]?.content).toBe(CONTEXT)
 	})
 
 	test('that block is replaced, not duplicated, on a re-render', () => {

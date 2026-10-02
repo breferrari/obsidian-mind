@@ -17,9 +17,20 @@ export const CONTEXT_BLOCK = 'obsidian-mind'
  */
 export function withSessionContext(below: PromptContextResult, path: string, text: string): PromptContextResult {
 	if (below.instructionFiles) {
-		const others = below.instructionFiles.filter((file) => file.path !== path)
+		const others = below.instructionFiles.filter((file) => !samePath(file.path, path))
 		return { ...below, instructionFiles: [...others, { path, kind: 'project', content: text }] }
 	}
 	const others = below.blocks.filter((block) => block.name !== CONTEXT_BLOCK)
 	return { ...below, blocks: [...others, { name: CONTEXT_BLOCK, text }] }
+}
+
+/**
+ * One file, however it is spelled: the root comes back from Claude Code in
+ * the OS's form (`C:\vault` on Windows) while the mod appends `/…`, and the
+ * engine may hand a path back normalised: separators and the drive letter's
+ * case are not part of a file's identity.
+ */
+export function samePath(a: string, b: string): boolean {
+	const norm = (p: string) => p.replaceAll('\\', '/').replace(/^([a-z]):/i, (d) => d.toLowerCase())
+	return norm(a) === norm(b)
 }

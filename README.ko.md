@@ -205,9 +205,9 @@ QMD는 **세 개의 작은 모델을 로컬에서** 실행하므로, 설정할 A
 
 ### 🧩 Claude Code mod
 
-Claude Code 2.1.287 이상에서는 볼트가 mod도 함께 제공합니다. `.claude/skills/obsidian-mind/`에 있는, Claude Code 안에서 실행되는 플러그인입니다. 같은 훅 스크립트를 실행하고, 그 출력이 세션에 전달되는 경로만 바꿉니다.
+Claude Code 2.1.287 이상에서는 볼트가 mod도 함께 제공합니다. `.claude/skills/obsidian-mind/`에 있는, Claude Code 안에서 실행되는 플러그인입니다. 볼트 자체의 훅 스크립트를 실행하고, 그 출력이 세션에 전달되는 경로만 바꿉니다.
 
-- **세션 컨텍스트가 `CLAUDE.md`처럼 instruction 파일로 전달됩니다.** 컴팩션과 `/clear` 후에도 전체가 다시 읽히고(훅 출력은 포인터로 줄어듭니다), 범용 서브에이전트에도 전달되며(훅 출력은 전달되지 않습니다), Claude Code 훅 출력의 10,000자 제한에 잘리지 않습니다. 크기는 `vault-manifest.json`의 `eager_layer_instruction_budget_bytes`로 정해집니다. `/memory`에는 `.claude/session-context.md`로 표시됩니다.
+- **세션 컨텍스트가 `CLAUDE.md`처럼 instruction 파일로 전달됩니다.** 컴팩션과 `/clear` 후에도 전체가 다시 읽히고(훅 출력은 포인터로 줄어듭니다), 범용 서브에이전트에도 전달되며(훅 출력은 전달되지 않습니다), Claude Code 훅 출력의 10,000자 제한에 잘리지 않습니다. 예산은 `vault-manifest.json`의 `eager_layer_instruction_budget_bytes`이며, 열린 작업처럼 줄어들지 않는 섹션은 이를 넘을 수 있습니다. `/memory`에는 `.claude/session-context.md`로 표시됩니다.
 
 mod는 처리하는 이벤트마다 해당 훅에 대기하라고 알립니다. mod가 로드되지 않는 곳에서는 훅이 이전과 똑같이 동작합니다. Codex와 Gemini, 이전 버전의 Claude Code, 볼트 하위 폴더에서 시작한 세션(볼트 루트에서 실행하거나, 그곳으로 `/cd`한 뒤 `/clear`), 신뢰하지 않은 폴더입니다. mod는 볼트에 대한 Claude Code의 신뢰 확인을 수락한 뒤에만 로드됩니다.
 

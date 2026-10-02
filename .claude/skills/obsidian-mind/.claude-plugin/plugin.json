@@ -5,5 +5,6 @@
   "author": {
     "name": "Brenno Ferrari",
     "url": "https://github.com/breferrari/obsidian-mind"
-  }
+  },
+  "types": "./types/index.d.ts"
 }

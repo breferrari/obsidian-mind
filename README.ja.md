@@ -205,9 +205,9 @@ QMDは**3つの小さなモデルをローカルで**実行します。設定す
 
 ### 🧩 Claude Code の mod
 
-Claude Code 2.1.287 以降では、Vault は mod も同梱しています。`.claude/skills/obsidian-mind/` にある、Claude Code の内部で動くプラグインです。同じフックスクリプトを実行し、その出力がセッションに届く経路だけを変えます。
+Claude Code 2.1.287 以降では、Vault は mod も同梱しています。`.claude/skills/obsidian-mind/` にある、Claude Code の内部で動くプラグインです。Vault 自身のフックスクリプトを実行し、その出力がセッションに届く経路だけを変えます。
 
-- **セッションコンテキストは、`CLAUDE.md` と同じく instruction ファイルとして届きます。** コンパクションや `/clear` の後もそのまま全体が読み直され(フック出力ではポインタに縮みます)、汎用サブエージェントにも届き(フック出力は届きません)、Claude Code のフック出力の 10,000 文字制限で切られません。サイズは `vault-manifest.json` の `eager_layer_instruction_budget_bytes` で決まります。`/memory` には `.claude/session-context.md` として表示されます。
+- **セッションコンテキストは、`CLAUDE.md` と同じく instruction ファイルとして届きます。** コンパクションや `/clear` の後もそのまま全体が読み直され(フック出力ではポインタに縮みます)、汎用サブエージェントにも届き(フック出力は届きません)、Claude Code のフック出力の 10,000 文字制限で切られません。予算は `vault-manifest.json` の `eager_layer_instruction_budget_bytes` です。オープンタスクのように縮まないセクションは、それを超えることがあります。`/memory` には `.claude/session-context.md` として表示されます。
 
 mod は処理するイベントごとに、対応するフックに待機を伝えます。mod が読み込まれない場所では、フックはこれまでどおり動きます。Codex と Gemini、古い Claude Code、Vault のサブフォルダで始めたセッション(Vault のルートで起動するか、そこへ `/cd` して `/clear`)、信頼していないフォルダです。mod は、Vault に対する Claude Code の信頼確認を承認した後にだけ読み込まれます。
 
