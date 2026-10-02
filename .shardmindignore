@@ -24,7 +24,7 @@ obsidian-mind-demo.*
 # the engine, which authors cannot toggle off. The import target therefore can
 # never exist in an installed vault, and because the import is top-level the
 # whole file fails to load (ERR_MODULE_NOT_FOUND) rather than failing a single
-# assertion — so shipping them makes a user's first `npm test` fail on four
+# assertion — so shipping them makes a user's first `npm test` fail on
 # missing modules they never asked for.
 #
 # They stay in the repo: CI exercises the repo-only scripts through exactly
@@ -35,3 +35,4 @@ obsidian-mind-demo.*
 .claude/scripts/tests/generate-changelog.test.ts
 .claude/scripts/tests/bootstrap-hook.test.ts
 .claude/scripts/tests/personalize-hook.test.ts
+.claude/scripts/tests/delivery-gate.test.ts
