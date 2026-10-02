@@ -106,6 +106,16 @@ describe('Stop report (#266)', () => {
 		expect(world.submitted[1]?.context).toEqual(['Stop hook report, handed over with this message: kept'])
 	})
 
+	test("a peer's message passes without the report; the person's next prompt gets it", async ($, on) => {
+		const world = vault(on, ok(report('mine')))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.prompt.submit({ text: 'from a peer', origin: { kind: 'peer' } } as never)
+		await $.prompt.submit({ text: 'typed' })
+
+		expect(world.submitted[0]?.context ?? []).toEqual([])
+		expect(world.submitted[1]?.context).toEqual(['Stop hook report, handed over with this message: mine'])
+	})
+
 	test('a forced turn passes straight through: no run, no flag', async ($, on) => {
 		const world = vault(on, ok(report('k')))
 		await $.classic.Stop({ stop_hook_active: true })
