@@ -7,7 +7,7 @@
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { debug, fitEncoded, HOOK_OUTPUT_MAX_CHARS, warn, writeStopBlock, writeSystemMessage } from "../lib/hook-io.ts";
+import { debug, fitEncoded, HOOK_OUTPUT_MAX_CHARS, warn, writeHookOutput, writeStopBlock, writeSystemMessage } from "../lib/hook-io.ts";
 
 /**
  * Replace process.stderr.write with a capturer that records calls and returns
@@ -148,5 +148,19 @@ describe("writeSystemMessage — the output fits", () => {
 
 	test("a short message is written unchanged", () => {
 		assert.equal(captureStdout(() => writeSystemMessage("hello")), '{"systemMessage":"hello"}');
+	});
+});
+
+describe("writeHookOutput — additionalContext fits the hook output cap (#254)", () => {
+	test("a huge context is cut with the marker; the envelope stays valid JSON", () => {
+		const out = captureStdout(() => writeHookOutput("PostToolUse", "x".repeat(20_000)));
+		const context = (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+		assert.ok(JSON.stringify(context).length <= HOOK_OUTPUT_MAX_CHARS, `context encodes to ${JSON.stringify(context).length}`);
+		assert.match(context, /truncated to fit the hook output cap\)$/);
+	});
+
+	test("a short context is written unchanged", () => {
+		const out = captureStdout(() => writeHookOutput("PostToolUse", "hello"));
+		assert.equal(out, '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"hello"}}');
 	});
 });

@@ -46,7 +46,6 @@ import {
 	collectOpenTasks,
 	applyInjectionBudget,
 	effectiveInjectionBudget,
-	fitHookOutput,
 	parseInjectionBudget,
 	parseListingCollapseThreshold,
 	shouldCollapseDir,
@@ -66,7 +65,7 @@ import {
 	scanActiveHygiene,
 } from "./lib/active-hygiene.ts";
 
-import { readStdinJson } from "./lib/hook-io.ts";
+import { fitHookOutput, readStdinJson } from "./lib/hook-io.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
 type HookInput = { readonly source?: unknown };

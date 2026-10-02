@@ -33,6 +33,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
 import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -312,7 +313,7 @@ describe("session-start — listing collapse and injection budget", () => {
  * must fit whole, with the meter as its last line, whatever the vault holds.
  */
 describe("session-start — the hook output cap", () => {
-	const CAP = 10_000;
+	const CAP = HOOK_OUTPUT_MAX_CHARS;
 	const lastLine = (stdout: string) => stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
 
 	test("an ordinary vault of ~250 nested notes fits, the listing degrading first", () => {
@@ -356,8 +357,8 @@ describe("session-start — the hook output cap", () => {
 			assert.equal(stderr, "");
 			assert.ok(stdout.includes("task 0 "), "the fixture's tasks reached the output");
 			assert.ok(stdout.length <= CAP, `stdout is ${stdout.length} characters`);
-			assert.ok(stdout.includes("… (cut to fit the hook output cap"), "the cut is marked where it happened");
-			assert.match(lastLine(stdout), /^_context injected: .* — cut to fit the hook output cap_$/);
+			assert.ok(stdout.includes("… (truncated to fit the hook output cap)"), "the cut is marked where it happened");
+			assert.match(lastLine(stdout), /^_context injected: .* — truncated to fit the hook output cap_$/);
 		} finally {
 			rmTemp(dir);
 		}
