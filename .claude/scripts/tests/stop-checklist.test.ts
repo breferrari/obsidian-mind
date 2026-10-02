@@ -77,7 +77,13 @@ function freshState(): string {
  */
 function run(
 	stdin: string | object | null,
-	opts: { readonly state?: string; readonly vault?: string; readonly handoffDir?: string; readonly keep?: boolean } = {},
+	opts: {
+		readonly state?: string;
+		readonly vault?: string;
+		readonly handoffDir?: string;
+		readonly keep?: boolean;
+		readonly env?: Readonly<Record<string, string>>;
+	} = {},
 ) {
 	handoffCounter += 1;
 	const handoffDir = opts.handoffDir ?? join(TMP_DIR, `handoff-${handoffCounter}`);
@@ -86,6 +92,7 @@ function run(
 		STOP_CHECKLIST_STATE: opts.state ?? freshState(),
 		STOP_HANDOFF_DIR: handoffDir,
 		...(opts.vault ? { CLAUDE_PROJECT_DIR: opts.vault } : {}),
+		...opts.env,
 	});
 	// What the agent receives: the report Stop saved for the next prompt.
 	const sid = typeof stdin === "object" && stdin !== null ? (stdin as { session_id?: unknown }).session_id : undefined;
@@ -495,31 +502,38 @@ describe("stop-checklist", () => {
  */
 describe("stop-checklist — om_mod (a Claude Code mod)", () => {
 	const flagged = (session_id: string, om_mod: string) => ({ ...stop(session_id), om_mod });
+	// The shared sentinel is fresh, so every refresh this file triggers is
+	// debounced: nothing is spawned, and with HOOK_DEBUG=1 the call still
+	// shows on stderr. That makes "was the refresh triggered?" observable.
+	const DEBUG = { HOOK_DEBUG: "1" };
+	const refreshed = (stderr: string) => stderr.includes("stop-checklist: debounced");
 
-	test("standdown writes the empty envelope and touches no state, no handoff", () => {
+	test("standdown writes the empty envelope and touches no state, no handoff, no refresh", () => {
 		const root = vault("ommod-standdown", "Done.md");
 		const state = freshState();
 		const dir = join(TMP_DIR, "handoff-ommod-standdown");
-		const result = run(flagged("s-standdown", "standdown"), { vault: root, state, handoffDir: dir, keep: true });
+		const result = run(flagged("s-standdown", "standdown"), { vault: root, state, handoffDir: dir, keep: true, env: DEBUG });
 		assert.equal(result.code, 0);
 		assert.equal(result.stdout, "{}");
 		assert.equal(existsSync(state), false, "no dedupe state claimed");
 		assert.equal(existsSync(dir), false, "no report saved for the next prompt");
+		assert.equal(refreshed(result.stderr), false, "the mod's report run does the refresh");
 	});
 
-	test("the same Stop without the flag does claim state and hand the report over (the checks above can fail)", () => {
+	test("the same Stop without the flag does claim state, hand the report over and refresh (the checks above can fail)", () => {
 		const root = vault("ommod-plain", "Done.md");
 		const state = freshState();
-		const result = run(stop("s-plain"), { vault: root, state });
+		const result = run(stop("s-plain"), { vault: root, state, env: DEBUG });
 		assert.equal(existsSync(state), true);
 		assert.ok(result.handed?.includes("work/active/Done.md"));
+		assert.equal(refreshed(result.stderr), true);
 	});
 
-	test("report returns the report as data, and claims no state and hands nothing over", () => {
+	test("report returns the report as data, refreshes, and claims no state and hands nothing over", () => {
 		const root = vault("ommod-report", "Done.md");
 		const state = freshState();
 		const dir = join(TMP_DIR, "handoff-ommod-report");
-		const result = run(flagged("s-report", "report"), { vault: root, state, handoffDir: dir, keep: true });
+		const result = run(flagged("s-report", "report"), { vault: root, state, handoffDir: dir, keep: true, env: DEBUG });
 		assert.equal(result.code, 0);
 		const { report } = envelopeOf(result.stdout) as { report: { key: string; summary: string; claims: string[]; agentText: string } };
 		assert.match(report.key, /^[0-9a-f]{16,}$/);
@@ -529,6 +543,15 @@ describe("stop-checklist — om_mod (a Claude Code mod)", () => {
 		assert.match(report.agentText, /work\/active\/Done\.md/);
 		assert.equal(existsSync(state), false, "the mod decides when the report changed");
 		assert.equal(existsSync(dir), false, "the mod hands the report over");
+		assert.equal(refreshed(result.stderr), true, "the mod's run replaces the hook's, refresh included");
+	});
+
+	test("report answers even on a re-entry event: the mod decides when to ask", () => {
+		const root = vault("ommod-reentry", "Done.md");
+		const result = run({ ...flagged("s-reentry", "report"), stop_hook_active: true }, { vault: root });
+		const envelope = envelopeOf(result.stdout) as { report?: { agentText: string } };
+		assert.ok(envelope.report, `expected a report, got ${result.stdout}`);
+		assert.match(envelope.report.agentText, /work\/active\/Done\.md/);
 	});
 
 	test("report's key is the report's identity: stable for the same findings, different when they change", () => {
@@ -540,9 +563,12 @@ describe("stop-checklist — om_mod (a Claude Code mod)", () => {
 		assert.notEqual(keyOf(), first);
 	});
 
-	test("an unknown om_mod value is ignored: the Stop reports as with no flag", () => {
+	test("an unknown om_mod value changes nothing: output identical to a Stop with no flag", () => {
 		const root = vault("ommod-unknown", "Done.md");
-		const result = run(flagged("s-unknown", "silence"), { vault: root });
-		assert.ok(result.handed?.includes("work/active/Done.md"));
+		const plain = run(stop("s-unknown"), { vault: root });
+		const unknown = run(flagged("s-unknown", "silence"), { vault: root });
+		assert.equal(unknown.stdout, plain.stdout);
+		assert.equal(unknown.handed, plain.handed);
+		assert.ok(plain.handed?.includes("work/active/Done.md"));
 	});
 });

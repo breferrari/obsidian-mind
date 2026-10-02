@@ -8,6 +8,14 @@
  * vault markdown file listing.
  *
  * Also persists VAULT_PATH to CLAUDE_ENV_FILE when Claude Code provides it.
+ *
+ * Under the template's Claude Code mod (#264, lib/om-mod.ts) the mod
+ * delivers this output as an instruction file: it runs this script with
+ * `om_mod: "deliver"` (always the full layer, held to
+ * `eager_layer_instruction_budget_bytes` rather than the hook-output cap) and
+ * flags the event it passes down with `om_mod: "standdown"`, on which this
+ * hook exits before any output or side effect. Without the mod, nothing
+ * sends the flag.
  */
 
 import {

@@ -106,7 +106,8 @@ if (omMod === "standdown") {
 // but still emit the empty envelope rather than zero bytes — see
 // writeSilentHookOutput for why "sometimes silent, sometimes JSON" is the
 // weaker contract.
-if (input?.stop_hook_active === true) {
+// The mod's `report` run is not a re-entry: the mod decides when to ask.
+if (input?.stop_hook_active === true && omMod !== "report") {
 	writeSilentHookOutput();
 	process.exit(0);
 }

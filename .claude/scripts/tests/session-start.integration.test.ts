@@ -411,7 +411,8 @@ describe("session-start — om_mod (a Claude Code mod)", () => {
 	});
 
 	test("deliver is not cut to the hook-output cap: the layer arrives whole, against its own budget", () => {
-		const dir = nestedVault({ eager_layer_budget_bytes: 80_000, eager_layer_instruction_budget_bytes: 80_000 });
+		// Different values, so reading the wrong field cannot pass.
+		const dir = nestedVault({ eager_layer_budget_bytes: 9_000, eager_layer_instruction_budget_bytes: 80_000 });
 		try {
 			const delivered = spawnHook(SCRIPT, { source: "startup", om_mod: "deliver" }, { CLAUDE_PROJECT_DIR: dir });
 			assert.equal(delivered.code, 0);
@@ -447,10 +448,24 @@ describe("session-start — om_mod (a Claude Code mod)", () => {
 		assert.ok(hooked.includes("### Context Pointer"), "without the flag compact stays pointer mode");
 	});
 
-	test("an unknown om_mod value is ignored: the hook behaves as with no flag", () => {
-		const { stdout, code } = spawnHook(SCRIPT, { source: "startup", om_mod: "silence" }, { CLAUDE_PROJECT_DIR: TMP_DIR });
-		assert.equal(code, 0);
-		assert.ok(stdout.includes("### Date"));
-		assert.match(lastLine(stdout), /\/ 9\.1kB budget/, "the hook path and its cap, not deliver");
+	test("an unknown om_mod value changes nothing: output identical to a run with no flag", () => {
+		const plain = spawnHook(SCRIPT, { source: "startup" }, { CLAUDE_PROJECT_DIR: TMP_DIR });
+		const unknown = spawnHook(SCRIPT, { source: "startup", om_mod: "silence" }, { CLAUDE_PROJECT_DIR: TMP_DIR });
+		assert.equal(unknown.code, 0);
+		assert.equal(unknown.stdout, plain.stdout);
+		assert.ok(plain.stdout.includes("### Date"));
+	});
+
+	test("standdown exits before every side effect: it never reaches the project directory", () => {
+		// Every side effect (VAULT_PATH, the QMD preflight and spawn, the scans)
+		// comes after the chdir into the project directory. A missing directory
+		// makes that chdir throw, so only a run that left before it exits clean.
+		const missing = join(TMP_DIR, "no-such-vault");
+		const plain = spawnHook(SCRIPT, { source: "startup" }, { CLAUDE_PROJECT_DIR: missing });
+		assert.notEqual(plain.code, 0, "without the flag the run reaches the chdir and fails");
+		const stood = spawnHook(SCRIPT, { source: "startup", om_mod: "standdown" }, { CLAUDE_PROJECT_DIR: missing });
+		assert.equal(stood.code, 0);
+		assert.equal(stood.stdout, "");
+		assert.equal(stood.stderr, "");
 	});
 });
