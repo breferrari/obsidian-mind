@@ -24,9 +24,7 @@ import {
 	formatCollapsedDir,
 	parseInjectionBudget,
 	effectiveInjectionBudget,
-	fitHookOutput,
 	INJECTION_CEILING_BYTES,
-	CUT_LINE,
 	parseListingCollapseThreshold,
 	DEFAULT_LISTING_COLLAPSE_THRESHOLD,
 	type BudgetSection,
@@ -51,6 +49,7 @@ import {
 	collectOpenTasks,
 } from "../lib/session-start.ts";
 
+import { CUT_LINE, fitHookOutput, HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
 import { rmTemp } from "./_helpers.ts";
 
 describe("take", () => {
@@ -1207,29 +1206,29 @@ describe("injectionMode", () => {
 });
 
 describe("the injection budget under the hook output cap (#254)", () => {
-	test("the ceiling leaves the meter its headroom under the 9,500-character output cap", () => {
+	test("the ceiling leaves the meter its headroom under the hook output cap", () => {
 		assert.equal(INJECTION_CEILING_BYTES, 9_100);
 	});
 
-	const cases: ReadonlyArray<readonly [number | null, number, number | null]> = [
+	const cases: ReadonlyArray<readonly [number | null, number, number | undefined]> = [
 		[80_000, 9_100, 80_000], // the old default: clamped, and reported
 		[9_101, 9_100, 9_101], // one over: clamped
-		[9_100, 9_100, null], // exactly the ceiling: kept as configured
-		[4_000, 4_000, null], // under: kept
-		[null, 9_100, null], // unset: the ceiling, with nothing to report
+		[9_100, 9_100, undefined], // exactly the ceiling: kept as configured
+		[4_000, 4_000, undefined], // under: kept
+		[null, 9_100, undefined], // unset: the ceiling, with nothing to report
 	];
 	for (const [configured, bytes, clampedFrom] of cases) {
-		test(`effectiveInjectionBudget(${String(configured)}) → ${bytes}${clampedFrom === null ? "" : " (clamped)"}`, () => {
-			assert.deepEqual(effectiveInjectionBudget(configured), { bytes, clampedFrom });
+		test(`effectiveInjectionBudget(${String(configured)}) → ${bytes}${clampedFrom === undefined ? "" : " (clamped)"}`, () => {
+			assert.deepEqual(effectiveInjectionBudget(configured), clampedFrom === undefined ? { bytes } : { bytes, clampedFrom });
 		});
 	}
 
 	test("the meter names a clamp, a collapse and a cut, in that order", () => {
 		assert.equal(
 			formatInjectionSize(9_000, { budgetBytes: 9_100, clampedFrom: 80_000, collapsed: ["Vault File Listing"], cut: true }),
-			"_context injected: 9.0kB / 9.1kB budget (80.0kB configured, held under the hook output cap) — collapsed: Vault File Listing — cut to fit the hook output cap_",
+			"_context injected: 9.0kB / 9.1kB budget (80.0kB configured, held under the hook output cap) — collapsed: Vault File Listing — truncated to fit the hook output cap_",
 		);
-		assert.equal(formatInjectionSize(9_000, { budgetBytes: 9_100, clampedFrom: null }), "_context injected: 9.0kB / 9.1kB budget_");
+		assert.equal(formatInjectionSize(9_000, { budgetBytes: 9_100 }), "_context injected: 9.0kB / 9.1kB budget_");
 	});
 });
 
@@ -1274,6 +1273,14 @@ describe("fitHookOutput", () => {
 		}
 	});
 
+	test("an oversized meter is cut without leaving half of a surrogate pair", () => {
+		for (const cap of [500, 501]) {
+			const out = fitHookOutput("x".repeat(2_000), () => "😀".repeat(600), cap);
+			assert.ok(out.length <= cap);
+			assert.doesNotThrow(() => encodeURIComponent(out), `a lone surrogate at cap ${cap}`);
+		}
+	});
+
 	test("a meter longer than the cap is cut too: the cap holds for any input", () => {
 		const out = fitHookOutput("a\nb\n", () => "m".repeat(600), 500);
 		assert.ok(out.length <= 500, `output is ${out.length} characters`);
@@ -1284,5 +1291,45 @@ describe("fitHookOutput", () => {
 		const out = fitHookOutput(body, meter, 300);
 		const kept = out.slice(0, out.lastIndexOf("\n\n_meter") + 1);
 		assert.match(out, new RegExp(`_meter ${Buffer.byteLength(kept, "utf-8")} cut_\n$`));
+	});
+});
+
+describe("the eager layer end to end under the cap (#254)", () => {
+	test("sections totalling 30,000 characters degrade, fit, and the meter names what collapsed", () => {
+		// The issue's own test: the budget, the fit and the meter together. The
+		// budget alone brings this one under the cap, so no cut happens.
+		const sections: BudgetSection[] = [
+			{ header: "### Date", body: "Friday", priority: 0 },
+			{ header: "### North Star", body: "n".repeat(6_000), priority: 30, fallback: "(pointer)" },
+			{ header: "### Brain Topics", body: "b".repeat(9_000), priority: 40, fallback: "(pointer)" },
+			{ header: "### Vault File Listing", body: "l".repeat(15_000), priority: 50, fallback: "(pointer)" },
+		];
+		const budget = effectiveInjectionBudget(80_000);
+		const budgeted = applyInjectionBudget(sections, budget.bytes);
+		const out = fitHookOutput(budgeted.text + "\n", (cut, bytes) =>
+			formatInjectionSize(bytes, { budgetBytes: budget.bytes, collapsed: budgeted.collapsed, clampedFrom: budget.clampedFrom, cut }),
+		);
+		assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `output is ${out.length} characters`);
+		assert.ok(!out.includes(CUT_LINE), "the budget was enough; nothing was cut");
+		const meter = out.trimEnd().split("\n").at(-1) ?? "";
+		assert.match(meter, /— collapsed: Vault File Listing, Brain Topics_$/);
+		assert.match(meter, /\(80\.0kB configured, held under the hook output cap\)/);
+		assert.ok(out.includes("n".repeat(6_000)), "North Star fits once the larger sections give way");
+	});
+
+	test("when sections that never degrade pass the cap after every collapse, the fit cuts and the meter says both", () => {
+		const sections: BudgetSection[] = [
+			{ header: "### Open Tasks", body: Array.from({ length: 40 }, (_, i) => `- [ ] task ${i} ${"t".repeat(300)}`).join("\n"), priority: 0 },
+			{ header: "### Vault File Listing", body: "l".repeat(15_000), priority: 50, fallback: "(pointer)" },
+		];
+		const budget = effectiveInjectionBudget(null);
+		const budgeted = applyInjectionBudget(sections, budget.bytes);
+		const out = fitHookOutput(budgeted.text + "\n", (cut, bytes) =>
+			formatInjectionSize(bytes, { budgetBytes: budget.bytes, collapsed: budgeted.collapsed, cut }),
+		);
+		assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `output is ${out.length} characters`);
+		assert.ok(out.includes(`\n${CUT_LINE}\n`), "the cut is marked");
+		const meter = out.trimEnd().split("\n").at(-1) ?? "";
+		assert.match(meter, /— collapsed: Vault File Listing — truncated to fit the hook output cap_$/);
 	});
 });

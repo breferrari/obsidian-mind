@@ -7,7 +7,7 @@
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { debug, fitEncoded, HOOK_OUTPUT_MAX_CHARS, warn, writeStopBlock, writeSystemMessage } from "../lib/hook-io.ts";
+import { debug, fitEncoded, HOOK_OUTPUT_MAX_CHARS, warn, writeHookOutput, writeStopBlock, writeSystemMessage, type PolicyResult } from "../lib/hook-io.ts";
 
 /**
  * Replace process.stderr.write with a capturer that records calls and returns
@@ -148,5 +148,46 @@ describe("writeSystemMessage — the output fits", () => {
 
 	test("a short message is written unchanged", () => {
 		assert.equal(captureStdout(() => writeSystemMessage("hello")), '{"systemMessage":"hello"}');
+	});
+});
+
+describe("writeHookOutput — additionalContext fits the hook output cap (#254)", () => {
+	test("a huge context is cut with the marker, and the whole stdout fills the cap exactly", () => {
+		const out = captureStdout(() => writeHookOutput("PostToolUse", "x".repeat(20_000)));
+		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
+		const context = (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+		assert.match(context, /truncated to fit the hook output cap\)$/);
+	});
+
+	test("policy results take their share of the cap, not more of it", () => {
+		const policy: PolicyResult[] = Array.from({ length: 3 }, (_, i) => ({ policy_id: `rule-${i}`, path: `notes/${"y".repeat(300)}.md`, classification: "misplaced", action: "warn" }));
+		const out = captureStdout(() => writeHookOutput("PostToolUse", "x".repeat(20_000), policy));
+		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
+		assert.equal((JSON.parse(out) as { hookSpecificOutput: { policyResults: unknown[] } }).hookSpecificOutput.policyResults.length, 3);
+	});
+
+	test("at every policy size near the edge, the whole stdout stays within the cap", () => {
+		// Sweeps the boundary where the context's room is about the marker's size,
+		// which a single large fixture cannot reach.
+		const shell = JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: "", policyResults: [{ policy_id: "r", path: "", classification: "c", action: "warn" }] } }).length;
+		for (let pathLen = HOOK_OUTPUT_MAX_CHARS - shell - 80; pathLen <= HOOK_OUTPUT_MAX_CHARS - shell + 5; pathLen++) {
+			const policy: PolicyResult[] = [{ policy_id: "r", path: "p".repeat(pathLen), classification: "c", action: "warn" }];
+			const out = captureStdout(() => writeHookOutput("PostToolUse", "x".repeat(20_000), policy));
+			assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `policy path ${pathLen}: stdout is ${out.length} characters`);
+		}
+	});
+
+	test("policy results too large to fit beside any context are dropped, never carried over the cap", () => {
+		const policy: PolicyResult[] = Array.from({ length: 3 }, (_, i) => ({ policy_id: `rule-${i}`, path: `notes/${"y".repeat(4_000)}.md`, classification: "misplaced", action: "warn" }));
+		const out = captureStdout(() => writeHookOutput("PostToolUse", "x".repeat(20_000), policy));
+		assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `stdout is ${out.length} characters`);
+		const parsed = JSON.parse(out) as { hookSpecificOutput: { additionalContext: string; policyResults?: unknown[] } };
+		assert.equal(parsed.hookSpecificOutput.policyResults, undefined);
+		assert.match(parsed.hookSpecificOutput.additionalContext, /truncated to fit the hook output cap\)$/);
+	});
+
+	test("a short context is written unchanged", () => {
+		const out = captureStdout(() => writeHookOutput("PostToolUse", "hello"));
+		assert.equal(out, '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"hello"}}');
 	});
 });

@@ -654,16 +654,21 @@ export function scanActiveHygiene(
  */
 export const HYGIENE_LIST_CAP = 10;
 
+/** The first HYGIENE_LIST_CAP items, and the "… and N more" tail when any were left out. */
+function capped<T>(items: readonly T[]): { readonly shown: readonly T[]; readonly more: string | null } {
+	const rest = items.length - HYGIENE_LIST_CAP;
+	return { shown: items.slice(0, HYGIENE_LIST_CAP), more: rest > 0 ? `… and ${rest} more` : null };
+}
+
 function listCapped<T>(items: readonly T[], render: (item: T) => string): string[] {
-	const lines = items.slice(0, HYGIENE_LIST_CAP).map(render);
-	if (items.length > HYGIENE_LIST_CAP) lines.push(`   - … and ${items.length - HYGIENE_LIST_CAP} more`);
-	return lines;
+	const { shown, more } = capped(items);
+	return more === null ? shown.map(render) : [...shown.map(render), `   - ${more}`];
 }
 
 /** A cluster's file names on one line, capped the same way. */
 export function namesCapped(names: readonly string[]): string {
-	const shown = names.slice(0, HYGIENE_LIST_CAP).join(", ");
-	return names.length > HYGIENE_LIST_CAP ? `${shown}, … and ${names.length - HYGIENE_LIST_CAP} more` : shown;
+	const { shown, more } = capped(names);
+	return more === null ? shown.join(", ") : [...shown, more].join(", ");
 }
 
 /**

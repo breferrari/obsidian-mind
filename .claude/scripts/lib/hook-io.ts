@@ -63,14 +63,21 @@ export function writeHookOutput(
 	additionalContext: string,
 	policyResults?: readonly PolicyResult[],
 ): void {
-	process.stdout.write(
-		JSON.stringify({
-			hookSpecificOutput:
-				policyResults && policyResults.length > 0
-					? { hookEventName, additionalContext, policyResults }
-					: { hookEventName, additionalContext },
-		}),
-	);
+	// The whole stdout fits the cap, like every writer here (#254): the
+	// context gets what the envelope and any policy results leave. Policy
+	// results that cannot fit beside even the cut marker are dropped rather
+	// than carried over the cap (three raw paths can be 12 KB on Linux).
+	const envelope = (context: string, policies: readonly PolicyResult[]) => ({
+		hookSpecificOutput:
+			policies.length > 0
+				? { hookEventName, additionalContext: context, policyResults: policies }
+				: { hookEventName, additionalContext: context },
+	});
+	const overhead = (policies: readonly PolicyResult[]) => JSON.stringify(envelope("", policies)).length - 2;
+	// The smallest context fitEncoded can return is the marker, quotes included.
+	const minimum = JSON.stringify(CUT_MARKER).length;
+	const policies = policyResults && overhead(policyResults) + minimum <= HOOK_OUTPUT_MAX_CHARS ? policyResults : [];
+	process.stdout.write(JSON.stringify(envelope(fitEncoded(additionalContext, HOOK_OUTPUT_MAX_CHARS - overhead(policies)), policies)));
 }
 
 /**
@@ -124,6 +131,43 @@ export function fitEncoded(text: string, max: number): string {
 		else hi = mid - 1;
 	}
 	return text.slice(0, lo) + CUT_MARKER;
+}
+
+/** The line that replaces whatever a plain-text cut removed: the same words as fitEncoded's marker. */
+export const CUT_LINE = CUT_MARKER.trimStart();
+
+/**
+ * A plain-text hook's whole stdout, held under Claude Code's output cap with
+ * its closing meter intact: the plain-stdout counterpart of fitEncoded.
+ * SessionStart's budget already holds the sections that can degrade; this is
+ * the backstop for the ones that never do (the date, open tasks, hygiene)
+ * (#254). The length is counted in UTF-16 units, never fewer than the
+ * characters Claude Code counts. Over the cap, the body is cut at a line boundary and the meter,
+ * built with `cut` set, still closes the output, so a cut is never silent.
+ *
+ * `meter` gets the UTF-8 size of the body it closes. The cut is sized with
+ * the uncut body's meter; the meter is then rebuilt for what was kept, and a
+ * smaller size never formats longer, so the rebuilt output still fits.
+ */
+export function fitHookOutput(
+	body: string,
+	meter: (cut: boolean, bodyBytes: number) => string,
+	cap: number = HOOK_OUTPUT_MAX_CHARS,
+): string {
+	const bodyBytes = Buffer.byteLength(body, "utf-8");
+	const whole = `${body}\n${meter(false, bodyBytes)}\n`;
+	if (whole.length <= cap) return whole;
+	const room = cap - `\n${CUT_LINE}\n\n${meter(true, bodyBytes)}\n`.length;
+	// A meter that cannot fit beside any body is itself cut: never in practice
+	// (it is a few hundred characters), but the cap must hold for any input.
+	if (room < 0) return `${meter(true, 0).slice(0, Math.max(0, cap - 1)).replace(/[\uD800-\uDBFF]$/, "")}\n`;
+	let head = body.slice(0, room);
+	const lastBreak = head.lastIndexOf("\n");
+	if (lastBreak >= 0) head = head.slice(0, lastBreak);
+	// No line to cut on: keep the partial line, minus any half of a surrogate pair.
+	else if (/[\uD800-\uDBFF]$/.test(head)) head = head.slice(0, -1);
+	const kept = `${head}\n${CUT_LINE}\n`;
+	return `${kept}\n${meter(true, Buffer.byteLength(kept, "utf-8"))}\n`;
 }
 
 /**

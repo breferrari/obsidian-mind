@@ -22,7 +22,7 @@ export function take(stdout: string, n: number): string {
  * that was collapsed to stay under it. Silence about a collapse would be
  * worse than the bloat: a session would silently lose context and never
  * know. For the same reason it says when a configured budget was clamped to
- * the hook output cap, and when the output was cut to fit it (#254). Called
+ * the hook output cap, and when the output was truncated to fit it (#254). Called
  * with one argument the output is byte-identical to before.
  */
 export function formatInjectionSize(
@@ -31,8 +31,8 @@ export function formatInjectionSize(
 		readonly budgetBytes?: number | undefined;
 		readonly collapsed?: readonly string[] | undefined;
 		/** The configured budget, when it was clamped to the hook output cap. */
-		readonly clampedFrom?: number | null | undefined;
-		/** True when the output was cut to fit the hook output cap. */
+		readonly clampedFrom?: number | undefined;
+		/** True when the output was truncated to fit the hook output cap. */
 		readonly cut?: boolean | undefined;
 	},
 ): string {
@@ -46,12 +46,11 @@ export function formatInjectionSize(
 	}
 
 	const clampedFrom = opts?.clampedFrom;
-	const clamp =
-		clampedFrom !== undefined && clampedFrom !== null ? ` (${kb(clampedFrom)} configured, held under the hook output cap)` : "";
+	const clamp = clampedFrom === undefined ? "" : ` (${kb(clampedFrom)} configured, held under the hook output cap)`;
 	let line = `_context injected: ${size} / ${kb(budget)} budget${clamp}`;
 	const collapsed = opts?.collapsed ?? [];
 	if (collapsed.length > 0) line += ` — collapsed: ${collapsed.join(", ")}`;
-	if (opts?.cut === true) line += " — cut to fit the hook output cap";
+	if (opts?.cut === true) line += " — truncated to fit the hook output cap";
 	return `${line}_`;
 }
 
@@ -203,60 +202,27 @@ export const METER_HEADROOM = 400;
  * 10,000 characters and, over it, injects a file path and the first 2,000
  * characters instead, so a budget above the cap never binds: the session
  * gets a preview and the meter at the end is the first thing lost (#254).
- * The budget is in bytes, and a string's UTF-8 bytes are never fewer than
- * its characters, so a byte ceiling also holds the character cap.
+ * HOOK_OUTPUT_MAX_CHARS already keeps a margin under that 10,000. The
+ * budget is in bytes, and a string's UTF-8 bytes are never fewer than its
+ * characters, so a byte ceiling also holds the character cap.
  */
 export const INJECTION_CEILING_BYTES = HOOK_OUTPUT_MAX_CHARS - METER_HEADROOM;
 
 /**
  * The budget actually enforced: the configured one, held under the ceiling.
  * An unset budget gets the ceiling too, since a vault with no budget is the
- * one most likely to pass the cap. `configured` is the manifest value when it
- * was clamped, so the meter can say so; otherwise null.
+ * one most likely to pass the cap. `clampedFrom` is the manifest value when
+ * it was clamped, so the meter can say so, and absent otherwise.
  */
 export function effectiveInjectionBudget(configured: number | null): {
 	readonly bytes: number;
-	readonly clampedFrom: number | null;
+	readonly clampedFrom?: number;
 } {
-	if (configured !== null && configured <= INJECTION_CEILING_BYTES) {
-		return { bytes: configured, clampedFrom: null };
-	}
+	if (configured === null) return { bytes: INJECTION_CEILING_BYTES };
+	if (configured <= INJECTION_CEILING_BYTES) return { bytes: configured };
 	return { bytes: INJECTION_CEILING_BYTES, clampedFrom: configured };
 }
 
-/** The line that replaces whatever a cut removed. */
-export const CUT_LINE = "… (cut to fit the hook output cap: the rest of this context was not injected)";
-
-/**
- * The hook's whole stdout, held under Claude Code's output cap with the
- * meter intact. The budget already holds the sections that can degrade;
- * this is the backstop for the ones that never do (the date, open tasks,
- * hygiene). Over the cap, the body is cut at a line boundary and the meter,
- * built with `cut` set, still closes the output, so a cut is never silent.
- *
- * `meter` gets the UTF-8 size of the body it closes. The cut is sized with
- * the uncut body's meter; the meter is then rebuilt for what was kept, and a
- * smaller size never formats longer, so the rebuilt output still fits.
- */
-export function fitHookOutput(
-	body: string,
-	meter: (cut: boolean, bodyBytes: number) => string,
-	cap: number = HOOK_OUTPUT_MAX_CHARS,
-): string {
-	const whole = `${body}\n${meter(false, Buffer.byteLength(body, "utf-8"))}\n`;
-	if (whole.length <= cap) return whole;
-	const room = cap - `\n${CUT_LINE}\n\n${meter(true, Buffer.byteLength(body, "utf-8"))}\n`.length;
-	// A meter that cannot fit beside any body is itself cut: never in practice
-	// (it is a few hundred characters), but the cap must hold for any input.
-	if (room < 0) return `${meter(true, 0).slice(0, Math.max(0, cap - 1))}\n`;
-	let head = body.slice(0, room);
-	const lastBreak = head.lastIndexOf("\n");
-	if (lastBreak >= 0) head = head.slice(0, lastBreak);
-	// No line to cut on: keep the partial line, minus any half of a surrogate pair.
-	else if (/[\uD800-\uDBFF]$/.test(head)) head = head.slice(0, -1);
-	const kept = `${head}\n${CUT_LINE}\n`;
-	return `${kept}\n${meter(true, Buffer.byteLength(kept, "utf-8"))}\n`;
-}
 
 /** `listing_collapse_threshold` from the manifest; null when unset or invalid. */
 export function parseListingCollapseThreshold(

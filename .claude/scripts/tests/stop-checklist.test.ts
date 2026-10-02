@@ -22,6 +22,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -255,7 +256,7 @@ describe("stop-checklist", () => {
 		const names = Array.from({ length: 400 }, (_, i) => `A completed note with a deliberately long descriptive title ${i}.md`);
 		const root = vault("block-huge", ...names);
 		const { stdout } = run(stop("s-block-huge"), { vault: root });
-		assert.ok(stdout.length <= 9_500, `stdout is ${stdout.length} chars`);
+		assert.ok(stdout.length <= HOOK_OUTPUT_MAX_CHARS, `stdout is ${stdout.length} chars`);
 		const reason = String(envelopeOf(stdout)["reason"]);
 		assert.match(reason, /⚠️ {2}400 note\(s\) marked done but still in active\//);
 		assert.match(reason, /^ {3}- … and 390 more$/m);
