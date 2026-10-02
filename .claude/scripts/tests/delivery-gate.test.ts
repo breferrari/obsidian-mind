@@ -2,48 +2,56 @@
  * The delivery gate's judging logic (.github/scripts/delivery-gate.ts, #267).
  * The sessions it runs need a logged-in Claude Code and cost model turns, so
  * they run by hand; what decides PASS, FAIL or INVALID from their transcripts
- * is here. The events are shaped as Claude Code 2.1.288 emits them.
+ * is here. Every event is shaped as Claude Code 2.1.288 emits it.
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { fixtureEnv, judge, lastLine, parseTurns, plan, quotes, type Step } from "../../../.github/scripts/delivery-gate.ts";
+import { fixtureEnv, judge, lastLine, parseTurns, plan, quotes, selfTestOutcome, sessionDirs, subagentReport, SUBAGENT_TASK, type Step, type Verdict } from "../../../.github/scripts/delivery-gate.ts";
 
 const METER = "_context injected: 15.9kB / 20.0kB budget_";
 
 /** Stream-json events, one per line. */
 const stream = (...events: object[]) => events.map((e) => JSON.stringify(e)).join("\n");
 const said = (text: string) => ({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text }] } });
-const called = (name: string, id = `toolu_${name}`) => ({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", name, id }] } });
-/** An Agent tool_result as 2.1.288 frames it: preamble, the indented report, then an id and usage footer. */
-const handedBack = (text: string, id = "toolu_Agent") => ({
+const called = (name: string, input: object = {}, id = `toolu_${name}`) => ({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", name, id, input }] } });
+const agentCall = (prompt = SUBAGENT_TASK, subagent_type = "general-purpose") => called("Agent", { prompt, subagent_type });
+/** An Agent tool_result: the framed text for the model, plus the raw result Claude Code reports beside it. */
+const handedBack = (report: string, extra: { totalToolUseCount?: number; agentType?: string } = { totalToolUseCount: 0, agentType: "general-purpose" }) => ({
 	type: "user",
-	message: { content: [{ type: "tool_result", tool_use_id: id, content: [{ type: "text", text: `[Subagent hand-back] The text below is the final report of a subagent. The report follows:\n  ${text}\nagentId: a1b2 (use SendMessage)\n<usage>total_tokens: 100\nduration_ms: 3140</usage>` }] }] },
+	message: { content: [{ type: "tool_result", tool_use_id: "toolu_Agent", content: [{ type: "text", text: `[Subagent hand-back] The report follows:\n  ${report}\nagentId: a1 (use SendMessage)` }] }] },
+	tool_use_result: { status: "completed", content: [{ type: "text", text: report }], ...extra },
 });
-const subagentDone = (toolUses: number) => ({ type: "system", subtype: "task_notification", usage: { tool_uses: toolUses } });
+const hookPrinted = (stdout: string) => ({ type: "system", subtype: "hook_response", hook_event: "SessionStart", stdout });
+const stoodDown = hookPrinted("");
+const summary = (text: string) => ({ type: "user", isSynthetic: true, message: { role: "user", content: text } });
 const done = { type: "result", subtype: "success", is_error: false, result: "" };
 const compacted = { type: "system", subtype: "compact_boundary" };
 const reset = { type: "conversation_reset", trigger: "clear" };
 
 const [startup, continued] = plan(true) as [readonly Step[], readonly Step[]];
+const MOD = { withMod: true };
 
-/** The continued session, turn by turn, with each turn's events overridable. */
-function continuedStream(over: Partial<Record<"warm" | "compact" | "afterCompact" | "clear" | "afterClear" | "subagent", object[]>> = {}): string {
+type Part = "warm" | "compact" | "afterCompact" | "clear" | "subagent" | "afterClear";
+/** The continued session, turn by turn, each turn's events overridable. The mod stood the hook down at every start. */
+function continuedStream(over: Partial<Record<Part, object[]>> = {}): string {
 	return stream(
-		...(over.warm ?? [said("OK")]), done,
-		...(over.compact ?? [compacted]), done,
+		stoodDown, ...(over.warm ?? [said("OK")]), done,
+		...(over.compact ?? [stoodDown, compacted, summary("The user asked for OK.")]), done,
 		...(over.afterCompact ?? [said(METER)]), done,
-		...(over.clear ?? [reset]), done,
+		...(over.clear ?? [stoodDown, reset]), done,
+		...(over.subagent ?? [agentCall(), handedBack(METER), said(METER)]), done,
 		...(over.afterClear ?? [said(METER)]), done,
-		...(over.subagent ?? [called("Agent"), subagentDone(0), handedBack(METER), said(METER)]), done,
 	);
 }
 
-const outcomes = (steps: readonly Step[], transcript: string) => judge(steps, parseTurns(transcript), METER).map((v) => [v.checkpoint, v.outcome]);
+const run = (steps: readonly Step[], transcript: string, options = MOD) => judge(steps, parseTurns(transcript), METER, options);
+const outcomes = (steps: readonly Step[], transcript: string, options = MOD) => run(steps, transcript, options).map((v) => [v.checkpoint, v.outcome]);
+const subagentVerdict = (events: object[]) => run(continued, continuedStream({ subagent: events })).find((v) => v.checkpoint === "from a subagent")!;
 
-describe("delivery gate", () => {
-	test("startup is a session of its own; the continued one warms up with nothing about the context", () => {
+describe("delivery gate: plan and matching", () => {
+	test("startup is a session of its own; the subagent is asked straight after /clear, before the line is quoted again", () => {
 		assert.deepEqual(startup.map((s) => s.name), ["at startup"]);
-		assert.deepEqual(continued.map((s) => s.kind), ["warm", "compact", "ask", "clear", "ask", "ask-subagent"]);
+		assert.deepEqual(continued.map((s) => s.kind), ["warm", "compact", "ask", "clear", "ask-subagent", "ask"]);
 		assert.equal(continued[0]!.prompt.includes("_context"), false, "the warm-up must not put the line into the conversation");
 		assert.deepEqual(plan(false).flat().map((s) => s.name), ["without the mod, at startup"]);
 	});
@@ -52,18 +60,27 @@ describe("delivery gate", () => {
 		assert.equal(lastLine(`## Session Context\n\n${METER}\n\n`), METER);
 		assert.equal(quotes(`The last line is \`${METER}\`.`, METER), true);
 		assert.equal(quotes(`"${METER.replace(" / ", "  /  ")}"`, METER), true);
+		assert.equal(quotes("context injected: 15.9kB / 20.0kB budget", METER), true, "dropped emphasis marks still match");
 		assert.equal(quotes("_context injected: 2.0kB / 9.1kB budget_", METER), false);
 		assert.equal(quotes("_context injected: 15.9kB", METER), false);
 		assert.equal(quotes("anything", ""), false, "an empty expected line never passes");
 	});
 
+	test("the framed report is cut at a footer at the start of a line, not an indented one inside the report", () => {
+		assert.equal(subagentReport("x The report follows:\n  NONE\nagentId: a1"), "NONE");
+		assert.equal(subagentReport("The report follows:\n  line one\n  agentId: quoted\nagentId: a1"), "line one\n  agentId: quoted");
+	});
+});
+
+describe("delivery gate: verdicts", () => {
 	test("a full, honest run passes every checkpoint", () => {
-		assert.deepEqual(outcomes(startup, stream(said(METER), done)), [["at startup", "PASS"]]);
+		assert.deepEqual(outcomes(startup, stream(stoodDown, said(METER), done)), [["at startup", "PASS"]]);
 		assert.deepEqual(outcomes(continued, continuedStream()), [
 			["after /compact", "PASS"],
-			["after /clear", "PASS"],
 			["from a subagent", "PASS"],
+			["after /clear", "PASS"],
 		]);
+		assert.deepEqual(outcomes(startup, stream(hookPrinted("## Session Context ..."), said(METER), done), { withMod: false }), [["at startup", "PASS"]]);
 	});
 
 	test("a lost line fails: the case the gate exists for", () => {
@@ -71,51 +88,127 @@ describe("delivery gate", () => {
 	});
 
 	test("an answer that used a tool is never a pass: it may have read the context file", () => {
-		const verdicts = judge(startup, parseTurns(stream(called("Read"), said(METER), done)), METER);
-		assert.equal(verdicts[0]!.outcome, "INVALID");
-		assert.match(verdicts[0]!.why, /Read/);
+		const v = run(startup, stream(stoodDown, called("Read"), said(METER), done))[0]!;
+		assert.equal(v.outcome, "INVALID");
+		assert.match(v.why, /Read/);
 	});
 
 	test("a /compact or /clear that left no event of its own spoils the checkpoint after it", () => {
-		assert.deepEqual(outcomes(continued, continuedStream({ compact: [] }))[0], ["after /compact", "INVALID"]);
-		assert.deepEqual(outcomes(continued, continuedStream({ clear: [] }))[1], ["after /clear", "INVALID"]);
+		assert.match(run(continued, continuedStream({ compact: [stoodDown] }))[0]!.why, /compact_boundary/);
+		assert.match(run(continued, continuedStream({ clear: [stoodDown] }))[1]!.why, /conversation_reset/);
 	});
 
-	test("the subagent checkpoint judges the subagent's own report, never the parent's text", () => {
-		// The parent answers itself: no Agent call.
-		const selfAnswered = judge(continued, parseTurns(continuedStream({ subagent: [said(METER)] })), METER)[2]!;
-		assert.equal(selfAnswered.outcome, "INVALID");
-		assert.match(selfAnswered.why, /no subagent answered/);
-		// The subagent says NONE and the parent "helpfully" quotes the line anyway.
-		assert.deepEqual(outcomes(continued, continuedStream({ subagent: [called("Agent"), subagentDone(0), handedBack("NONE"), said(METER)] }))[2], ["from a subagent", "FAIL"]);
-		// What is shown and judged is the subagent's words, not the hand-back frame or its footer.
-		const none = judge(continued, parseTurns(continuedStream({ subagent: [called("Agent"), subagentDone(0), handedBack("NONE")] })), METER)[2]!;
-		assert.equal(none.answer, "NONE");
-		// The subagent read the vault to answer.
-		assert.deepEqual(outcomes(continued, continuedStream({ subagent: [called("Agent"), subagentDone(2), handedBack(METER)] }))[2], ["from a subagent", "INVALID"]);
+	test("a /compact summary that carried the line spoils the checkpoint after it", () => {
+		const v = run(continued, continuedStream({ compact: [stoodDown, compacted, summary(`The context ended with ${METER}.`)] }))[0]!;
+		assert.equal(v.outcome, "INVALID");
+		assert.match(v.why, /summary itself carried/);
 	});
 
-	test("a failed turn or a session that ended early is invalid, never a verdict", () => {
-		// Even with the right line already in the text, a turn that ended in an error is not a verdict.
-		const failedTurn = judge(startup, parseTurns(stream(said(METER), { type: "result", subtype: "error_max_budget_usd", is_error: true, result: "budget" })), METER)[0]!;
-		assert.equal(failedTurn.outcome, "INVALID");
-		assert.match(failedTurn.why, /error_max_budget_usd/);
-		assert.deepEqual(outcomes(continued, stream(said("OK"), done, compacted, done)), [
-			["after /compact", "INVALID"],
-			["after /clear", "INVALID"],
-			["from a subagent", "INVALID"],
-		]);
-		assert.deepEqual(outcomes(startup, stream(done)), [["at startup", "INVALID"]], "an empty answer is not a real FAIL");
+	test("with the mod, a settings hook that printed the context means the mod did not deliver it", () => {
+		const v = run(startup, stream(hookPrinted("## Session Context ..."), said(METER), done))[0]!;
+		assert.equal(v.outcome, "INVALID");
+		assert.match(v.why, /settings hook printed/);
 	});
 
-	test("the fixture's environment drops the caller's Claude Code variables and NODE_PATH, keeps the config dir", () => {
-		const env = fixtureEnv("/v", { CLAUDECODE: "1", CLAUDE_PROJECT_DIR: "/x", CLAUDE_CONFIG_DIR: "/c", NODE_PATH: "/n", PATH: "/bin", ANTHROPIC_API_KEY: "k" });
+	test("without the mod, a settings hook that printed nothing means nothing was delivered", () => {
+		const v = run(startup, stream(stoodDown, said(METER), done), { withMod: false })[0]!;
+		assert.equal(v.outcome, "INVALID");
+		assert.match(v.why, /printed nothing/);
+	});
+});
+
+describe("delivery gate: the subagent checkpoint", () => {
+	test("judges the subagent's own report, never the parent's text", () => {
+		assert.equal(subagentVerdict([agentCall(), handedBack("NONE"), said(METER)]).outcome, "FAIL");
+		assert.equal(subagentVerdict([agentCall(), handedBack("NONE"), said(METER)]).answer, "NONE");
+	});
+
+	test("the parent answering itself is invalid", () => {
+		assert.match(subagentVerdict([said(METER)]).why, /no single subagent/);
+	});
+
+	test("the parent using another tool is invalid", () => {
+		assert.match(subagentVerdict([called("Read"), agentCall(), handedBack(METER)]).why, /main loop used tools/);
+	});
+
+	test("a subagent of another type is invalid: it may not receive instruction files, or may inherit the conversation", () => {
+		assert.match(subagentVerdict([agentCall(SUBAGENT_TASK, "Explore"), handedBack(METER, { totalToolUseCount: 0, agentType: "Explore" })]).why, /not general-purpose/);
+	});
+
+	test("a subagent handed the line in its prompt is invalid", () => {
+		assert.match(subagentVerdict([agentCall(`${SUBAGENT_TASK} The line is ${METER}.`), handedBack(METER)]).why, /handed the line/);
+	});
+
+	test("a subagent that used tools, or whose tool count was not reported, is invalid", () => {
+		assert.match(subagentVerdict([agentCall(), handedBack(METER, { totalToolUseCount: 2, agentType: "general-purpose" })]).why, /used 2 tool/);
+		assert.match(subagentVerdict([agentCall(), handedBack(METER, { agentType: "general-purpose" })]).why, /not reported/);
+		const inline = { type: "assistant", parent_tool_use_id: "toolu_Agent", message: { content: [{ type: "tool_use", name: "Read", id: "x" }, { type: "text", text: METER }] } };
+		const v = subagentVerdict([agentCall(), inline, handedBack(METER)]);
+		assert.match(v.why, /used 1 tool/, "a subagent's inline tool use counts against it");
+	});
+
+	test("a subagent's inline text is not the parent's answer", () => {
+		const inline = { type: "assistant", parent_tool_use_id: "toolu_Agent", message: { content: [{ type: "text", text: METER }] } };
+		const turns = parseTurns(stream(agentCall(), inline, handedBack("NONE"), done));
+		assert.equal(turns[0]!.text, "");
+	});
+});
+
+describe("delivery gate: sessions that did not run as planned", () => {
+	test("a failed turn is not a verdict, even with the right line in its text", () => {
+		const v = run(startup, stream(stoodDown, said(METER), { type: "result", subtype: "error_max_budget_usd", is_error: true, result: "budget" }))[0]!;
+		assert.equal(v.outcome, "INVALID");
+		assert.match(v.why, /error_max_budget_usd/);
+	});
+
+	test("checkpoints a session never reached say why it stopped", () => {
+		const cut = stream(stoodDown, said("OK"), done, stoodDown, compacted, done);
+		assert.match(judge(continued, parseTurns(cut), METER, { withMod: true, ending: "timeout" })[0]!.why, /timed out/);
+		assert.match(judge(continued, parseTurns(cut), METER, { withMod: true, ending: "extra-turn" })[0]!.why, /turn nobody sent/);
+		assert.match(judge(continued, parseTurns(cut), METER, { withMod: true })[0]!.why, /ended before/);
+	});
+
+	test("an empty answer is not a real FAIL", () => {
+		assert.deepEqual(outcomes(startup, stream(stoodDown, done)), [["at startup", "INVALID"]]);
+	});
+});
+
+describe("delivery gate: self-test and environment", () => {
+	const v = (checkpoint: string, outcome: Verdict["outcome"]): Verdict => ({ checkpoint, expected: METER, answer: "", outcome, why: "" });
+	const broken = (startupOutcome: Verdict["outcome"]) => [
+		{ breakage: "cut" as const, verdicts: [v("at startup", "FAIL"), v("after /compact", "FAIL")] },
+		{ breakage: "startup-only" as const, verdicts: [v("at startup", startupOutcome), v("after /compact", "FAIL")] },
+	];
+
+	test("the self-test passes only when every checkpoint fails and the startup-only control passes", () => {
+		assert.equal(selfTestOutcome(broken("PASS")).exitCode, 0);
+		assert.equal(selfTestOutcome(broken("FAIL")).exitCode, 1, "a control that failed means that copy never delivered");
+		const leaky = broken("PASS");
+		leaky[0]!.verdicts[1] = v("after /compact", "PASS");
+		assert.equal(selfTestOutcome(leaky).exitCode, 1);
+		const invalid = broken("PASS");
+		invalid[1]!.verdicts[1] = v("after /compact", "INVALID");
+		assert.equal(selfTestOutcome(invalid).exitCode, 2);
+	});
+
+	test("the fixture's environment keeps what a session needs and drops the caller's session variables", () => {
+		const env = fixtureEnv("/v", { CLAUDECODE: "1", CLAUDE_PROJECT_DIR: "/x", CLAUDE_CONFIG_DIR: "/c", CLAUDE_CODE_GIT_BASH_PATH: "/g", CLAUDE_CODE_OAUTH_TOKEN: "t", NODE_PATH: "/n", PATH: "/bin", ANTHROPIC_API_KEY: "k" });
 		assert.equal(env.CLAUDECODE, undefined);
 		assert.equal(env.CLAUDE_PROJECT_DIR, undefined);
 		assert.equal(env.NODE_PATH, undefined);
 		assert.equal(env.CLAUDE_CONFIG_DIR, "/c");
+		assert.equal(env.CLAUDE_CODE_GIT_BASH_PATH, "/g");
+		assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, "t");
 		assert.equal(env.PATH, "/bin");
 		assert.equal(env.ANTHROPIC_API_KEY, "k");
 		assert.match(env.npm_config_prefix ?? "", /\.gate-npm$/);
+	});
+
+	test("cleanup targets only a fixture's own session folders", () => {
+		const dirs = sessionDirs("C:\\Temp\\om-delivery-gate-AbC123", { CLAUDE_CONFIG_DIR: "/cfg" });
+		assert.equal(dirs.length, 2);
+		assert.ok(dirs[0]!.endsWith("C--Temp-om-delivery-gate-AbC123"));
+		assert.ok(dirs[0]!.includes("projects"));
+		assert.deepEqual(sessionDirs("/home/me/vault", {}), [], "never a folder that is not a gate fixture's");
 	});
 });

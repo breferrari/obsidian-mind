@@ -10,15 +10,19 @@
  * again. This gate runs real Claude Code sessions in throwaway vaults and
  * asks the model to quote the LAST line of the context it was given:
  *
- *  - with the mod: at startup (a session of its own, so the line is never in
- *    the conversation before a compaction), then in a second session after
- *    `/compact`, after `/clear`, and from a general-purpose subagent;
+ *  - with the mod: at startup, in a session of its own; then in a second
+ *    session after `/compact`, from a general-purpose subagent straight after
+ *    `/clear`, and after `/clear`;
  *  - without the mod: at startup.
  *
- * Only the stream decides. A checkpoint whose turn used any tool, a subagent
- * answer that is not the subagent's own report or that used tools, and a
- * `/compact` or `/clear` that left no event of its own make the run INVALID,
- * never PASS. A session that errors, times out or ends early is INVALID too.
+ * Only the stream decides, and every other road the answer could take is
+ * closed in the judge, not in the prompt. A checkpoint is INVALID, never
+ * PASS, when: its turn used a tool; the `/compact` summary itself carried the
+ * line; a `/compact` or `/clear` left no event of its own; the subagent was
+ * not a general-purpose one, was handed the line in its prompt, used tools,
+ * or did not report its tool count; with the mod, the settings hook printed
+ * the context instead of standing down (or, without it, printed nothing); or
+ * the session errored, timed out, ran an extra turn or ended early.
  *
  * What it does not cover: the mod is loaded with `--plugin-dir`, not found in
  * the vault's skills folder after the trust prompt as a user's is; and the
@@ -32,8 +36,11 @@
  *
  * `--self-test` runs two broken copies of the mod instead: one cuts its
  * context to 2,000 characters everywhere, one delivers it whole only at
- * startup. Every checkpoint must FAIL with a real answer, or the gate has
- * stopped being able to fail (#203). It exits 0 when the gate can fail.
+ * startup. Every checkpoint must FAIL, except the startup-only copy's own
+ * startup, which must PASS (the control that proves that copy delivered).
+ * It exits 0 when the gate can fail. Exit codes: 0 pass (or, with
+ * `--self-test`, the gate can fail), 1 a checkpoint failed (or the gate is
+ * broken), 2 the run could not be judged.
  *
  * It costs model turns on the caller's account, and it is not wired to CI: a
  * public repository's CI has no credentials to give it.
@@ -41,7 +48,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,9 +60,12 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const QUESTION =
 	"Without using any tool, quote verbatim the last line of the obsidian-mind session context you were given (the line that starts with _context injected). If you cannot see it, reply NONE.";
 
+/** The task the subagent must be given, word for word. */
+export const SUBAGENT_TASK =
+	"Without using any tool, reply with only the line in your own context or instructions that starts with _context injected, verbatim, or NONE if there is none.";
+
 /** The same question, put to a general-purpose subagent; only its own report is judged. */
-export const SUBAGENT_QUESTION =
-	"Use the Agent tool to start one general-purpose subagent with this exact task: 'Without using any tool, reply with only the line in your own context or instructions that starts with _context injected, verbatim, or NONE if there is none.' Then reply with the subagent's answer verbatim and nothing else.";
+export const SUBAGENT_QUESTION = `Use the Agent tool to start one general-purpose subagent (subagent_type "general-purpose") with exactly this task and nothing else: '${SUBAGENT_TASK}' Then reply with the subagent's answer verbatim and nothing else.`;
 
 /** A first turn that puts nothing about the context into the conversation. */
 export const WARM_UP = "Reply with the single word OK.";
@@ -66,7 +76,11 @@ export type Step = { readonly name: string; readonly kind: StepKind; readonly pr
 
 const ask = (name: string): Step => ({ name, kind: "ask", prompt: QUESTION });
 
-/** The sessions a run is made of, each with the turns it sends. */
+/**
+ * The sessions a run is made of, each with the turns it sends. The subagent
+ * is asked straight after `/clear`, before the main loop has quoted the line
+ * in that conversation, so there is nothing for it to pass along.
+ */
 export function plan(withMod: boolean): ReadonlyArray<readonly Step[]> {
 	if (!withMod) return [[ask("without the mod, at startup")]];
 	return [
@@ -76,8 +90,8 @@ export function plan(withMod: boolean): ReadonlyArray<readonly Step[]> {
 			{ name: "", kind: "compact", prompt: "/compact" },
 			ask("after /compact"),
 			{ name: "", kind: "clear", prompt: "/clear" },
-			ask("after /clear"),
 			{ name: "from a subagent", kind: "ask-subagent", prompt: SUBAGENT_QUESTION },
+			ask("after /clear"),
 		],
 	];
 }
@@ -87,11 +101,21 @@ export function lastLine(text: string): string {
 	return text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "").pop() ?? "";
 }
 
-/** Whether an answer quotes `expected`, ignoring the backticks and quotes a model wraps a line in. */
+/** Whether an answer quotes `expected`, ignoring quotes, backticks, emphasis marks and spacing a model may add or drop. */
 export function quotes(answer: string, expected: string): boolean {
-	const bare = (s: string) => s.replace(/[`"“”]/g, "").replace(/\s+/g, " ").trim();
-	return expected !== "" && bare(answer).includes(bare(expected));
+	const bare = (s: string) => s.replace(/[`"“”*_]/g, "").replace(/\s+/g, " ").trim();
+	return bare(expected) !== "" && bare(answer).includes(bare(expected));
 }
+
+/** One Agent call: what the main loop asked for, and what came back. */
+export type AgentCall = {
+	readonly type: string | null;
+	readonly prompt: string;
+	/** The subagent's own words, or null when no result came back. */
+	readonly report: string | null;
+	/** Tools the subagent used, or null when the result did not say. */
+	readonly toolUses: number | null;
+};
 
 /** What one turn of a stream-json transcript shows, up to and including its `result` event. */
 export type Turn = {
@@ -99,23 +123,29 @@ export type Turn = {
 	readonly text: string;
 	/** Tools the main loop called, by name. */
 	readonly tools: readonly string[];
-	/** What each Agent call handed back: the subagent's own report. */
-	readonly agentReports: readonly string[];
-	/** Tools the subagents used, as their task notifications count them. */
+	readonly agentCalls: readonly AgentCall[];
+	/** Tool uses seen in subagent messages streamed inline, if any. */
 	readonly subagentToolUses: number;
 	readonly compacted: boolean;
+	/** The compaction summary the model wrote, when this turn compacted. */
+	readonly summaries: readonly string[];
 	readonly reset: boolean;
+	/** What each settings SessionStart hook printed in this turn. */
+	readonly sessionStartOutputs: readonly string[];
 	/** Set when the turn ended in an error rather than a result. */
 	readonly error: string | null;
 };
 
-type Block = { type?: string; text?: string; name?: string; id?: string; tool_use_id?: string; content?: unknown };
+type Block = { type?: string; text?: string; name?: string; id?: string; tool_use_id?: string; content?: unknown; input?: { prompt?: string; subagent_type?: string } };
 type StreamEvent = {
 	type?: string;
 	subtype?: string;
+	hook_event?: string;
+	stdout?: string;
+	isSynthetic?: boolean;
 	parent_tool_use_id?: string | null;
 	message?: { content?: Block[] | string };
-	usage?: { tool_uses?: number };
+	tool_use_result?: { content?: unknown; totalToolUseCount?: number; agentType?: string };
 	is_error?: boolean;
 	result?: string;
 };
@@ -124,28 +154,32 @@ const textOf = (content: unknown): string =>
 	typeof content === "string" ? content : Array.isArray(content) ? content.map((b: Block) => (b.type === "text" ? (b.text ?? "") : "")).join("\n") : "";
 
 /**
- * The subagent's own words from an Agent tool_result: what follows the
- * hand-back frame's "The report follows:" line, up to the `agentId:` footer.
- * Text without that frame is taken whole.
+ * The subagent's own words from a framed Agent tool_result: what follows the
+ * hand-back frame's "The report follows:" line, up to the `agentId:` footer
+ * at the start of a line. Used only when the result carries no raw content.
  */
 export function subagentReport(handedBack: string): string {
 	const start = handedBack.indexOf("The report follows:");
 	if (start < 0) return handedBack.trim();
 	const body = handedBack.slice(start + "The report follows:".length);
-	const end = body.search(/\n\s*agentId:/);
+	const end = body.search(/\nagentId:/);
 	return (end < 0 ? body : body.slice(0, end)).trim();
 }
 
-/** Split a stream-json transcript into turns, one per `result` event. */
+/** Split a stream-json transcript into turns, one per `result` event. Events before the first result belong to the first turn. */
 export function parseTurns(streamJson: string): Turn[] {
 	const turns: Turn[] = [];
-	let text = "";
-	let tools: string[] = [];
-	let agentIds = new Set<string>();
-	let agentReports: string[] = [];
-	let subagentToolUses = 0;
-	let compacted = false;
-	let reset = false;
+	const fresh = () => ({
+		text: "",
+		tools: [] as string[],
+		calls: new Map<string, { type: string | null; prompt: string; report: string | null; toolUses: number | null }>(),
+		subagentToolUses: 0,
+		compacted: false,
+		summaries: [] as string[],
+		reset: false,
+		sessionStartOutputs: [] as string[],
+	});
+	let t = fresh();
 	for (const raw of streamJson.split("\n")) {
 		let event: StreamEvent;
 		try {
@@ -157,29 +191,31 @@ export function parseTurns(streamJson: string): Turn[] {
 		if (event.type === "assistant") {
 			for (const block of blocks) {
 				if (event.parent_tool_use_id) {
-					// A subagent's own message: its tools count against it, its text is not the parent's.
-					if (block.type === "tool_use") subagentToolUses++;
-				} else if (block.type === "text") text += `${block.text ?? ""}\n`;
+					// A subagent's own message, streamed inline: its tools count against it, its text is not the parent's.
+					if (block.type === "tool_use") t.subagentToolUses++;
+				} else if (block.type === "text") t.text += `${block.text ?? ""}\n`;
 				else if (block.type === "tool_use") {
-					tools.push(block.name ?? "?");
-					if (block.name === "Agent" && block.id) agentIds.add(block.id);
+					t.tools.push(block.name ?? "?");
+					if (block.name === "Agent" && block.id) t.calls.set(block.id, { type: block.input?.subagent_type ?? null, prompt: block.input?.prompt ?? "", report: null, toolUses: null });
 				}
 			}
 		} else if (event.type === "user") {
-			for (const block of blocks) if (block.type === "tool_result" && block.tool_use_id && agentIds.has(block.tool_use_id)) agentReports.push(subagentReport(textOf(block.content)));
-		} else if (event.type === "system" && event.subtype === "compact_boundary") compacted = true;
-		else if (event.type === "system" && event.subtype === "task_notification") subagentToolUses += event.usage?.tool_uses ?? 0;
-		else if (event.type === "conversation_reset") reset = true;
+			if (event.isSynthetic && typeof event.message?.content === "string") t.summaries.push(event.message.content);
+			for (const block of blocks) {
+				const call = block.type === "tool_result" && block.tool_use_id ? t.calls.get(block.tool_use_id) : undefined;
+				if (!call) continue;
+				const result = event.tool_use_result;
+				call.report = result?.content !== undefined ? textOf(result.content).trim() : subagentReport(textOf(block.content));
+				call.toolUses = typeof result?.totalToolUseCount === "number" ? result.totalToolUseCount : null;
+				call.type = result?.agentType ?? call.type;
+			}
+		} else if (event.type === "system" && event.subtype === "compact_boundary") t.compacted = true;
+		else if (event.type === "system" && event.subtype === "hook_response" && event.hook_event === "SessionStart") t.sessionStartOutputs.push(event.stdout ?? "");
+		else if (event.type === "conversation_reset") t.reset = true;
 		else if (event.type === "result") {
 			const error = event.is_error || event.subtype !== "success" ? `${event.subtype ?? "error"}: ${(event.result ?? "").slice(0, 200)}` : null;
-			turns.push({ text: text.trim(), tools, agentReports, subagentToolUses, compacted, reset, error });
-			text = "";
-			tools = [];
-			agentIds = new Set();
-			agentReports = [];
-			subagentToolUses = 0;
-			compacted = false;
-			reset = false;
+			turns.push({ ...t, text: t.text.trim(), agentCalls: [...t.calls.values()], error });
+			t = fresh();
 		}
 	}
 	return turns;
@@ -188,33 +224,47 @@ export function parseTurns(streamJson: string): Turn[] {
 export type Outcome = "PASS" | "FAIL" | "INVALID";
 export type Verdict = { readonly checkpoint: string; readonly expected: string; readonly answer: string; readonly outcome: Outcome; readonly why: string };
 
+/** How a session ended, for checkpoints it never reached. */
+export type Ending = "complete" | "timeout" | "extra-turn";
+
 /**
  * Judge one session against the line its context ends with. A checkpoint is
  * PASS or FAIL only when the stream shows the answer could have come from the
- * context alone; anything else is INVALID, with the reason.
+ * delivered context alone; anything else is INVALID, with the reason.
  */
-export function judge(steps: readonly Step[], turns: readonly Turn[], expected: string): Verdict[] {
+export function judge(steps: readonly Step[], turns: readonly Turn[], expected: string, options: { withMod: boolean; ending?: Ending }): Verdict[] {
+	const ending = options.ending ?? "complete";
 	const verdicts: Verdict[] = [];
+	// Who delivered: with the mod, every settings SessionStart must have stood down; without it, the first must have printed.
+	const outputs = turns.flatMap((turn) => turn.sessionStartOutputs);
+	let sessionProblem: string | null = null;
+	if (options.withMod && outputs.some((out) => out.trim() !== "")) sessionProblem = "the settings hook printed the context: the mod did not deliver it";
+	if (!options.withMod && !(turns[0]?.sessionStartOutputs ?? []).some((out) => out.trim() !== "")) sessionProblem = "the settings hook printed nothing at startup";
 	let carried: string | null = null; // a preparing step that failed spoils the checkpoint after it
 	steps.forEach((step, i) => {
 		const turn = turns[i];
-		let problem = carried;
-		if (!turn) problem ??= "the session ended before this turn";
+		let problem = sessionProblem ?? carried;
+		if (!turn) problem ??= ending === "timeout" ? "the turn timed out" : ending === "extra-turn" ? "the session ran a turn nobody sent" : "the session ended before this turn";
 		else if (turn.error) problem ??= `the turn failed (${turn.error})`;
 		else if (step.kind === "compact" && !turn.compacted) problem ??= "/compact left no compact_boundary event";
+		else if (step.kind === "compact" && turn.summaries.some((summary) => quotes(summary, expected))) problem ??= "the /compact summary itself carried the line";
 		else if (step.kind === "clear" && !turn.reset) problem ??= "/clear left no conversation_reset event";
 		else if (step.kind === "ask" && turn.tools.length > 0) problem ??= `the answer used tools (${turn.tools.join(", ")})`;
 		else if (step.kind === "ask-subagent") {
-			if (!turn.tools.includes("Agent") || turn.agentReports.length === 0) problem ??= "no subagent answered: the main loop answered itself";
-			else if (turn.tools.some((t) => t !== "Agent")) problem ??= `the main loop used tools (${turn.tools.join(", ")})`;
-			else if (turn.subagentToolUses > 0) problem ??= `the subagent used ${turn.subagentToolUses} tool(s)`;
+			const calls = turn.agentCalls;
+			if (calls.length !== 1 || calls[0]!.report === null) problem ??= "no single subagent answered: the main loop answered itself";
+			else if (turn.tools.some((name) => name !== "Agent")) problem ??= `the main loop used tools (${turn.tools.join(", ")})`;
+			else if (calls[0]!.type !== "general-purpose") problem ??= `the subagent was ${calls[0]!.type ?? "of no stated type"}, not general-purpose`;
+			else if (quotes(calls[0]!.prompt, expected)) problem ??= "the main loop handed the line to the subagent in its prompt";
+			else if (calls[0]!.toolUses === null) problem ??= "the subagent's tool count was not reported";
+			else if (calls[0]!.toolUses > 0 || turn.subagentToolUses > 0) problem ??= `the subagent used ${Math.max(calls[0]!.toolUses, turn.subagentToolUses)} tool(s)`;
 		}
 		if (step.name === "") {
 			carried = problem;
 			return;
 		}
 		carried = null;
-		const answer = step.kind === "ask-subagent" ? (turn?.agentReports.join("\n") ?? "") : (turn?.text ?? "");
+		const answer = step.kind === "ask-subagent" ? (turn?.agentCalls[0]?.report ?? "") : (turn?.text ?? "");
 		if (problem === null && answer.trim() === "") problem = "no answer";
 		const shown = quotes(answer, expected) ? expected : lastLine(answer);
 		if (problem !== null) verdicts.push({ checkpoint: step.name, expected, answer: shown, outcome: "INVALID", why: problem });
@@ -266,17 +316,29 @@ export function buildFixture(breakage: Breakage, notes = FIXTURE_NOTES): string 
 	return vault;
 }
 
-export function removeFixture(vault: string): void {
-	try {
-		rmSync(vault, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
-		fixtures.delete(vault);
-	} catch (error) {
-		console.warn(`Could not remove the fixture ${vault}: ${(error as Error).message}`);
-	}
+/** The folders Claude Code keeps for a session run in `vault`: its project transcripts and its temp task folder. */
+export function sessionDirs(vault: string, env: NodeJS.ProcessEnv = process.env): string[] {
+	const slug = vault.replace(/[^A-Za-z0-9-]/g, "-");
+	if (!slug.includes("om-delivery-gate-")) return [];
+	return [join(env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", slug), join(tmpdir(), "claude", slug)];
 }
 
+export function removeFixture(vault: string): void {
+	for (const path of [vault, ...sessionDirs(vault)]) {
+		try {
+			rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+		} catch (error) {
+			console.warn(`Could not remove ${path}: ${(error as Error).message}`);
+		}
+	}
+	fixtures.delete(vault);
+}
+
+/** The caller's Claude Code variables a fixture session still needs: where config lives, how to reach a shell and how to authenticate. */
+const KEPT_CLAUDE_VARIABLES = new Set(["CLAUDE_CONFIG_DIR", "CLAUDE_CODE_GIT_BASH_PATH", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+
 /**
- * The environment every process in the fixture runs with. The caller's
+ * The environment every process in the fixture runs with. The caller's other
  * Claude Code variables (a gate run from inside a session inherits them) and
  * NODE_PATH are dropped. npm's global prefix points at an empty folder, so qmd
  * does not resolve through it and session-start.ts skips its search
@@ -284,7 +346,7 @@ export function removeFixture(vault: string): void {
  * embed that outlives the run and registers an index on the caller's machine.
  */
 export function fixtureEnv(vault: string, from: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-	const kept = Object.entries(from).filter(([key]) => key === "CLAUDE_CONFIG_DIR" || (!/^CLAUDE/i.test(key) && key.toUpperCase() !== "NODE_PATH"));
+	const kept = Object.entries(from).filter(([key]) => KEPT_CLAUDE_VARIABLES.has(key.toUpperCase()) || (!/^CLAUDE/i.test(key) && key.toUpperCase() !== "NODE_PATH"));
 	return { ...Object.fromEntries(kept), npm_config_prefix: join(vault, ".gate-npm"), DISABLE_AUTOUPDATER: "1" };
 }
 
@@ -303,8 +365,8 @@ export function contextOf(vault: string, deliver: boolean): string {
 /** How long one turn may take before the session is abandoned. */
 const TURN_TIMEOUT_MS = 5 * 60_000;
 
-/** Run one paced session: each turn is sent once the previous one's result arrives. Resolves with the transcript. */
-function session(vault: string, steps: readonly Step[], options: { claude: string; model: string; withMod: boolean }): Promise<string> {
+/** Run one paced session: each turn is sent once the previous one's result arrives. */
+function session(vault: string, steps: readonly Step[], options: { claude: string; model: string; withMod: boolean }): Promise<{ transcript: string; ending: Ending }> {
 	return new Promise((resolvePromise, reject) => {
 		const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", options.model];
 		// The main loop has the Agent tool and nothing else: an answer cannot come from reading the vault.
@@ -313,30 +375,39 @@ function session(vault: string, steps: readonly Step[], options: { claude: strin
 		const child = spawn(options.claude, args, { cwd: vault, env: fixtureEnv(vault), stdio: ["pipe", "pipe", "pipe"] });
 		let out = "";
 		let sent = 0;
+		let ending: Ending = "complete";
+		let exited = false;
 		let timer: NodeJS.Timeout | undefined;
-		const arm = () => {
-			clearTimeout(timer);
-			timer = setTimeout(() => child.kill(), TURN_TIMEOUT_MS);
+		const stop = (why: Ending) => {
+			ending = why;
+			child.kill();
 		};
 		const send = () => {
+			if (exited) return;
 			const step = steps[sent++];
 			if (!step) return child.stdin.end();
-			arm();
+			clearTimeout(timer);
+			timer = setTimeout(() => stop("timeout"), TURN_TIMEOUT_MS);
 			child.stdin.write(`${JSON.stringify({ type: "user", message: { role: "user", content: step.prompt } })}\n`);
 		};
 		child.stdout.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => {
 			out += chunk;
-			if ((out.match(/"type":"result"/g) ?? []).length === sent) send();
+			const results = (out.match(/"type":"result"/g) ?? []).length;
+			// A turn nobody sent (a plugin's own prompt) would pair every later step with the wrong turn.
+			if (results > sent) stop("extra-turn");
+			else if (results === sent) send();
 		});
+		child.stdin.on("error", () => {}); // a write to a child that already exited; its close settles the session
 		child.stderr.resume(); // drained, so a chatty child cannot block on a full pipe
 		child.on("error", (error: NodeJS.ErrnoException) => {
 			clearTimeout(timer);
 			reject(error.code === "ENOENT" || error.code === "EINVAL" ? new Error(`could not start ${options.claude}; on Windows pass --claude <path to claude.exe>`) : error);
 		});
 		child.on("close", () => {
+			exited = true;
 			clearTimeout(timer);
-			resolvePromise(out);
+			resolvePromise({ transcript: out, ending });
 		});
 		send();
 	});
@@ -355,17 +426,28 @@ async function runSession(steps: readonly Step[], breakage: Breakage, options: {
 			if (context.length <= 12_000) throw new Error(`fixture too small to test the cap: ${context.length} characters`);
 			if (expected.includes("collapsed")) throw new Error(`fixture past the instruction budget, so the context collapsed: ${expected}`);
 		}
-		return judge(steps, parseTurns(await session(vault, steps, options)), expected);
+		const { transcript, ending } = await session(vault, steps, options);
+		return judge(steps, parseTurns(transcript), expected, { withMod: options.withMod, ending });
 	} finally {
 		removeFixture(vault);
 	}
 }
 
-const print = (verdicts: readonly Verdict[]) => {
+const print = (label: string, verdicts: readonly Verdict[]) => {
 	for (const v of verdicts) {
-		console.log(`${v.outcome.padEnd(7)} ${v.checkpoint}${v.why ? ` (${v.why})` : ""}\n        expected: ${v.expected}\n        answered: ${v.answer}`);
+		console.log(`${v.outcome.padEnd(7)} ${v.checkpoint}${label}${v.why ? ` (${v.why})` : ""}\n        expected: ${v.expected}\n        answered: ${v.answer}`);
 	}
 };
+
+/** The self-test's expectation: every checkpoint fails, except the startup-only copy's own startup, its positive control. */
+export function selfTestOutcome(runs: ReadonlyArray<{ readonly breakage: Breakage; readonly verdicts: readonly Verdict[] }>): { exitCode: 0 | 1 | 2; message: string } {
+	const all = runs.flatMap((run) => run.verdicts.map((v) => ({ ...v, breakage: run.breakage })));
+	const invalid = all.filter((v) => v.outcome === "INVALID").length;
+	if (invalid > 0) return { exitCode: 2, message: `${invalid} checkpoint(s) could not be judged; fix the run before trusting the self-test.` };
+	const wrong = all.filter((v) => v.outcome !== (v.breakage === "startup-only" && v.checkpoint === "at startup" ? "PASS" : "FAIL"));
+	if (wrong.length > 0) return { exitCode: 1, message: `The gate is broken: ${wrong.map((v) => `${v.checkpoint} (${v.breakage}) ${v.outcome}`).join(", ")}.` };
+	return { exitCode: 0, message: "The gate can fail: every checkpoint failed against both broken mods, and the startup-only control passed." };
+}
 
 async function main(): Promise<void> {
 	const argv = process.argv.slice(2);
@@ -383,24 +465,23 @@ async function main(): Promise<void> {
 	console.log(`Delivery gate · ${version} · ${options.model}${selfTest ? " · SELF-TEST" : ""}\n`);
 
 	if (selfTest) {
-		const verdicts: Verdict[] = [];
-		for (const steps of plan(true)) verdicts.push(...(await runSession(steps, "cut", { ...options, withMod: true })));
-		// Delivered whole at startup only: everything after it must still fail.
-		verdicts.push(...(await runSession(plan(true)[1]!, "startup-only", { ...options, withMod: true })));
-		print(verdicts);
-		const invalid = verdicts.filter((v) => v.outcome === "INVALID").length;
-		const passed = verdicts.filter((v) => v.outcome === "PASS").length;
-		if (invalid > 0) console.log(`\n${invalid} checkpoint(s) could not be judged; fix the run before trusting the self-test.`);
-		else if (passed > 0) console.log(`\nThe gate is broken: ${passed} checkpoint(s) passed against a mod that does not deliver.`);
-		else console.log("\nThe gate can fail: every checkpoint failed against both broken mods.");
-		process.exitCode = invalid > 0 ? 2 : passed > 0 ? 1 : 0;
+		const runs: Array<{ breakage: Breakage; verdicts: Verdict[] }> = [];
+		for (const breakage of ["cut", "startup-only"] as const) {
+			const verdicts: Verdict[] = [];
+			for (const steps of plan(true)) verdicts.push(...(await runSession(steps, breakage, { ...options, withMod: true })));
+			print(` [${breakage}]`, verdicts);
+			runs.push({ breakage, verdicts });
+		}
+		const { exitCode, message } = selfTestOutcome(runs);
+		console.log(`\n${message}`);
+		process.exitCode = exitCode;
 		return;
 	}
 
 	const verdicts: Verdict[] = [];
 	for (const steps of plan(true)) verdicts.push(...(await runSession(steps, "none", { ...options, withMod: true })));
 	for (const steps of plan(false)) verdicts.push(...(await runSession(steps, "none", { ...options, withMod: false })));
-	print(verdicts);
+	print("", verdicts);
 	const invalid = verdicts.filter((v) => v.outcome === "INVALID").length;
 	const failed = verdicts.filter((v) => v.outcome === "FAIL").length;
 	if (invalid > 0) console.log(`\n${invalid} checkpoint(s) could not be judged.`);
@@ -409,4 +490,10 @@ async function main(): Promise<void> {
 	process.exitCode = invalid > 0 ? 2 : failed > 0 ? 1 : 0;
 }
 
-if (isMainModule(import.meta.url)) await main();
+if (isMainModule(import.meta.url)) {
+	// Anything that stops the run before a verdict (a fixture check, a missing binary) cannot be judged: exit 2, never 1.
+	await main().catch((error: unknown) => {
+		console.error(error instanceof Error ? error.message : error);
+		process.exitCode = 2;
+	});
+}
