@@ -1,5 +1,10 @@
 # Changelog
 
+## v8.6.0 — 2026-10-02
+
+### Fixed
+- the Stop report shows the user a summary and reaches the agent with the next prompt
+
 ## v8.5.0 — 2026-10-02
 
 ### Added
