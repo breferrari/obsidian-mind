@@ -121,13 +121,24 @@ export function buildFixture(selfTest: boolean, notes = FIXTURE_NOTES): string {
 	return vault;
 }
 
+/**
+ * The environment every process in the fixture runs with. npm's global prefix
+ * points at an empty folder, so qmd does not resolve there: session-start.ts
+ * then skips its search self-heal, as on a machine without qmd. Otherwise each
+ * throwaway vault starts a full qmd bootstrap and embed that outlives the run,
+ * holds the folder open and registers an index under the user's qmd config.
+ */
+export function fixtureEnv(vault: string): NodeJS.ProcessEnv {
+	return { ...process.env, npm_config_prefix: join(vault, ".gate-npm"), DISABLE_AUTOUPDATER: "1" };
+}
+
 /** What session-start.ts prints in the fixture, as the hook (`startup`) or as the mod's run (`deliver`). */
 export function contextOf(vault: string, deliver: boolean): string {
 	const run = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", "--experimental-strip-types", join(vault, ".claude/scripts/session-start.ts")], {
 		cwd: vault,
 		input: JSON.stringify({ source: "startup", ...(deliver ? { om_mod: "deliver" } : {}) }),
 		encoding: "utf8",
-		env: { ...process.env, CLAUDE_PROJECT_DIR: vault },
+		env: { ...fixtureEnv(vault), CLAUDE_PROJECT_DIR: vault },
 	});
 	if (run.status !== 0) throw new Error(`session-start.ts failed: ${run.stderr}`);
 	return run.stdout;
@@ -138,7 +149,7 @@ function session(vault: string, turns: readonly Checkpoint[], options: { claude:
 	return new Promise((resolvePromise, reject) => {
 		const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", options.model, "--setting-sources", "project,local", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--allowedTools", "Agent,Task", "--max-budget-usd", "5"];
 		if (options.withMod) args.push("--plugin-dir", join(vault, ".claude/skills/obsidian-mind"));
-		const child = spawn(options.claude, args, { cwd: vault, env: { ...process.env, DISABLE_AUTOUPDATER: "1" } });
+		const child = spawn(options.claude, args, { cwd: vault, env: fixtureEnv(vault) });
 		let out = "";
 		let sent = 0;
 		const send = () => {

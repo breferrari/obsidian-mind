@@ -119,6 +119,19 @@ That is one demonstrated red at introduction time, which is cheap, and it conver
 
 This is **not** a demand for permanent negative-fixture CI jobs on every guard — whether one is worth keeping stays a per-case call, and `hook-config.test.ts` shows the pattern where it is. It is also **not retroactive**: existing checks get the treatment opportunistically, when next touched.
 
+### Before recommending a Claude Code release: the delivery gate
+
+Every other check confirms that a hook **ran**. The delivery gate confirms what **arrived**: it runs real Claude Code sessions in a throwaway vault and asks the model to quote the last line of the session context it was given, at startup, after `/compact`, after `/clear` and from a general-purpose subagent, with the `obsidian-mind` mod and without it. Hook output past 10,000 characters once reached the model as a 2,000-character preview while every log said success (#254); this is the check that would have caught it.
+
+It needs a logged-in `claude` and costs a few model turns, so it runs by hand, not in CI. Run it on any Claude Code version before the README or `mod.yml` pins it:
+
+```bash
+node --experimental-strip-types .github/scripts/delivery-gate.ts            # must print PASS at every checkpoint
+node --experimental-strip-types .github/scripts/delivery-gate.ts --self-test # must FAIL: the mod cuts its own context
+```
+
+A `--self-test` that passes means the gate has stopped being able to fail; fix the gate before trusting the first run. The throwaway vault runs with qmd unresolvable, so it starts no search bootstrap and registers no index on your machine.
+
 ## Questions?
 
 Open an issue or start a discussion. For small changes, PRs are welcome directly. For anything bigger, see [Before You Open a PR](#before-you-open-a-pr).
