@@ -437,7 +437,7 @@ describe("scanActiveHygiene — detectors", () => {
 		assert.doesNotMatch(text, /om-intake/);
 	});
 
-	test("each uncapped hygiene list prints ten entries, then a count of the rest (#254)", () => {
+	test("each previously uncapped hygiene list prints ten entries, then a count of the rest (#254)", () => {
 		const report = (n: number) =>
 			formatActiveHygiene({
 				completedInActive: Array.from({ length: n }, (_, i) => `work/active/Done ${i}.md`),
