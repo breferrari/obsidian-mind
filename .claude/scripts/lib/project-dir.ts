@@ -13,7 +13,7 @@
  * all if cwd is the vault. Not to be confused with qmd-refresh.ts's
  * resolveVaultRoot, which ignores these variables on purpose (a detached
  * worker anchors to its own location), or with mcp-context.ts's, which
- * reads OM_VAULT_PATH for the MCP server.
+ * reads the MCP server's own vault-path override.
  */
 
 const PROJECT_DIR_VARS = [
