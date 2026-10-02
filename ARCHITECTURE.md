@@ -195,6 +195,7 @@ sequenceDiagram
         Agent->>Hooks: Stop
         Hooks->>QMD: debounced refresh (detached)
         Hooks-->>User: checklist + hygiene, first time this session or when changed
+        Hooks-->>Agent: same report as a block reason, one turn to act, ask, or pass
     end
 ```
 
@@ -205,6 +206,7 @@ A few specific design choices are worth calling out:
 - **QMD refresh is shared, debounced, and detached.** Three hook entries fire the same refresh helper — `PostToolUse` (after `.md` writes), `PreCompact` (before transcript backup; writes tend to cluster before compaction), and `Stop` (after a response) — sharing one sentinel file so a burst of events produces at most one worker per debounce window. The actual indexing runs in `.claude/scripts/qmd-refresh-run.ts` as a detached, stdio-silent worker (`qmd update` → `qmd embed` → tail-chase `qmd update`), so the parent hook returns in milliseconds and nothing flows to the agent's context.
 - **`PreCompact` also backs up the transcript.** In addition to kicking the QMD refresh, it copies the current session transcript out to `thinking/session-logs/` so long conversations remain recoverable after compaction.
 - **`Stop` reports once, not every turn.** Claude and Codex fire it whenever the agent finishes a response, not when the session ends (#252). It triggers the shared refresh every time, but shows the checklist and hygiene findings only the first time a session sees that exact report, and again when the findings change; otherwise it returns the empty JSON envelope. A warning that repeats unchanged is one users learn to ignore (#155). The dedupe reuses the classifier's per-session state shape (#107): one self-pruning file, failing open to "show" on a missing `session_id` or unreadable state.
+- **A changed `Stop` report reaches the agent too (#256).** A `systemMessage` is shown to the user and never added to the model's context, so the drift the agent is best placed to fix never reached it. When the findings change, `Stop` also returns `decision: "block"` with the report as the reason, the one `Stop` output that reaches the model. The agent gets a turn to act on it, ask the user, or say in one line that nothing needs doing. The forced turn's own `Stop` arrives with `stop_hook_active` and exits early, so it cannot loop. `SessionEnd` has no turn to give, and a `Stop` without a `session_id` has nothing to stop a block repeating, so neither blocks.
 - **Why not `SessionEnd`.** It looks like the natural home for an end-of-session checklist, but Claude Code discards a SessionEnd hook's `systemMessage`, and Codex documents SessionEnd as advisory and does not surface its `systemMessage`. Wired there, the checklist would reach nobody on two of the three agents. Gemini does display it during shutdown, so Gemini keeps its SessionEnd wiring. The acting path is `/om-wrap-up`, which runs the hygiene pass while tools are still live.
 
 ---
@@ -874,7 +876,7 @@ Step 2 is not documentation garnish. Measured: with the server wired and no repo
 
 The same scripts serve three agents. Each agent has its own config file mapping equivalent lifecycle events to the shared scripts. The checklist runs on `Stop` for Claude Code and Codex (per response, deduped) and on `SessionEnd` for Gemini (at shutdown). The script branches on the documented event name, never on an agent-specific payload field.
 
-Session-boundary output is JSON-or-nothing on all three agents. `stop-checklist.ts` emits `{"systemMessage": ...}` when it reports and `{}` when a Stop has nothing new to say. `systemMessage` is intentionally a user warning rather than model context: it tells the user what to ask for, but it cannot make the agent act. That is why `om-wrap-up` owns the acting path and the hook owns only the report.
+Session-boundary output is JSON-or-nothing on all three agents. `stop-checklist.ts` emits `{}` when a Stop has nothing new to say. When it reports, the user gets the report in `systemMessage`, the one user-facing field all three agents share. On a Stop whose findings changed, the agent also gets it as a block `reason`, the one Stop output that reaches the model, with a turn to act, ask, or say nothing needs doing. SessionEnd (Gemini) has no turn to give, so there the report is `systemMessage` only. `om-wrap-up` still owns the deliberate acting pass at the end of a session.
 
 ```mermaid
 flowchart TB

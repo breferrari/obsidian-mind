@@ -211,6 +211,57 @@ describe("stop-checklist", () => {
 		assert.deepEqual(envelopeOf(second.stdout), {});
 	});
 
+	test("a changed Stop report reaches the agent: decision block with the report as the reason (#256)", () => {
+		// A Stop systemMessage never reaches the model. decision "block" is the
+		// one Stop output that does, with a turn to act, ask, or say nothing
+		// needs doing; the user still sees the report.
+		const root = vault("block", "Done.md");
+		const envelope = envelopeOf(run(stop("s-block"), { vault: root }).stdout);
+		assert.equal(envelope["decision"], "block");
+		const reason = String(envelope["reason"]);
+		assert.match(reason, /^Stop hook report: .*ask the user when something needs their call/);
+		assert.ok(reason.endsWith(`\n\n${String(envelope["systemMessage"])}`), "the reason carries the report the user sees");
+		assert.match(reason, /work\/active\/Done\.md/);
+	});
+
+	test("an unchanged Stop sends the agent nothing", () => {
+		const root = vault("block-quiet", "Done.md");
+		const state = freshState();
+		run(stop("s-block-quiet"), { vault: root, state });
+		assert.deepEqual(envelopeOf(run(stop("s-block-quiet"), { vault: root, state }).stdout), {});
+	});
+
+	test("the forced turn's own Stop does not block again", () => {
+		// Fresh state, so the change check would block: only the
+		// stop_hook_active exit keeps the forced turn's Stop silent.
+		const root = vault("block-reentry", "Done.md");
+		const reentry = run({ session_id: "s-block-reentry", hook_event_name: "Stop", stop_hook_active: true }, { vault: root });
+		assert.deepEqual(envelopeOf(reentry.stdout), {});
+	});
+
+	test("a report too big for the hook output cap still fits, cut with a marker", () => {
+		// Completed notes left in work/active/ are listed uncapped; four hundred
+		// long names make a report several times the cap.
+		const names = Array.from({ length: 400 }, (_, i) => `A completed note with a deliberately long descriptive title ${i}.md`);
+		const root = vault("block-huge", ...names);
+		const { stdout } = run(stop("s-block-huge"), { vault: root });
+		assert.ok(stdout.length <= 9_500, `stdout is ${stdout.length} chars`);
+		const envelope = envelopeOf(stdout);
+		assert.equal(envelope["decision"], "block");
+		assert.match(String(envelope["reason"]), /truncated to fit the hook output cap\)$/);
+	});
+
+	test("SessionEnd and a Stop without a session_id never block", () => {
+		// SessionEnd has no turn to give, and without a session_id nothing
+		// stops a block from repeating every turn.
+		const root = vault("block-never", "Done.md");
+		for (const payload of [stop(), { session_id: "s-end", hook_event_name: "SessionEnd" }]) {
+			const envelope = envelopeOf(run(payload, { vault: root }).stdout);
+			assert.equal(envelope["decision"], undefined);
+			assert.match(String(envelope["systemMessage"]), /work\/active\/Done\.md/);
+		}
+	});
+
 	test("a new session reports again even when nothing changed", () => {
 		const root = vault("new-session", "Done.md");
 		const state = freshState();

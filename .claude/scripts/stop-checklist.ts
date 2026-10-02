@@ -20,10 +20,22 @@
  * as advisory and does not surface its systemMessage. Moving the report
  * there would turn "every turn" into "never".
  *
+ * Who reads it: a Stop hook's systemMessage reaches the user and never the
+ * agent, so the drift the agent is best placed to fix never reached it
+ * (#256). On a Stop whose findings changed, the hook also returns
+ * `decision: "block"` with the report as the reason, the one Stop output
+ * that reaches the model: the agent gets a turn to act on it, ask the user,
+ * or say in one line that nothing needs doing. The forced turn's own Stop
+ * arrives with stop_hook_active and exits early, so it cannot loop.
+ * SessionEnd and a Stop without a session_id never block: SessionEnd has no
+ * turn to give, and without a session_id nothing stops a block repeating.
+ *
  * Output is JSON on every agent, never plain text. Codex rejects plain Stop
  * stdout, Gemini's SessionEnd contract requires a final JSON object, and
- * Claude Code otherwise files non-exempt stdout in the debug log. The report
- * uses the one user-facing field all three agents share, `systemMessage`.
+ * Claude Code otherwise files non-exempt stdout in the debug log. The user
+ * gets the report in `systemMessage`, the one user-facing field all three
+ * agents share; the agent gets it as a Stop block's `reason` (above). Both
+ * are held under Claude Code's hook output cap (lib/hook-io.ts).
  * The documented event name is the only branch — no agent sniffing and no
  * agent-specific argument.
  */
@@ -34,6 +46,7 @@ import { fileURLToPath } from "node:url";
 import {
 	readStdinJson,
 	writeSilentHookOutput,
+	writeStopBlock,
 	writeSystemMessage,
 } from "./lib/hook-io.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
@@ -70,7 +83,8 @@ type HookInput = {
 };
 
 const input = await readStdinJson<HookInput>();
-// Re-entry by a secondary agent: say nothing and spawn no second refresh,
+// Re-entry (the Stop after a turn this hook forced, or a secondary agent's):
+// say nothing, which is what keeps a block from looping, spawn no second refresh,
 // but still emit the empty envelope rather than zero bytes — see
 // writeSilentHookOutput for why "sometimes silent, sometimes JSON" is the
 // weaker contract.
@@ -130,14 +144,18 @@ const VOLATILE_FIELDS = new Set(["sizeKb", "ageDays", "oldestDays"]);
 // drift that was fixed and then came back. A missing session_id fails open
 // to reporting.
 const sessionId = input?.session_id;
+const isStop = input?.hook_event_name === "Stop";
+const hasSession = typeof sessionId === "string" && sessionId !== "";
 const show =
-	input?.hook_event_name !== "Stop" ||
-	typeof sessionId !== "string" ||
-	!sessionId ||
-	claimChanged(STATE_PATH, sessionId, reportKey({ checklist, report }, VOLATILE_FIELDS));
+	!isStop || !hasSession || claimChanged(STATE_PATH, sessionId, reportKey({ checklist, report }, VOLATILE_FIELDS));
 
-if (show) writeSystemMessage(message);
-else writeSilentHookOutput();
+/** Framing for the agent: it decides what the report calls for. */
+const AGENT_PREFACE =
+	"Stop hook report: your response just ended, and these findings are new or changed since the last report this session; the user was shown the same report. Decide what it calls for: act on what bears on the current work, ask the user when something needs their call, or reply in one line that nothing needs doing now. Never move or delete notes without asking, and do not recite the report back.";
+
+if (!show) writeSilentHookOutput();
+else if (isStop && hasSession) writeStopBlock(`${AGENT_PREFACE}\n\n${message}`, message);
+else writeSystemMessage(message);
 
 triggerDebouncedRefresh({
 	sentinelPath: SENTINEL_PATH,

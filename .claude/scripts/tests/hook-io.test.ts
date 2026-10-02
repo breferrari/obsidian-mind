@@ -7,7 +7,7 @@
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { debug, warn } from "../lib/hook-io.ts";
+import { debug, fitEncoded, HOOK_OUTPUT_MAX_CHARS, warn, writeStopBlock, writeSystemMessage } from "../lib/hook-io.ts";
 
 /**
  * Replace process.stderr.write with a capturer that records calls and returns
@@ -81,5 +81,73 @@ describe("debug", () => {
 			capture.lines[0] ?? "",
 			/^\[hook-debug \d{4}-\d{2}-\d{2}T[^\]]+\] taking path A\n$/,
 		);
+	});
+});
+
+/** Half of a surrogate pair with its other half missing. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+describe("fitEncoded — held under the hook output cap", () => {
+	test("text that fits is returned unchanged", () => {
+		assert.equal(fitEncoded("short", 100), "short");
+	});
+
+	test("counts JSON escaping, which a cut on raw length would miss", () => {
+		// 3,000 backslashes encode to 6,000 characters.
+		const text = "\\".repeat(3_000);
+		const fitted = fitEncoded(text, 4_000);
+		assert.ok(JSON.stringify(fitted).length <= 4_000, `got ${JSON.stringify(fitted).length}`);
+		assert.match(fitted, /… \(truncated to fit the hook output cap\)$/);
+	});
+
+	test("never leaves half of an astral emoji", () => {
+		// Each 🚨 is two UTF-16 units, so a cut on raw length would split one
+		// at every odd cap. Counting the encoded length is what prevents it.
+		for (let max = 200; max < 206; max++) {
+			const fitted = fitEncoded("🚨".repeat(500), max);
+			assert.doesNotMatch(fitted, LONE_SURROGATE, `max ${max} left a lone surrogate`);
+		}
+	});
+});
+
+/** What `write` printed to stdout. */
+function captureStdout(write: () => void): string {
+	const chunks: string[] = [];
+	const original = process.stdout.write.bind(process.stdout);
+	process.stdout.write = ((chunk: string) => {
+		chunks.push(chunk);
+		return true;
+	}) as typeof process.stdout.write;
+	try {
+		write();
+	} finally {
+		process.stdout.write = original;
+	}
+	return chunks.join("");
+}
+
+// "x" encodes to one character, so the cut can land exactly on the cap:
+// these tests assert the exact length, which catches an off-by-one either way.
+describe("writeStopBlock — the whole output fits", () => {
+	test("a huge report and message fill the cap exactly, both marked as cut", () => {
+		const out = captureStdout(() => writeStopBlock("x".repeat(20_000), "x".repeat(20_000)));
+		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
+		const parsed = JSON.parse(out) as { decision: string; reason: string; systemMessage: string };
+		assert.equal(parsed.decision, "block");
+		assert.match(parsed.reason, /truncated to fit the hook output cap\)$/);
+		assert.match(parsed.systemMessage, /truncated to fit the hook output cap\)$/);
+		assert.ok(parsed.reason.length > parsed.systemMessage.length, "the agent's copy gets the larger share");
+	});
+});
+
+describe("writeSystemMessage — the output fits", () => {
+	test("a huge message fills the cap exactly, marked as cut", () => {
+		const out = captureStdout(() => writeSystemMessage("x".repeat(20_000)));
+		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
+		assert.match((JSON.parse(out) as { systemMessage: string }).systemMessage, /truncated to fit the hook output cap\)$/);
+	});
+
+	test("a short message is written unchanged", () => {
+		assert.equal(captureStdout(() => writeSystemMessage("hello")), '{"systemMessage":"hello"}');
 	});
 });
