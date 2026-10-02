@@ -23,6 +23,8 @@ import {
 	shouldCollapseDir,
 	formatCollapsedDir,
 	parseInjectionBudget,
+	parseInstructionBudget,
+	DEFAULT_INSTRUCTION_BUDGET_BYTES,
 	effectiveInjectionBudget,
 	INJECTION_CEILING_BYTES,
 	parseListingCollapseThreshold,
@@ -1165,6 +1167,18 @@ describe("manifest budget fields", () => {
 	test("parseListingCollapseThreshold reads its own field", () => {
 		assert.equal(parseListingCollapseThreshold('{"listing_collapse_threshold":25}'), 25);
 		assert.equal(parseListingCollapseThreshold('{"eager_layer_budget_bytes":25}'), null);
+	});
+
+	test("parseInstructionBudget reads its own field, with the same validation", () => {
+		assert.equal(parseInstructionBudget('{"eager_layer_instruction_budget_bytes":40000}'), 40_000);
+		assert.equal(parseInstructionBudget('{"eager_layer_budget_bytes":40000}'), null);
+		assert.equal(parseInstructionBudget('{"eager_layer_instruction_budget_bytes":0}'), null);
+		assert.equal(parseInstructionBudget('{"eager_layer_instruction_budget_bytes":"40000"}'), null);
+		assert.equal(parseInstructionBudget(null), null);
+	});
+
+	test("the instruction-file default is above the hook-output ceiling, or delivering would gain nothing", () => {
+		assert.ok(DEFAULT_INSTRUCTION_BUDGET_BYTES > INJECTION_CEILING_BYTES);
 	});
 
 	test("the shipped default threshold is a positive integer", () => {

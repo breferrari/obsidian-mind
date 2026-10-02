@@ -47,6 +47,8 @@ import {
 	applyInjectionBudget,
 	effectiveInjectionBudget,
 	parseInjectionBudget,
+	parseInstructionBudget,
+	DEFAULT_INSTRUCTION_BUDGET_BYTES,
 	parseListingCollapseThreshold,
 	shouldCollapseDir,
 	formatCollapsedDir,
@@ -66,6 +68,7 @@ import {
 } from "./lib/active-hygiene.ts";
 
 import { fitHookOutput, readStdinJson } from "./lib/hook-io.ts";
+import { readOmMod } from "./lib/om-mod.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
 type HookInput = { readonly source?: unknown };
@@ -95,7 +98,16 @@ async function readHookInput(): Promise<HookInput | null> {
 	return result;
 }
 const hookInput = await readHookInput();
-const mode = injectionMode(hookInput?.source);
+
+// A Claude Code mod that delivers this layer itself flags the event it
+// passes down (lib/om-mod.ts): stand down before any side effect, since the
+// mod's own run of this script performs them. `deliver` is that run: the
+// output becomes an instruction file, which compaction keeps whole, so it is
+// always the full layer and is not held under the hook-output cap.
+const omMod = readOmMod(hookInput);
+if (omMod === "standdown") process.exit(0);
+const delivering = omMod === "deliver";
+const mode = delivering ? "full" : injectionMode(hookInput?.source);
 
 function readManifestRaw(): string | null {
 	try {
@@ -620,17 +632,24 @@ if (hygieneLines.length > 0) {
 // Code's hook output cap: past the cap the session gets a 2,000-character
 // preview, so a larger budget never binds (#254). An unset or larger
 // manifest value is clamped, and the meter says so. fitHookOutput is the
-// backstop for the sections that never degrade.
-const budget = effectiveInjectionBudget(parseInjectionBudget(manifestJson));
+// backstop for the sections that never degrade. Delivered by a mod as an
+// instruction file, the layer is under no such cap: it gets its own budget,
+// and the backstop is lifted.
+const budget: { readonly bytes: number; readonly clampedFrom?: number } = delivering
+	? { bytes: parseInstructionBudget(manifestJson) ?? DEFAULT_INSTRUCTION_BUDGET_BYTES }
+	: effectiveInjectionBudget(parseInjectionBudget(manifestJson));
 const budgeted = applyInjectionBudget(sections, budget.bytes);
 
 process.stdout.write(
-	fitHookOutput(budgeted.text + "\n", (cut, bodyBytes) =>
-		formatInjectionSize(bodyBytes, {
-			budgetBytes: budget.bytes,
-			collapsed: budgeted.collapsed,
-			clampedFrom: budget.clampedFrom,
-			cut,
-		}),
+	fitHookOutput(
+		budgeted.text + "\n",
+		(cut, bodyBytes) =>
+			formatInjectionSize(bodyBytes, {
+				budgetBytes: budget.bytes,
+				collapsed: budgeted.collapsed,
+				clampedFrom: budget.clampedFrom,
+				cut,
+			}),
+		delivering ? Number.POSITIVE_INFINITY : undefined,
 	),
 );

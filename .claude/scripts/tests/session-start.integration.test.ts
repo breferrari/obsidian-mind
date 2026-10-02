@@ -29,6 +29,7 @@ import { dirname, join, resolve } from "node:path";
 import {
 	mkdtempSync,
 	mkdirSync,
+	readFileSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -362,5 +363,94 @@ describe("session-start — the hook output cap", () => {
 		} finally {
 			rmTemp(dir);
 		}
+	});
+});
+
+/**
+ * A Claude Code mod that delivers the eager layer itself passes `om_mod` on
+ * the event (#264, lib/om-mod.ts). `standdown` must leave no trace at all;
+ * `deliver` is the mod's own run, whose output becomes an instruction file:
+ * always the full layer, held to its own budget, never cut to the hook cap.
+ */
+describe("session-start — om_mod (a Claude Code mod)", () => {
+	const lastLine = (stdout: string) => stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
+
+	/** ~250 nested notes: the shape whose listing passes the hook cap (#254). */
+	function nestedVault(manifest: Record<string, unknown> = {}): string {
+		const dir = mkdtempSync(join(tmpdir(), "session-start-ommod-"));
+		mkdirSync(join(dir, "brain"), { recursive: true });
+		writeFileSync(join(dir, "brain", "North Star.md"), "---\ndescription: test\n---\n\n# North Star\n\n- placeholder\n");
+		for (let p = 0; p < 12; p++) {
+			for (const sub of ["notes", "decisions"]) {
+				mkdirSync(join(dir, "projects", `project-${p}`, sub), { recursive: true });
+				for (let i = 0; i < 10; i++) {
+					writeFileSync(join(dir, "projects", `project-${p}`, sub, `Example project-${p} ${sub} note ${i}.md`), "---\ndescription: x\n---\n");
+				}
+			}
+		}
+		writeFileSync(join(dir, "vault-manifest.json"), JSON.stringify(manifest));
+		return dir;
+	}
+
+	test("standdown prints nothing and runs no side effect", () => {
+		const envFile = join(TMP_DIR, "env-standdown.sh");
+		writeFileSync(envFile, "");
+		const { stdout, stderr, code } = spawnHook(SCRIPT, { source: "startup", om_mod: "standdown" }, { CLAUDE_PROJECT_DIR: TMP_DIR, CLAUDE_ENV_FILE: envFile });
+		assert.equal(code, 0);
+		assert.equal(stderr, "");
+		assert.equal(stdout, "", "the mod delivers this event; the hook must add nothing");
+		assert.equal(readFileSync(envFile, "utf-8"), "", "no VAULT_PATH export: side effects belong to the mod's own run");
+	});
+
+	test("without the flag the same run does write VAULT_PATH (the standdown check above can fail)", () => {
+		const envFile = join(TMP_DIR, "env-plain.sh");
+		writeFileSync(envFile, "");
+		const { stdout } = spawnHook(SCRIPT, { source: "startup" }, { CLAUDE_PROJECT_DIR: TMP_DIR, CLAUDE_ENV_FILE: envFile });
+		assert.ok(stdout.includes("### Date"));
+		assert.match(readFileSync(envFile, "utf-8"), /VAULT_PATH/);
+	});
+
+	test("deliver is not cut to the hook-output cap: the layer arrives whole, against its own budget", () => {
+		const dir = nestedVault({ eager_layer_budget_bytes: 80_000, eager_layer_instruction_budget_bytes: 80_000 });
+		try {
+			const delivered = spawnHook(SCRIPT, { source: "startup", om_mod: "deliver" }, { CLAUDE_PROJECT_DIR: dir });
+			assert.equal(delivered.code, 0);
+			assert.equal(delivered.stderr, "");
+			assert.ok(delivered.stdout.length > HOOK_OUTPUT_MAX_CHARS, `delivered ${delivered.stdout.length} characters`);
+			assert.match(lastLine(delivered.stdout), /^_context injected: \d+\.\dkB \/ 80\.0kB budget_$/, "nothing collapsed, nothing clamped, meter last");
+			assert.ok(delivered.stdout.includes("Example project-11 decisions note 9.md"), "the deepest listing entry is there");
+
+			// The same vault as hook output stays under the cap (#254), listing degraded.
+			const hooked = spawnHook(SCRIPT, { source: "startup" }, { CLAUDE_PROJECT_DIR: dir });
+			assert.ok(hooked.stdout.length <= HOOK_OUTPUT_MAX_CHARS);
+			assert.match(lastLine(hooked.stdout), /collapsed: Vault File Listing/);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("deliver without a configured instruction budget uses the default", () => {
+		const dir = nestedVault();
+		try {
+			const { stdout } = spawnHook(SCRIPT, { source: "startup", om_mod: "deliver" }, { CLAUDE_PROJECT_DIR: dir });
+			assert.match(lastLine(stdout), /\/ 20\.0kB budget/);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("deliver is the full layer even on compact: an instruction file has no pointer mode", () => {
+		const delivered = spawnHook(SCRIPT, { source: "compact", om_mod: "deliver" }, { CLAUDE_PROJECT_DIR: TMP_DIR }).stdout;
+		assert.ok(delivered.includes("### Vault File Listing"));
+		assert.ok(!delivered.includes("### Context Pointer"));
+		const hooked = spawnHook(SCRIPT, { source: "compact" }, { CLAUDE_PROJECT_DIR: TMP_DIR }).stdout;
+		assert.ok(hooked.includes("### Context Pointer"), "without the flag compact stays pointer mode");
+	});
+
+	test("an unknown om_mod value is ignored: the hook behaves as with no flag", () => {
+		const { stdout, code } = spawnHook(SCRIPT, { source: "startup", om_mod: "silence" }, { CLAUDE_PROJECT_DIR: TMP_DIR });
+		assert.equal(code, 0);
+		assert.ok(stdout.includes("### Date"));
+		assert.match(lastLine(stdout), /\/ 9\.1kB budget/, "the hook path and its cap, not deliver");
 	});
 });

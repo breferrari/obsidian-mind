@@ -122,7 +122,7 @@ The hook scripts, subagent prompts, command definitions, and vault conventions a
 | Which files are user content? | `user_content_roots[]`, `scaffold{}` |
 | What frontmatter is required for each note type? | `frontmatter_required{}` |
 | Which notes does the `om` server serve, and where do memories live? | `mcp_exposed_roots[]`, `mcp_never_expose[]`, `memory_root`, `mcp_inbox` |
-| How much context may the eager layer spend? | `eager_layer_budget_bytes`, `listing_collapse_threshold` |
+| How much context may the eager layer spend? | `eager_layer_budget_bytes` (as hook output, held under the 10,000-char hook cap), `eager_layer_instruction_budget_bytes` (when the mod delivers it as an instruction file), `listing_collapse_threshold` |
 | Which model does a `reason` spawn run on? | `reason.model` — unset means the user's own CLI default |
 
 The `qmd_index` field is the most load-bearing. **Five independent callers** read it, and they fail *silently* when they disagree — one writes to a store another never reads, which surfaces only as "0 documents" or as an empty search:
@@ -1002,7 +1002,7 @@ The design makes these changes easy:
 | Change which notes `om` serves | `vault-manifest.json` → `mcp_exposed_roots` / `mcp_never_expose`, or tag a note `private` |
 | Move the memory store | Rename the folder in Obsidian — discovery finds it and `health` reports the drift; pin it with `memory_root` to be explicit |
 | Add a new `om` tool | A declaration in `.claude/scripts/lib/mcp-tools.ts` + a case in `mcp-server.ts` — the description is what the model reads when deciding to call it |
-| Change what the eager layer may spend | `vault-manifest.json` → `eager_layer_budget_bytes`, `listing_collapse_threshold` |
+| Change what the eager layer may spend | `vault-manifest.json` → `eager_layer_budget_bytes` (hook path), `eager_layer_instruction_budget_bytes` (mod path), `listing_collapse_threshold` |
 
 The design is hostile to these changes (on purpose):
 

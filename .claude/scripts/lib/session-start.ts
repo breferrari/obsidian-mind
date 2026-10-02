@@ -223,6 +223,21 @@ export function effectiveInjectionBudget(configured: number | null): {
 	return { bytes: INJECTION_CEILING_BYTES, clampedFrom: configured };
 }
 
+/**
+ * The budget when a Claude Code mod delivers the eager layer as an
+ * instruction file (`om_mod: "deliver"`, #264), unless the manifest sets
+ * `eager_layer_instruction_budget_bytes`. Instruction files are not under the
+ * hook-output cap, so INJECTION_CEILING_BYTES does not apply there. The layer
+ * still gets a deliberate size, because it is paid in every session and by
+ * every general-purpose subagent: about 5,000 tokens.
+ */
+export const DEFAULT_INSTRUCTION_BUDGET_BYTES = 20_000;
+
+/** `eager_layer_instruction_budget_bytes` from the manifest; null when unset or invalid. */
+export function parseInstructionBudget(manifestJson: string | null): number | null {
+	return parsePositiveIntField(manifestJson, "eager_layer_instruction_budget_bytes");
+}
+
 
 /** `listing_collapse_threshold` from the manifest; null when unset or invalid. */
 export function parseListingCollapseThreshold(

@@ -486,3 +486,63 @@ describe("stop-checklist", () => {
 		);
 	});
 });
+
+/**
+ * Under the template's Claude Code mod (#264, lib/om-mod.ts) the mod presents
+ * the Stop report. `standdown` on the Stop it passes down must leave no trace;
+ * `report` is the mod's own run and returns the report as data, claiming no
+ * state and handing nothing over, because the mod owns both.
+ */
+describe("stop-checklist — om_mod (a Claude Code mod)", () => {
+	const flagged = (session_id: string, om_mod: string) => ({ ...stop(session_id), om_mod });
+
+	test("standdown writes the empty envelope and touches no state, no handoff", () => {
+		const root = vault("ommod-standdown", "Done.md");
+		const state = freshState();
+		const dir = join(TMP_DIR, "handoff-ommod-standdown");
+		const result = run(flagged("s-standdown", "standdown"), { vault: root, state, handoffDir: dir, keep: true });
+		assert.equal(result.code, 0);
+		assert.equal(result.stdout, "{}");
+		assert.equal(existsSync(state), false, "no dedupe state claimed");
+		assert.equal(existsSync(dir), false, "no report saved for the next prompt");
+	});
+
+	test("the same Stop without the flag does claim state and hand the report over (the checks above can fail)", () => {
+		const root = vault("ommod-plain", "Done.md");
+		const state = freshState();
+		const result = run(stop("s-plain"), { vault: root, state });
+		assert.equal(existsSync(state), true);
+		assert.ok(result.handed?.includes("work/active/Done.md"));
+	});
+
+	test("report returns the report as data, and claims no state and hands nothing over", () => {
+		const root = vault("ommod-report", "Done.md");
+		const state = freshState();
+		const dir = join(TMP_DIR, "handoff-ommod-report");
+		const result = run(flagged("s-report", "report"), { vault: root, state, handoffDir: dir, keep: true });
+		assert.equal(result.code, 0);
+		const { report } = envelopeOf(result.stdout) as { report: { key: string; summary: string; claims: string[]; agentText: string } };
+		assert.match(report.key, /^[0-9a-f]{16,}$/);
+		assert.match(report.summary, /^Wrap-up checklist: /);
+		assert.ok(report.claims.length > 0, "the drift is a claim");
+		assert.ok(report.agentText.startsWith(`${AGENT_PREFACE}\n\n`));
+		assert.match(report.agentText, /work\/active\/Done\.md/);
+		assert.equal(existsSync(state), false, "the mod decides when the report changed");
+		assert.equal(existsSync(dir), false, "the mod hands the report over");
+	});
+
+	test("report's key is the report's identity: stable for the same findings, different when they change", () => {
+		const root = vault("ommod-key", "Done.md");
+		const keyOf = () => (envelopeOf(run(flagged("s-key", "report"), { vault: root }).stdout) as { report: { key: string } }).report.key;
+		const first = keyOf();
+		assert.equal(keyOf(), first);
+		completeNote(root, "Also Done.md");
+		assert.notEqual(keyOf(), first);
+	});
+
+	test("an unknown om_mod value is ignored: the Stop reports as with no flag", () => {
+		const root = vault("ommod-unknown", "Done.md");
+		const result = run(flagged("s-unknown", "silence"), { vault: root });
+		assert.ok(result.handed?.includes("work/active/Done.md"));
+	});
+});
