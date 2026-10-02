@@ -68,12 +68,17 @@ export const register: Register = (on) => {
 		// the first prompt of this one, so what was queued is dropped.
 		if (e.source !== 'compact') {
 			// One call per atom: the validator reads each state source statically.
+			let dropped = false
+			await update($, pendingReport, (now) => {
+				dropped = now !== null
+				return null
+			})
 			await update($, pendingLine, () => null)
-			await update($, pendingReport, () => null)
 			await update($, pendingUrgent, () => null)
 			await update($, urgentSpent, () => null)
-			// What was dropped was never shown here, so the same findings show again.
-			await update($, shownReport, () => null)
+			// A report dropped here never reached the agent, so the same findings
+			// show again; one it already has stays shown.
+			if (dropped) await update($, shownReport, () => null)
 		}
 		// Cleared first: if this run fails, the settings hook delivers fresh
 		// output and no earlier context may ride beside it.

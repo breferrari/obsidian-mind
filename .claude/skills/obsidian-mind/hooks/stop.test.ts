@@ -223,6 +223,45 @@ describe('the line under the answer (#266)', () => {
 		expect(world.submitted[0]?.context).toEqual([HANDED('k')])
 	})
 
+	test('a resume after the agent already had the report does not send it again', async ($, on) => {
+		const world = vault(on, ok(report('k')))
+		await $.classic.Stop({ stop_hook_active: false, session_id: 'A' })
+		await $.prompt.submit({ text: 'first' })
+		await $.classic.SessionStart({ source: 'resume' } as never)
+		await $.classic.Stop({ stop_hook_active: false, session_id: 'A' })
+		await $.prompt.submit({ text: 'second' })
+
+		expect(world.submitted[0]?.context).toEqual([HANDED('k')])
+		expect(world.submitted[1]?.context ?? []).toEqual([])
+	})
+
+	test('a compaction keeps the queued report, and what was shown stays shown', async ($, on) => {
+		const world = vault(on, ok(report('k')))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.classic.SessionStart({ source: 'compact' } as never)
+		await $.prompt.submit({ text: 'first' })
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.prompt.submit({ text: 'second' })
+
+		expect(world.submitted[0]?.context).toEqual([HANDED('k')])
+		expect(world.submitted[1]?.context ?? []).toEqual([])
+	})
+
+	test('a compaction does not grant another urgent turn', async ($, on) => {
+		let key = 'a'
+		const world = vault(on, () => ({ exitCode: 0, stdout: JSON.stringify({ report: report(key, { urgent: `urgent ${key}` }) }) }))
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+		await $.classic.SessionStart({ source: 'compact' } as never)
+		key = 'b'
+		await $.classic.Stop({ stop_hook_active: false })
+		await $.turn.complete(answered())
+		await settle()
+
+		expect(world.submitted.map((p) => p.text)).toEqual(['urgent a'])
+	})
+
 	test('a compaction keeps what was queued', async ($, on) => {
 		vault(on, ok(report('k')))
 		await $.classic.Stop({ stop_hook_active: false })
