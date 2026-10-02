@@ -15,10 +15,12 @@
  * doesn't silently happen a third time.
  */
 
-import { test, describe } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type HookConfig = {
@@ -99,12 +101,24 @@ describe("hook config — CWD-independent script resolution (issue #45)", () => 
 			});
 
 			for (const { event, command } of commands) {
-				test(`${event} uses \${${envVar}:-.}/ prefix`, () => {
-					assert.ok(
-						command.includes(`\${${envVar}:-.}/.claude/scripts/`),
-						`${path} ${event} command must resolve scripts via \${${envVar}:-.}/ to survive CWD drift — got:\n  ${command}`,
-					);
-				});
+				if (envVar === "CLAUDE_PROJECT_DIR") {
+					// Claude Code does not update CLAUDE_PROJECT_DIR on `/cd`, so it can
+					// name a vault subfolder (#263). Its commands start from the variable
+					// and walk up to the vault root; the run test below proves they work.
+					test(`${event} walks up from \${${envVar}:-.} to the vault root (#263)`, () => {
+						assert.ok(
+							command.includes(`r="\${${envVar}:-.}"`) && command.includes("vault-manifest.json") && command.includes(")/.claude/scripts/"),
+							`${path} ${event} command must find the vault root from \${${envVar}:-.} — got:\n  ${command}`,
+						);
+					});
+				} else {
+					test(`${event} uses \${${envVar}:-.}/ prefix`, () => {
+						assert.ok(
+							command.includes(`\${${envVar}:-.}/.claude/scripts/`),
+							`${path} ${event} command must resolve scripts via \${${envVar}:-.}/ to survive CWD drift — got:\n  ${command}`,
+						);
+					});
+				}
 
 				test(`${event} does not use a bare relative .claude/scripts/ path`, () => {
 					// A bare relative path only survives if the invoking shell's
@@ -169,6 +183,54 @@ describe("hook config — the checklist runs where its message is shown", () => 
 				/stop-checklist\.ts"$/,
 				`${path} must invoke stop-checklist.ts with no trailing arguments — its output contract is the same for every agent`,
 			);
+		});
+	}
+});
+
+/**
+ * #263: run every Claude hook command for real, with `node` replaced by a
+ * shell function that prints its arguments, and check which script it would
+ * run. Claude Code runs hook commands through a POSIX shell on every OS (Git
+ * Bash on Windows), so this is the same shell, the same quoting and the same
+ * path handling, minus the script itself.
+ */
+describe("hook config — Claude commands find the vault root from a subfolder (#263)", () => {
+	const commands = eachNodeHookCommand(loadConfig(".claude/settings.json"));
+	const scriptOf = (command: string) => /\/\.claude\/scripts\/([a-z-]+\.ts)"$/.exec(command)?.[1] ?? "";
+
+	/** The script path the command would hand to node, with CLAUDE_PROJECT_DIR set to `projectDir`. */
+	function resolvedScript(command: string, projectDir: string): string {
+		const run = spawnSync("bash", ["-c", `node() { printf '%s\n' "$@"; }; ${command}`], {
+			encoding: "utf-8",
+			env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
+		});
+		assert.equal(run.status, 0, `bash failed: ${run.stderr}`);
+		return run.stdout.trim().split("\n").pop() ?? "";
+	}
+
+	let vault = "";
+	before(() => {
+		vault = mkdtempSync(join(tmpdir(), "hook-config-vault-"));
+		mkdirSync(join(vault, "work", "deep"), { recursive: true });
+		writeFileSync(join(vault, "vault-manifest.json"), "{}");
+	});
+	after(() => rmSync(vault, { recursive: true, force: true }));
+
+	for (const { event, command } of commands) {
+		test(`${event}: launched in a subfolder, the command runs the vault root's script`, () => {
+			const script = scriptOf(command);
+			assert.ok(script, `could not read the script name from: ${command}`);
+			assert.equal(resolve(resolvedScript(command, join(vault, "work", "deep"))), resolve(vault, ".claude", "scripts", script));
+		});
+
+		test(`${event}: with no vault above, the command keeps the named folder`, () => {
+			const elsewhere = mkdtempSync(join(tmpdir(), "hook-config-novault-"));
+			try {
+				const script = scriptOf(command);
+				assert.equal(resolve(resolvedScript(command, elsewhere)), resolve(elsewhere, ".claude", "scripts", script));
+			} finally {
+				rmSync(elsewhere, { recursive: true, force: true });
+			}
 		});
 	}
 });

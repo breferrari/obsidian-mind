@@ -5,7 +5,10 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { resolveProjectDir } from "../lib/project-dir.ts";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { nearestVaultRoot, resolveProjectDir, VAULT_MARKER } from "../lib/project-dir.ts";
 
 describe("resolveProjectDir", () => {
 	test("each agent's variable is honoured", () => {
@@ -27,5 +30,45 @@ describe("resolveProjectDir", () => {
 
 	test("no variable falls back to the caller's choice", () => {
 		assert.equal(resolveProjectDir("/fb", {}), "/fb");
+	});
+});
+
+/**
+ * #263: Claude Code's CLAUDE_PROJECT_DIR names the folder the session was
+ * launched in and does not follow `/cd`, so it can name a vault subfolder.
+ * The result walks up to the nearest folder holding vault-manifest.json.
+ */
+describe("resolveProjectDir — finds the vault root above the named folder", () => {
+	const root = join(tmpdir(), "pd-root");
+	const isRoot = (dir: string) => dir === root;
+
+	test("a subfolder resolves to the vault root above it", () => {
+		assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: join(root, "work", "deep") }, isRoot), root);
+	});
+
+	test("the root itself resolves to itself", () => {
+		assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: root }, isRoot), root);
+	});
+
+	test("no vault root above the named folder keeps the named folder", () => {
+		const elsewhere = join(tmpdir(), "pd-elsewhere", "x");
+		assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: elsewhere }, isRoot), elsewhere);
+	});
+
+	test("the fallback is walked up too", () => {
+		assert.equal(resolveProjectDir(join(root, "work"), {}, isRoot), root);
+	});
+
+	test("on a real filesystem the marker is vault-manifest.json", () => {
+		const vault = mkdtempSync(join(tmpdir(), "pd-vault-"));
+		try {
+			mkdirSync(join(vault, "work", "deep"), { recursive: true });
+			writeFileSync(join(vault, VAULT_MARKER), "{}");
+			assert.equal(VAULT_MARKER, "vault-manifest.json");
+			assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: join(vault, "work", "deep") }), vault);
+			assert.equal(nearestVaultRoot(join(vault, "work")), vault);
+		} finally {
+			rmSync(vault, { recursive: true, force: true });
+		}
 	});
 });
