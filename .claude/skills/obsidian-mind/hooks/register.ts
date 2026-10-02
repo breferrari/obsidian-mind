@@ -1,5 +1,6 @@
-import { atom, read, update, type EngineInterface, type Register } from "claude-code";
-import { withSessionContext } from "./context.ts";
+import { atom, read, update, type EngineInterface, type Register } from 'claude-code'
+import { withSessionContext } from './context.ts'
+import { parseStopReport, summaryLine } from './stop.ts'
 
 /**
  * obsidian-mind's Claude Code mod (#262).
@@ -17,22 +18,29 @@ import { withSessionContext } from "./context.ts";
  * re-read whole after compaction and `/clear` instead of shrinking to a
  * pointer, and general-purpose subagents receive it.
  *
+ * Stop report (#266): `stop-checklist.ts` runs here with `om_mod: "report"`.
+ * When the findings changed, the user sees one line under the answer and the
+ * agent gets the full report with the next prompt, unseen. A finding marked
+ * urgent gets a turn of its own at once.
+ *
  * The switch is the event itself: the settings hook is passed
  * `om_mod: "standdown"` and exits, but only on an event this hook actually
  * handled. The work is done before `next`, so if it fails the hook throws,
  * Claude Code skips it, and the settings hook gets the original event and
  * runs as it would without the mod.
+ *
+ * What the hooks hand each other lives in `$.state`, not in module
+ * variables: the host keeps it for the session, across a hot reload.
  */
 
 /** Where the delivered context is also written, so /memory opens what the model received. Gitignored. */
 const CONTEXT_FILE = ".claude/session-context.md";
 
-/**
- * The context this session's instruction file carries. In `$.state`, not a
- * module variable: the host keeps it for the session, across a hot reload of
- * this module. Each classic.SessionStart clears it before its run.
- */
-const sessionContext = atom({ plugin: "obsidian-mind", key: "context" } as const, null);
+const sessionContext = atom({ plugin: 'obsidian-mind', key: 'context' } as const, null)
+const shownReport = atom({ plugin: 'obsidian-mind', key: 'shownReport' } as const, null)
+const pendingLine = atom({ plugin: 'obsidian-mind', key: 'pendingLine' } as const, null)
+const pendingReport = atom({ plugin: 'obsidian-mind', key: 'pendingReport' } as const, null)
+const pendingUrgent = atom({ plugin: 'obsidian-mind', key: 'pendingUrgent' } as const, null)
 
 /** Run one of the vault's hook scripts with `input` on stdin; its stdout, or a throw. */
 async function runScript($: EngineInterface, root: string, script: string, input: object): Promise<string> {
@@ -76,10 +84,53 @@ export const register: Register = (on) => {
 		return next({ ...e, om_mod: "standdown" } as typeof e);
 	});
 
-	on("prompt.context", async ($, e, next) => {
-		const below = await next(e);
-		const text = await read($, sessionContext);
-		if (text === null) return below;
-		return withSessionContext(below, `${await $.session.root()}/${CONTEXT_FILE}`, text);
-	});
-};
+	on('prompt.context', async ($, e, next) => {
+		const below = await next(e)
+		const text = await read($, sessionContext)
+		if (text === null) return below
+		return withSessionContext(below, `${await $.session.root()}/${CONTEXT_FILE}`, text)
+	})
+
+	on('classic.Stop', async ($, e, next) => {
+		// A turn some Stop hook forced: the settings hook exits on its own.
+		if (e.stop_hook_active) return next(e)
+		const root = await $.session.root()
+		const report = parseStopReport(await runScript($, root, 'stop-checklist.ts', { ...e, om_mod: 'report' }))
+		// Keyed by session too, so a new session shows its first report even
+		// with the same findings, as the settings hook's dedupe does.
+		const identity = `${e.session_id}:${report.key}`
+		if ((await read($, shownReport)) !== identity) {
+			await update($, shownReport, () => identity)
+			await update($, pendingLine, () => summaryLine(report))
+			await update($, pendingReport, () => report.agentText)
+			await update($, pendingUrgent, () => report.urgent ?? null)
+		}
+		return next({ ...e, om_mod: 'standdown' } as typeof e)
+	})
+
+	on('turn.complete', async ($, e, next) => {
+		const done = await next(e)
+		// Only under a main-loop answer; a subagent's turn draws nothing.
+		if (e.agentId !== undefined) return done
+		const line = await read($, pendingLine)
+		if (line === null) return done
+		await update($, pendingLine, () => null)
+		const urgent = await read($, pendingUrgent)
+		if (urgent !== null) {
+			// Never from classic.Stop: the engine refuses a submit that would wait
+			// on the turn the hook may be holding, and names turn.complete instead.
+			await update($, pendingUrgent, () => null)
+			$.prompt.submit({ text: urgent, asUser: true }).catch(() => {
+				// Not submitted: the report still rides the user's next prompt.
+			})
+		}
+		return { ...done, text: line }
+	})
+
+	on('prompt.submit', async ($, e, next) => {
+		const report = await read($, pendingReport)
+		if (report === null) return next(e)
+		await update($, pendingReport, () => null)
+		return next({ ...e, context: [...(e.context ?? []), report] })
+	})
+}
