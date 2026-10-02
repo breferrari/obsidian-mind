@@ -7,7 +7,7 @@
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { debug, fitEncoded, HOOK_OUTPUT_MAX_CHARS, warn, writeStopBlock } from "../lib/hook-io.ts";
+import { debug, fitEncoded, HOOK_OUTPUT_MAX_CHARS, warn, writeStopBlock, writeSystemMessage } from "../lib/hook-io.ts";
 
 /**
  * Replace process.stderr.write with a capturer that records calls and returns
@@ -110,25 +110,44 @@ describe("fitEncoded — held under the hook output cap", () => {
 	});
 });
 
+/** What `write` printed to stdout. */
+function captureStdout(write: () => void): string {
+	const chunks: string[] = [];
+	const original = process.stdout.write.bind(process.stdout);
+	process.stdout.write = ((chunk: string) => {
+		chunks.push(chunk);
+		return true;
+	}) as typeof process.stdout.write;
+	try {
+		write();
+	} finally {
+		process.stdout.write = original;
+	}
+	return chunks.join("");
+}
+
+// "x" encodes to one character, so the cut can land exactly on the cap:
+// these tests assert the exact length, which catches an off-by-one either way.
 describe("writeStopBlock — the whole output fits", () => {
-	test("a huge report and message still come out under the cap, both marked as cut", () => {
-		const chunks: string[] = [];
-		const original = process.stdout.write.bind(process.stdout);
-		process.stdout.write = ((chunk: string) => {
-			chunks.push(chunk);
-			return true;
-		}) as typeof process.stdout.write;
-		try {
-			writeStopBlock("r\n".repeat(20_000), "m\n".repeat(20_000));
-		} finally {
-			process.stdout.write = original;
-		}
-		const out = chunks.join("");
-		assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `got ${out.length}`);
+	test("a huge report and message fill the cap exactly, both marked as cut", () => {
+		const out = captureStdout(() => writeStopBlock("x".repeat(20_000), "x".repeat(20_000)));
+		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
 		const parsed = JSON.parse(out) as { decision: string; reason: string; systemMessage: string };
 		assert.equal(parsed.decision, "block");
 		assert.match(parsed.reason, /truncated to fit the hook output cap\)$/);
 		assert.match(parsed.systemMessage, /truncated to fit the hook output cap\)$/);
 		assert.ok(parsed.reason.length > parsed.systemMessage.length, "the agent's copy gets the larger share");
+	});
+});
+
+describe("writeSystemMessage — the output fits", () => {
+	test("a huge message fills the cap exactly, marked as cut", () => {
+		const out = captureStdout(() => writeSystemMessage("x".repeat(20_000)));
+		assert.equal(out.length, HOOK_OUTPUT_MAX_CHARS);
+		assert.match((JSON.parse(out) as { systemMessage: string }).systemMessage, /truncated to fit the hook output cap\)$/);
+	});
+
+	test("a short message is written unchanged", () => {
+		assert.equal(captureStdout(() => writeSystemMessage("hello")), '{"systemMessage":"hello"}');
 	});
 });

@@ -92,7 +92,8 @@ export function writeHookOutput(
  * To reach the model as well, a Stop hook uses `writeStopBlock` instead.
  */
 export function writeSystemMessage(message: string): void {
-	process.stdout.write(JSON.stringify({ systemMessage: fitEncoded(message, HOOK_OUTPUT_MAX_CHARS - 17) }));
+	const overhead = JSON.stringify({ systemMessage: "" }).length - 2;
+	process.stdout.write(JSON.stringify({ systemMessage: fitEncoded(message, HOOK_OUTPUT_MAX_CHARS - overhead) }));
 }
 
 /**

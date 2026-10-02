@@ -83,7 +83,8 @@ type HookInput = {
 };
 
 const input = await readStdinJson<HookInput>();
-// Re-entry by a secondary agent: say nothing and spawn no second refresh,
+// Re-entry (the Stop after a turn this hook forced, or a secondary agent's):
+// say nothing, which is what keeps a block from looping, spawn no second refresh,
 // but still emit the empty envelope rather than zero bytes — see
 // writeSilentHookOutput for why "sometimes silent, sometimes JSON" is the
 // weaker contract.
