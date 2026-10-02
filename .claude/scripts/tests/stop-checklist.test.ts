@@ -211,6 +211,45 @@ describe("stop-checklist", () => {
 		assert.deepEqual(envelopeOf(second.stdout), {});
 	});
 
+	test("a changed Stop report reaches the agent: decision block with the report as the reason (#256)", () => {
+		// A Stop systemMessage never reaches the model. decision "block" is the
+		// one Stop output that does, with a turn to act, ask, or say nothing
+		// needs doing; the user still sees the report.
+		const root = vault("block", "Done.md");
+		const envelope = envelopeOf(run(stop("s-block"), { vault: root }).stdout);
+		assert.equal(envelope["decision"], "block");
+		const reason = String(envelope["reason"]);
+		assert.match(reason, /^Stop hook report: .*ask the user when something needs their call/);
+		assert.ok(reason.endsWith(`\n\n${String(envelope["systemMessage"])}`), "the reason carries the report the user sees");
+		assert.match(reason, /work\/active\/Done\.md/);
+	});
+
+	test("an unchanged Stop sends the agent nothing", () => {
+		const root = vault("block-quiet", "Done.md");
+		const state = freshState();
+		run(stop("s-block-quiet"), { vault: root, state });
+		assert.deepEqual(envelopeOf(run(stop("s-block-quiet"), { vault: root, state }).stdout), {});
+	});
+
+	test("the forced turn's own Stop does not block again", () => {
+		const root = vault("block-reentry", "Done.md");
+		const state = freshState();
+		run(stop("s-block-reentry"), { vault: root, state });
+		const reentry = run({ session_id: "s-block-reentry", hook_event_name: "Stop", stop_hook_active: true }, { vault: root, state });
+		assert.deepEqual(envelopeOf(reentry.stdout), {});
+	});
+
+	test("SessionEnd and a Stop without a session_id never block", () => {
+		// SessionEnd has no turn to give, and without a session_id nothing
+		// stops a block from repeating every turn.
+		const root = vault("block-never", "Done.md");
+		for (const payload of [stop(), { session_id: "s-end", hook_event_name: "SessionEnd" }]) {
+			const envelope = envelopeOf(run(payload, { vault: root }).stdout);
+			assert.equal(envelope["decision"], undefined);
+			assert.match(String(envelope["systemMessage"]), /work\/active\/Done\.md/);
+		}
+	});
+
 	test("a new session reports again even when nothing changed", () => {
 		const root = vault("new-session", "Done.md");
 		const state = freshState();

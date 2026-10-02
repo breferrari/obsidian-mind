@@ -94,6 +94,22 @@ export function writeSystemMessage(message: string): void {
 }
 
 /**
+ * A Stop that hands `reason` to the agent now and gives it another turn,
+ * while showing the user `message` (#256).
+ *
+ * `decision: "block"` is the only Stop output that reaches the model; every
+ * other field is for the user. It also gives the agent a turn nobody typed,
+ * so stop-checklist uses it only when its findings change, and relies on
+ * `stop_hook_active` to keep the forced turn's own Stop from blocking again.
+ * Claude Code honours it on Stop, and labels it "Stop hook error occurred" in
+ * its UI even on success; Codex documents the same field. Gemini runs the
+ * checklist on SessionEnd and never gets it.
+ */
+export function writeStopBlock(reason: string, message: string): void {
+	process.stdout.write(JSON.stringify({ decision: "block", reason, systemMessage: message }));
+}
+
+/**
  * The empty envelope — valid JSON carrying no fields — for a hook that has
  * nothing to say on a protocol that wants JSON.
  *
