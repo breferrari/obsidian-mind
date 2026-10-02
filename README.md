@@ -201,7 +201,7 @@ Five lifecycle hooks handle routing automatically:
 
 | Hook | When | What |
 |------|------|------|
-| 🚀 SessionStart | On startup/resume | QMD re-index + self-heal, inject North Star focus, active work, recent changes, tasks, file listing, vault-hygiene drift flags — held under a byte budget, ending with an injection-size meter |
+| 🚀 SessionStart | On startup/resume | QMD re-index + self-heal, inject North Star focus, active work, recent changes, tasks, file listing, vault-hygiene drift flags — held under a byte budget that fits Claude Code's hook output cap, ending with an injection-size meter |
 | 💬 UserPromptSubmit | Every message | Classifies content (decision, incident, win, 1:1, architecture, person, project update) and injects routing hints |
 | ✍️ PostToolUse | After writing `.md` | Validates frontmatter + wikilinks, blocks misplaced memory files, flags oversized notes (split, don't trim) and write-time topic clusters |
 | 💾 PreCompact | Before context compaction | Backs up session transcript to `thinking/session-logs/` |
@@ -216,7 +216,7 @@ obsidian-mind does **not** dump your entire vault into context. It uses tiered l
 
 | Tier | What | When | Cost |
 |------|------|------|------|
-| **Always** | `CLAUDE.md` + SessionStart context (North Star excerpt, git summary, tasks, vault file listing) | Session start | capped by the manifest budget; the meter reports the real size every session |
+| **Always** | `CLAUDE.md` + SessionStart context (North Star excerpt, git summary, tasks, vault file listing) | Session start | capped by the manifest budget, itself held under Claude Code's 10,000-character hook output cap; the meter reports the real size every session |
 | **On-demand** | QMD semantic search results | When the agent needs specific context | Targeted |
 | **Triggered** | Classification routing hints | Every message | ~100 tokens |
 | **Triggered** | PostToolUse validation | After `.md` writes | ~200 tokens |

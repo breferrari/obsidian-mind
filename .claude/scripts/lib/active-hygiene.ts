@@ -620,7 +620,7 @@ export function newNoteClusterCandidate(
 
 export function formatClusterHint(cluster: TopicCluster): string {
 	return [
-		`🗂️  This note joins ${cluster.files.length - 1} loose sibling(s) in active/ sharing "${cluster.token}": ${cluster.files.join(", ")}.`,
+		`🗂️  This note joins ${cluster.files.length - 1} loose sibling(s) in active/ sharing "${cluster.token}": ${namesCapped(cluster.files)}.`,
 		"Convention: once a workstream has >1 note it gets a folder (active/<Topic>/, `git mv`, mirror the folder in archive/ later).",
 		"Token overlap is BLIND — judge whether these genuinely share context before grouping; if they don't, say so and move on.",
 	].join("\n");
@@ -660,6 +660,12 @@ function listCapped<T>(items: readonly T[], render: (item: T) => string): string
 	return lines;
 }
 
+/** A cluster's file names on one line, capped the same way. */
+export function namesCapped(names: readonly string[]): string {
+	const shown = names.slice(0, HYGIENE_LIST_CAP).join(", ");
+	return names.length > HYGIENE_LIST_CAP ? `${shown}, … and ${names.length - HYGIENE_LIST_CAP} more` : shown;
+}
+
 /**
  * Render the report as markdown lines for hook output. Returns [] when the
  * vault is clean, so callers can skip emitting a section entirely.
@@ -697,7 +703,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		lines.push(
 			"⚠️  Loose active/ notes that look like one topic — consider a folder (active/<Topic>/):",
 		);
-		lines.push(...listCapped(ungroupedClusters, ({ token, files }) => `   - "${token}": ${files.join(", ")}`));
+		lines.push(...listCapped(ungroupedClusters, ({ token, files }) => `   - "${token}": ${namesCapped(files)}`));
 	}
 
 	if (oversizedNotes.length > 0) {

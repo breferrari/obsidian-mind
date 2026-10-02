@@ -24,6 +24,7 @@ import {
 	formatActiveHygiene,
 	formatClusterHint,
 	formatMonolithHint,
+	namesCapped,
 	isMonolithExempt,
 	newNoteClusterCandidate,
 	parseMemoryRoot,
@@ -455,6 +456,16 @@ describe("scanActiveHygiene — detectors", () => {
 		assert.match(over, /11 note\(s\) past the/);
 		assert.equal(over.match(/^ {3}- … and 1 more$/gm)?.length, 3, "one count line per list");
 		assert.doesNotMatch(over, /Done 10\.md|topic10|Big 10\.md/);
+	});
+
+	test("a cluster's file names are capped on its line and in the write-time hint (#254)", () => {
+		const files = Array.from({ length: HYGIENE_LIST_CAP + 3 }, (_, i) => `n${i}.md`);
+		assert.equal(namesCapped(files.slice(0, HYGIENE_LIST_CAP)), files.slice(0, HYGIENE_LIST_CAP).join(", "));
+		assert.match(namesCapped(files), /, n9\.md, … and 3 more$/);
+		const hint = formatClusterHint({ token: "topic", files });
+		assert.match(hint, /joins 12 loose sibling\(s\)/, "the count stays whole");
+		assert.match(hint, /… and 3 more\./);
+		assert.doesNotMatch(hint, /n10\.md/);
 	});
 
 	test("missing folders produce an empty report, not errors", () => {

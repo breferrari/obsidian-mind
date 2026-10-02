@@ -21,7 +21,9 @@ export function take(stdout: string, n: number): string {
  * With a budget, the meter also reports the ceiling and names any section
  * that was collapsed to stay under it. Silence about a collapse would be
  * worse than the bloat: a session would silently lose context and never
- * know. Called with one argument the output is byte-identical to before.
+ * know. For the same reason it says when a configured budget was clamped to
+ * the hook output cap, and when the output was cut to fit it (#254). Called
+ * with one argument the output is byte-identical to before.
  */
 export function formatInjectionSize(
 	bytes: number,
@@ -244,9 +246,14 @@ export function fitHookOutput(
 	const whole = `${body}\n${meter(false, Buffer.byteLength(body, "utf-8"))}\n`;
 	if (whole.length <= cap) return whole;
 	const room = cap - `\n${CUT_LINE}\n\n${meter(true, Buffer.byteLength(body, "utf-8"))}\n`.length;
-	let head = body.slice(0, Math.max(0, room));
+	// A meter that cannot fit beside any body is itself cut: never in practice
+	// (it is a few hundred characters), but the cap must hold for any input.
+	if (room < 0) return `${meter(true, 0).slice(0, Math.max(0, cap - 1))}\n`;
+	let head = body.slice(0, room);
 	const lastBreak = head.lastIndexOf("\n");
-	head = lastBreak >= 0 ? head.slice(0, lastBreak) : "";
+	if (lastBreak >= 0) head = head.slice(0, lastBreak);
+	// No line to cut on: keep the partial line, minus any half of a surrogate pair.
+	else if (/[\uD800-\uDBFF]$/.test(head)) head = head.slice(0, -1);
 	const kept = `${head}\n${CUT_LINE}\n`;
 	return `${kept}\n${meter(true, Buffer.byteLength(kept, "utf-8"))}\n`;
 }

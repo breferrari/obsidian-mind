@@ -1259,6 +1259,26 @@ describe("fitHookOutput", () => {
 		assert.equal(out.length, 499);
 	});
 
+	test("a body with no line to cut on keeps the partial line, filling the cap exactly", () => {
+		const out = fitHookOutput("x".repeat(2_000), (cut) => (cut ? "_m cut_" : "_m_"), 500);
+		assert.equal(out.length, 500);
+		assert.ok(out.startsWith("x".repeat(100)), "the partial line is kept, not dropped");
+	});
+
+	test("a partial line never ends in half of a surrogate pair", () => {
+		// Each emoji is two UTF-16 units; one of the two parities lands mid-pair.
+		for (const cap of [500, 501]) {
+			const out = fitHookOutput("😀".repeat(1_000), (cut) => (cut ? "_m cut_" : "_m_"), cap);
+			assert.ok(out.length <= cap);
+			assert.doesNotThrow(() => encodeURIComponent(out), `a lone surrogate at cap ${cap}`);
+		}
+	});
+
+	test("a meter longer than the cap is cut too: the cap holds for any input", () => {
+		const out = fitHookOutput("a\nb\n", () => "m".repeat(600), 500);
+		assert.ok(out.length <= 500, `output is ${out.length} characters`);
+	});
+
 	test("the meter reports the size of what was kept, not of the whole body", () => {
 		const body = "x\n".repeat(1_000);
 		const out = fitHookOutput(body, meter, 300);
