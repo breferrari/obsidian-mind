@@ -28,7 +28,6 @@
  * agent-specific argument.
  */
 
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,6 +45,7 @@ import {
 } from "./lib/active-hygiene.ts";
 import { parseInfraRootFilenames } from "./lib/session-start.ts";
 import { claimChanged } from "./lib/hint-state.ts";
+import { reportKey } from "./lib/report-key.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
 const DEBOUNCE_MS = 30_000;
@@ -119,15 +119,10 @@ const message =
 
 // Numbers that move with no new drift to act on: a note growing past the
 // threshold, an item a day older. They stay in the message but not in the
-// comparison, or a note the agent keeps appending to would re-show the report
-// every turn — the #252 repeat by another route.
+// report's identity, and neither does the order they sort findings into
+// (lib/report-key.ts), or a note the agent keeps appending to would re-show
+// the report every turn — the #252 repeat by another route.
 const VOLATILE_FIELDS = new Set(["sizeKb", "ageDays", "oldestDays"]);
-
-/** What identifies a report: the checklist and which findings exist, not their ages or sizes. */
-function reportKey(): string {
-	const findings = JSON.stringify(report, (k, v) => (VOLATILE_FIELDS.has(k) ? undefined : v));
-	return createHash("sha256").update(checklist + "\n" + findings).digest("hex").slice(0, 16);
-}
 
 // SessionEnd (and any input without a recognisable event, the safe default)
 // always reports. Stop reports when the findings differ from the last report
@@ -139,7 +134,7 @@ const show =
 	input?.hook_event_name !== "Stop" ||
 	typeof sessionId !== "string" ||
 	!sessionId ||
-	claimChanged(STATE_PATH, sessionId, reportKey());
+	claimChanged(STATE_PATH, sessionId, reportKey({ checklist, report }, VOLATILE_FIELDS));
 
 if (show) writeSystemMessage(message);
 else writeSilentHookOutput();

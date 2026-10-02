@@ -8,12 +8,13 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
-	mkdtempSync,
 	mkdirSync,
-	writeFileSync,
+	mkdtempSync,
+	rmSync,
 	utimesSync,
+	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
 	MONOLITH_BYTES,
@@ -511,5 +512,33 @@ describe("formatActiveHygiene", () => {
 		assert.match(text, /SPLIT/);
 		assert.match(text, new RegExp(`${OPEN_LOOP_DAYS}\\+ days`));
 		assert.doesNotMatch(text, /om-intake/); // silent segment omitted
+	});
+});
+
+describe("open loops — a capped list keeps its membership as time passes", () => {
+	test("two loops that floor to the same day do not swap across the cap hours later", () => {
+		// Ages 20.9d and 20.1d both floor to 20 and tie; twelve hours later they
+		// floor to 21 and 20. Sorted on floored days, which loop takes the last
+		// slot flips with nothing new; on raw time the older one always wins.
+		const root = mkdtempSync(join(tmpdir(), "open-loop-cap-"));
+		try {
+			const day = 24 * 60 * 60 * 1000;
+			const now = Date.UTC(2026, 6, 13);
+			const aged = (rel: string, ageDays: number) => {
+				const full = join(root, rel);
+				mkdirSync(dirname(full), { recursive: true });
+				writeFileSync(full, "watch for regression\n");
+				const t = new Date(now - ageDays * day);
+				utimesSync(full, t, t);
+			};
+			for (const n of ["One", "Two", "Three", "Four"]) aged(`work/incidents/${n}.md`, 40);
+			aged(`work/incidents/Zed.md`, 20.9);
+			aged(`work/incidents/Abe.md`, 20.1);
+			const at = (t: number) => ((r: string, t: number) => scanActiveHygiene(r, t, DEFAULTS))(root, t).openLoops.map((l) => l.path).sort();
+			assert.deepEqual(at(now), at(now + day / 2));
+			assert.ok(at(now).includes(`work/incidents/Zed.md`));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

@@ -196,6 +196,21 @@ describe("stop-checklist", () => {
 		assert.deepEqual(envelopeOf(second.stdout), {});
 	});
 
+	test("two oversized notes trading places by size does not re-show the report", () => {
+		// The scan lists oversized notes largest first. Growing the smaller one
+		// past the larger reorders the list; the findings are the same notes.
+		const root = vault("two-growing");
+		mkdirSync(join(root, "notes"), { recursive: true });
+		writeFileSync(join(root, "notes/A.md"), "x".repeat(30_000));
+		writeFileSync(join(root, "notes/B.md"), "x".repeat(26_000));
+		const state = freshState();
+		const first = run(stop("s-two-grow"), { vault: root, state });
+		writeFileSync(join(root, "notes/B.md"), "x".repeat(34_000));
+		const second = run(stop("s-two-grow"), { vault: root, state });
+		assert.match(systemMessageOf(first.stdout), /notes\/A\.md \(30KB\)[\s\S]*notes\/B\.md \(26KB\)/);
+		assert.deepEqual(envelopeOf(second.stdout), {});
+	});
+
 	test("a new session reports again even when nothing changed", () => {
 		const root = vault("new-session", "Done.md");
 		const state = freshState();

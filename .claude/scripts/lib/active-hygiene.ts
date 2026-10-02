@@ -250,6 +250,8 @@ function findOpenLoops(
 	}
 
 	const out: OpenLoop[] = [];
+	// Raw timestamps for the sort below: floored day counts tie and then swap.
+	const mtimes = new Map<string, number>();
 	// Overlapping configured dirs (e.g. "work" + "work/meetings") must not
 	// scan a file twice — duplicates would crowd the cap.
 	for (const rel of [...new Set(candidates)]) {
@@ -274,10 +276,11 @@ function findOpenLoops(
 		if (ageDays < OPEN_LOOP_DAYS) continue;
 		const openItems = countOpenLoops(content, config.sectionRe);
 		if (openItems === 0) continue;
+		mtimes.set(rel, mtimeMs);
 		out.push({ path: rel, ageDays, openItems });
 	}
 	// Oldest first, capped — surface the longest-dead loops, stay quiet-ish.
-	return out.sort((a, b) => b.ageDays - a.ageDays).slice(0, OPEN_LOOP_CAP);
+	return out.sort((a, b) => (mtimes.get(a.path) ?? 0) - (mtimes.get(b.path) ?? 0) || a.path.localeCompare(b.path)).slice(0, OPEN_LOOP_CAP);
 }
 
 // ---------------------------------------------------------------------------
