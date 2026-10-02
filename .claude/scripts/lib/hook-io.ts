@@ -74,7 +74,8 @@ export function writeHookOutput(
 				: { hookEventName, additionalContext: context },
 	});
 	const overhead = (policies: readonly PolicyResult[]) => JSON.stringify(envelope("", policies)).length - 2;
-	const minimum = JSON.stringify(CUT_MARKER).length - 2;
+	// The smallest context fitEncoded can return is the marker, quotes included.
+	const minimum = JSON.stringify(CUT_MARKER).length;
 	const policies = policyResults && overhead(policyResults) + minimum <= HOOK_OUTPUT_MAX_CHARS ? policyResults : [];
 	process.stdout.write(JSON.stringify(envelope(fitEncoded(additionalContext, HOOK_OUTPUT_MAX_CHARS - overhead(policies)), policies)));
 }

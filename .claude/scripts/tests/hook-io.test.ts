@@ -166,6 +166,17 @@ describe("writeHookOutput — additionalContext fits the hook output cap (#254)"
 		assert.equal((JSON.parse(out) as { hookSpecificOutput: { policyResults: unknown[] } }).hookSpecificOutput.policyResults.length, 3);
 	});
 
+	test("at every policy size near the edge, the whole stdout stays within the cap", () => {
+		// Sweeps the boundary where the context's room is about the marker's size,
+		// which a single large fixture cannot reach.
+		const shell = JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: "", policyResults: [{ policy_id: "r", path: "", classification: "c", action: "warn" }] } }).length;
+		for (let pathLen = HOOK_OUTPUT_MAX_CHARS - shell - 80; pathLen <= HOOK_OUTPUT_MAX_CHARS - shell + 5; pathLen++) {
+			const policy: PolicyResult[] = [{ policy_id: "r", path: "p".repeat(pathLen), classification: "c", action: "warn" }];
+			const out = captureStdout(() => writeHookOutput("PostToolUse", "x".repeat(20_000), policy));
+			assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `policy path ${pathLen}: stdout is ${out.length} characters`);
+		}
+	});
+
 	test("policy results too large to fit beside any context are dropped, never carried over the cap", () => {
 		const policy: PolicyResult[] = Array.from({ length: 3 }, (_, i) => ({ policy_id: `rule-${i}`, path: `notes/${"y".repeat(4_000)}.md`, classification: "misplaced", action: "warn" }));
 		const out = captureStdout(() => writeHookOutput("PostToolUse", "x".repeat(20_000), policy));
