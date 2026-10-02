@@ -47,7 +47,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,6 +105,20 @@ export function lastLine(text: string): string {
 export function quotes(answer: string, expected: string): boolean {
 	const bare = (s: string) => s.replace(/[`"“”*_]/g, "").replace(/\s+/g, " ").trim();
 	return bare(expected) !== "" && bare(answer).includes(bare(expected));
+}
+
+/**
+ * Whether a text carries enough of the line to rebuild it: the whole line, or
+ * any of its sizes (`15.2kB`, `20.0kB`) in any wording. Used where the line
+ * must not travel (a compaction summary, a subagent's prompt); stricter than
+ * `quotes` on purpose, since there a false alarm costs a rerun and a miss
+ * costs a false PASS.
+ */
+export function carries(text: string, expected: string): boolean {
+	if (quotes(text, expected)) return true;
+	const sizes = expected.match(/\d+(?:\.\d+)?\s*kB/gi) ?? [];
+	const squeezed = text.replace(/\s+/g, "");
+	return sizes.some((size) => squeezed.includes(size.replace(/\s+/g, "")));
 }
 
 /** One Agent call: what the main loop asked for, and what came back. */
@@ -240,6 +254,8 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 	let sessionProblem: string | null = null;
 	if (options.withMod && outputs.some((out) => out.trim() !== "")) sessionProblem = "the settings hook printed the context: the mod did not deliver it";
 	if (!options.withMod && !(turns[0]?.sessionStartOutputs ?? []).some((out) => out.trim() !== "")) sessionProblem = "the settings hook printed nothing at startup";
+	// Every sent step yields exactly one result (2.1.288, /compact and /clear included); more means a turn nobody sent, and every pairing after it is wrong.
+	if (turns.length > steps.length) sessionProblem ??= "the session ran a turn nobody sent";
 	let carried: string | null = null; // a preparing step that failed spoils the checkpoint after it
 	steps.forEach((step, i) => {
 		const turn = turns[i];
@@ -247,7 +263,7 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 		if (!turn) problem ??= ending === "timeout" ? "the turn timed out" : ending === "extra-turn" ? "the session ran a turn nobody sent" : "the session ended before this turn";
 		else if (turn.error) problem ??= `the turn failed (${turn.error})`;
 		else if (step.kind === "compact" && !turn.compacted) problem ??= "/compact left no compact_boundary event";
-		else if (step.kind === "compact" && turn.summaries.some((summary) => quotes(summary, expected))) problem ??= "the /compact summary itself carried the line";
+		else if (step.kind === "compact" && turn.summaries.some((summary) => carries(summary, expected))) problem ??= "the /compact summary itself carried the line";
 		else if (step.kind === "clear" && !turn.reset) problem ??= "/clear left no conversation_reset event";
 		else if (step.kind === "ask" && turn.tools.length > 0) problem ??= `the answer used tools (${turn.tools.join(", ")})`;
 		else if (step.kind === "ask-subagent") {
@@ -255,7 +271,7 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 			if (calls.length !== 1 || calls[0]!.report === null) problem ??= "no single subagent answered: the main loop answered itself";
 			else if (turn.tools.some((name) => name !== "Agent")) problem ??= `the main loop used tools (${turn.tools.join(", ")})`;
 			else if (calls[0]!.type !== "general-purpose") problem ??= `the subagent was ${calls[0]!.type ?? "of no stated type"}, not general-purpose`;
-			else if (quotes(calls[0]!.prompt, expected)) problem ??= "the main loop handed the line to the subagent in its prompt";
+			else if (carries(calls[0]!.prompt, expected)) problem ??= "the main loop handed the line to the subagent in its prompt";
 			else if (calls[0]!.toolUses === null) problem ??= "the subagent's tool count was not reported";
 			else if (calls[0]!.toolUses > 0 || turn.subagentToolUses > 0) problem ??= `the subagent used ${Math.max(calls[0]!.toolUses, turn.subagentToolUses)} tool(s)`;
 		}
@@ -317,10 +333,18 @@ export function buildFixture(breakage: Breakage, notes = FIXTURE_NOTES): string 
 }
 
 /** The folders Claude Code keeps for a session run in `vault`: its project transcripts and its temp task folder. */
-export function sessionDirs(vault: string, env: NodeJS.ProcessEnv = process.env): string[] {
-	const slug = vault.replace(/[^A-Za-z0-9-]/g, "-");
-	if (!slug.includes("om-delivery-gate-")) return [];
-	return [join(env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", slug), join(tmpdir(), "claude", slug)];
+export function sessionDirs(vault: string, env: NodeJS.ProcessEnv = process.env, real: (path: string) => string = realOrSame): string[] {
+	// The path as created and as resolved (macOS's /var is /private/var): Claude Code may slug either.
+	const slugs = [...new Set([vault, real(vault)].map((path) => path.replace(/[^A-Za-z0-9-]/g, "-")))].filter((slug) => slug.includes("om-delivery-gate-"));
+	return slugs.flatMap((slug) => [join(env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", slug), join(tmpdir(), "claude", slug)]);
+}
+
+function realOrSame(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return path;
+	}
 }
 
 export function removeFixture(vault: string): void {

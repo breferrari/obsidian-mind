@@ -110,6 +110,25 @@ describe("delivery gate: verdicts", () => {
 		assert.match(v.why, /settings hook printed/);
 	});
 
+	test("with the mod, a settings hook that printed only at the compaction still spoils the session", () => {
+		const verdicts = run(continued, continuedStream({ compact: [hookPrinted("## Session Context ..."), compacted, summary("OK.")] }));
+		assert.deepEqual(verdicts.map((v) => v.outcome), ["INVALID", "INVALID", "INVALID"]);
+		for (const v of verdicts) assert.match(v.why, /settings hook printed/);
+	});
+
+	test("a summary that carried the line in other words spoils the checkpoint after it", () => {
+		const v = run(continued, continuedStream({ compact: [stoodDown, compacted, summary("The context said 15.9kB of a 20.0kB budget.")] }))[0]!;
+		assert.match(v.why, /summary itself carried/);
+	});
+
+	test("a turn nobody sent spoils the session, even when it ended normally", () => {
+		const extra = continuedStream({ compact: [stoodDown, compacted, summary("OK."), done, said("an unsent turn")] });
+		for (const v of run(continued, extra)) {
+			assert.equal(v.outcome, "INVALID");
+			assert.match(v.why, /turn nobody sent/);
+		}
+	});
+
 	test("without the mod, a settings hook that printed nothing means nothing was delivered", () => {
 		const v = run(startup, stream(stoodDown, said(METER), done), { withMod: false })[0]!;
 		assert.equal(v.outcome, "INVALID");
@@ -146,6 +165,7 @@ describe("delivery gate: the subagent checkpoint", () => {
 
 	test("a subagent handed the line in its prompt is invalid", () => {
 		assert.match(subagentVerdict([agentCall(`${SUBAGENT_TASK} The line is ${METER}.`), handedBack(METER)]).why, /handed the line/);
+		assert.match(subagentVerdict([agentCall(`${SUBAGENT_TASK} Hint: it mentions 15.9kB.`), handedBack(METER)]).why, /handed the line/, "a size alone is enough to rebuild it");
 	});
 
 	test("a subagent that used tools, or whose tool count was not reported, is invalid", () => {
@@ -218,6 +238,8 @@ describe("delivery gate: self-test and environment", () => {
 		assert.equal(dirs.length, 2);
 		assert.ok(dirs[0]!.endsWith("C--Temp-om-delivery-gate-AbC123"));
 		assert.ok(dirs[0]!.includes("projects"));
-		assert.deepEqual(sessionDirs("/home/me/vault", {}), [], "never a folder that is not a gate fixture's");
+		assert.deepEqual(sessionDirs("/home/me/vault", {}, (p) => p), [], "never a folder that is not a gate fixture's");
+		const both = sessionDirs("/var/folders/om-delivery-gate-x", { CLAUDE_CONFIG_DIR: "/cfg" }, () => "/private/var/folders/om-delivery-gate-x");
+		assert.equal(both.length, 4, "the created and the resolved path are both slugged");
 	});
 });
