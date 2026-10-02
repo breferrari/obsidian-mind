@@ -92,15 +92,18 @@ export function answersByTurn(streamJson: string): string[] {
 	return answers;
 }
 
+/** Brain notes added to the fixture; see buildFixture. */
+const FIXTURE_NOTES = 110;
+
 /** A throwaway vault: the template's tracked files plus brain notes enough to put the context well past the hook cap. */
-function buildFixture(selfTest: boolean): string {
+export function buildFixture(selfTest: boolean, notes = FIXTURE_NOTES): string {
 	const vault = mkdtempSync(join(tmpdir(), "om-delivery-gate-"));
 	const tracked = spawnSync("git", ["-C", REPO, "ls-files", "-z"], { encoding: "utf8" }).stdout.split("\0").filter(Boolean);
 	for (const file of tracked) {
 		mkdirSync(dirname(join(vault, file)), { recursive: true });
 		cpSync(join(REPO, file), join(vault, file));
 	}
-	for (let i = 1; i <= 150; i++) {
+	for (let i = 1; i <= notes; i++) {
 		const n = String(i).padStart(2, "0");
 		writeFileSync(
 			join(vault, "brain", `Gate Rule ${n}.md`),
@@ -119,7 +122,7 @@ function buildFixture(selfTest: boolean): string {
 }
 
 /** What session-start.ts prints in the fixture, as the hook (`startup`) or as the mod's run (`deliver`). */
-function contextOf(vault: string, deliver: boolean): string {
+export function contextOf(vault: string, deliver: boolean): string {
 	const run = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", "--experimental-strip-types", join(vault, ".claude/scripts/session-start.ts")], {
 		cwd: vault,
 		input: JSON.stringify({ source: "startup", ...(deliver ? { om_mod: "deliver" } : {}) }),
@@ -179,8 +182,11 @@ async function main(): Promise<void> {
 	try {
 		const delivered = contextOf(vault, true);
 		const hooked = contextOf(vault, false);
-		// Well past the cap, so a cut anywhere near it shows as a different last line.
-		if (delivered.length <= 15_000) throw new Error(`fixture too small to test the cap: ${delivered.length} characters`);
+		// Well past the hook cap, so a cut anywhere near it shows as a different
+		// last line; and whole, not collapsed under the instruction budget, or
+		// the gate would be checking a pointer.
+		if (delivered.length <= 12_000) throw new Error(`fixture too small to test the cap: ${delivered.length} characters`);
+		if (lastLine(delivered).includes("collapsed")) throw new Error(`fixture past the instruction budget, so the context collapsed: ${lastLine(delivered)}`);
 
 		const verdicts: Verdict[] = [];
 		const withMod = plan(true);
