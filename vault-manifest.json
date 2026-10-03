@@ -1,7 +1,7 @@
 {
   "template": "obsidian-mind",
-  "version": "8.6.0",
-  "released": "2026-10-02",
+  "version": "9.0.0",
+  "released": "2026-10-03",
   "qmd_index": "",
   "qmd_min_version": "2.0.0",
   "open_loop_dirs": [
@@ -217,6 +217,16 @@
       "exists": [
         ".claude/agents/correction-sweep.md",
         ".claude/commands/om-correct.md"
+      ],
+      "missing": [
+        ".claude/skills/obsidian-mind/.claude-plugin/plugin.json"
+      ]
+    },
+    "v9.0": {
+      "exists": [
+        ".claude/skills/obsidian-mind/.claude-plugin/plugin.json",
+        ".claude/skills/obsidian-mind/types/index.d.ts",
+        ".claude/skills/obsidian-mind/hooks/context.ts"
       ]
     }
   },

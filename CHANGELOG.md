@@ -1,5 +1,17 @@
 # Changelog
 
+## v9.0.0 — 2026-10-03
+
+### Added
+- show the Stop report as one line under the answer through the mod
+- deliver session context as an instruction file through a Claude Code mod
+- add om_mod flags to session-start and stop-checklist
+
+### Fixed
+- find the vault root in hook commands after /cd
+- keep hook tests off the real QMD sentinel
+- fail waiting qmd calls when the client's stdin breaks, instead of crashing
+
 ## v8.6.0 — 2026-10-02
 
 ### Fixed
