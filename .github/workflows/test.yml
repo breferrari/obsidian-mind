@@ -52,7 +52,10 @@ jobs:
       - name: No test wrote outside its temp dir
         shell: bash
         run: |
-          residue=$(git status --porcelain --untracked-files=all)
+          # --ignored too: the QMD debounce sentinel is gitignored, so a test
+          # that wrote the real one would pass a plain status. node_modules is
+          # the CI-only typecheck install, the one ignored tree a run may leave.
+          residue=$(git status --porcelain --untracked-files=all --ignored | grep -v '/node_modules/' || true)
           if [ -n "$residue" ]; then
             echo "::error::the test run left files behind in the working tree"
             echo "$residue"

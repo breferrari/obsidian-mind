@@ -18,10 +18,22 @@
  * about timing rather than defects in what was under test: a cleanup that
  * cannot delete a temp tree, and a fixed sleep standing in for a condition.
  * Both shapes recur across suites, so the reasoning lives here once.
+ *
+ * Every hook that writes or stops refreshes QMD through a debounce sentinel
+ * beside the scripts. A test that names no sentinel of its own gets
+ * TEST_SENTINEL instead, touched before each spawn: the real one is never
+ * written, and a sentinel that fresh keeps the refresh debounced, so no test
+ * starts a real index update of the checkout it runs in.
  */
 
 import { spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const SENTINEL_DIR = mkdtempSync(join(tmpdir(), "om-test-sentinel-"));
+export const TEST_SENTINEL = join(SENTINEL_DIR, ".qmd-refresh-sentinel");
+process.on("exit", () => rmSync(SENTINEL_DIR, { recursive: true, force: true }));
 import { resolve } from "node:path";
 
 export function hostPath(literal: string): string {
@@ -45,6 +57,8 @@ export function runScript(
 			: typeof stdin === "string"
 				? stdin
 				: JSON.stringify(stdin);
+	const env = { ...process.env, QMD_REFRESH_SENTINEL: TEST_SENTINEL, ...envOverrides };
+	if (env.QMD_REFRESH_SENTINEL === TEST_SENTINEL) writeFileSync(TEST_SENTINEL, "");
 	const proc = spawnSync(
 		process.execPath,
 		[
@@ -56,9 +70,7 @@ export function runScript(
 			input,
 			encoding: "utf-8",
 			timeout: 10_000,
-			env: envOverrides
-				? { ...process.env, ...envOverrides }
-				: process.env,
+			env,
 		},
 	);
 	return {
