@@ -379,14 +379,14 @@ describe("session-start — the hook output cap", () => {
  * always the full layer, held to its own budget, never cut to the hook cap.
  */
 describe("session-start — om_mod (a Claude Code mod)", () => {
-	test("standdown prints nothing and runs no side effect", () => {
+	test("standdown prints nothing, yet still exports VAULT_PATH: only a hook process gets CLAUDE_ENV_FILE", () => {
 		const envFile = join(TMP_DIR, "env-standdown.sh");
 		writeFileSync(envFile, "");
 		const { stdout, stderr, code } = spawnHook(SCRIPT, { source: "startup", om_mod: "standdown" }, { CLAUDE_PROJECT_DIR: TMP_DIR, CLAUDE_ENV_FILE: envFile });
 		assert.equal(code, 0);
 		assert.equal(stderr, "");
 		assert.equal(stdout, "", "the mod delivers this event; the hook must add nothing");
-		assert.equal(readFileSync(envFile, "utf-8"), "", "no VAULT_PATH export: side effects belong to the mod's own run");
+		assert.match(readFileSync(envFile, "utf-8"), /VAULT_PATH/, "the mod's run cannot write the env file, so this run must");
 	});
 
 	test("without the flag the same run does write VAULT_PATH (the standdown check above can fail)", () => {
@@ -443,10 +443,11 @@ describe("session-start — om_mod (a Claude Code mod)", () => {
 		assert.ok(plain.stdout.includes("### Date"));
 	});
 
-	test("standdown exits before every side effect: it never reaches the project directory", () => {
-		// Every side effect (VAULT_PATH, the QMD preflight and spawn, the scans)
-		// comes after the chdir into the project directory. A missing directory
-		// makes that chdir throw, so only a run that left before it exits clean.
+	test("standdown exits before every other side effect: it never reaches the project directory", () => {
+		// Every side effect but the VAULT_PATH export (the QMD preflight and
+		// spawn, the scans) comes after the chdir into the project directory. A
+		// missing directory makes that chdir throw, so only a run that left
+		// before it exits clean.
 		const missing = join(TMP_DIR, "no-such-vault");
 		const plain = spawnHook(SCRIPT, { source: "startup" }, { CLAUDE_PROJECT_DIR: missing });
 		assert.notEqual(plain.code, 0, "without the flag the run reaches the chdir and fails");

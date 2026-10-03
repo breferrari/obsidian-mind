@@ -23,7 +23,7 @@
  */
 
 /**
- * - `standdown`: the mod delivers this event; print nothing, do nothing.
+ * - `standdown`: the mod delivers this event; print nothing and do nothing, except what only a hook process can do (session-start exports VAULT_PATH to CLAUDE_ENV_FILE, which the mod's run never receives).
  * - `deliver`: the mod delivers this output as an instruction file, not as
  *   hook output, so the hook-output cap does not apply.
  * - `report`: return the Stop report as data for the mod to present.

@@ -107,16 +107,6 @@ async function readHookInput(): Promise<HookInput | null> {
 }
 const hookInput = await readHookInput();
 
-// A Claude Code mod that delivers this layer itself flags the event it
-// passes down (lib/om-mod.ts): stand down before any side effect, since the
-// mod's own run of this script performs them. `deliver` is that run: the
-// output becomes an instruction file, which compaction keeps whole, so it is
-// always the full layer and is not held under the hook-output cap.
-const omMod = readOmMod(hookInput);
-if (omMod === "standdown") process.exit(0);
-const delivering = omMod === "deliver";
-const mode = delivering ? "full" : injectionMode(hookInput?.source);
-
 function readManifestRaw(): string | null {
 	try {
 		return readFileSync("vault-manifest.json", { encoding: "utf-8" });
@@ -126,7 +116,6 @@ function readManifestRaw(): string | null {
 }
 
 const cwd = resolveProjectDir(process.cwd());
-process.chdir(cwd);
 
 // Persist vault path for any downstream shell consumers (Claude Code feature).
 // The whole line comes from formatEnvExport so quoting is not a step anyone
@@ -141,6 +130,21 @@ if (envFile) {
 		/* best-effort — session continues even if persistence fails */
 	}
 }
+
+// A Claude Code mod that delivers this layer itself flags the event it
+// passes down (lib/om-mod.ts): stand down before every other side effect,
+// since the mod's own run of this script performs them. The export above is
+// the exception: Claude Code gives CLAUDE_ENV_FILE to hook processes only, so
+// the mod's run never sees it and this run is the only one that can write it.
+// `deliver` is the mod's run: the output becomes an instruction file, which
+// compaction keeps whole, so it is always the full layer and is not held
+// under the hook-output cap.
+const omMod = readOmMod(hookInput);
+if (omMod === "standdown") process.exit(0);
+const delivering = omMod === "deliver";
+const mode = delivering ? "full" : injectionMode(hookInput?.source);
+
+process.chdir(cwd);
 
 // Manifest is read once and reused: QMD's named index, the infrastructure
 // allowlist for openTasks(), and any future manifest-driven sections all
