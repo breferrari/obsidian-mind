@@ -7,14 +7,28 @@
  * An empty value counts as unset (`||`, not `??`): an empty string is never
  * a usable root, and treating it as one resolved paths against "".
  *
- * The fallback is the caller's. Every hook passes the working directory:
- * the hook commands themselves resolve their script through
- * `${*_PROJECT_DIR:-.}`, so when the variable is unset the hook only runs at
- * all if cwd is the vault. Not to be confused with qmd-refresh.ts's
- * resolveVaultRoot, which ignores these variables on purpose (a detached
- * worker anchors to its own location), or with mcp-context.ts's, which
- * reads the MCP server's own vault-path override.
+ * The fallback is the caller's. Every hook passes the working directory.
+ * The Codex and Gemini hook commands resolve their script through
+ * `${*_PROJECT_DIR:-.}`, so there a hook only runs at all when the variable
+ * or cwd names the vault root. The Claude commands walk up from
+ * `${CLAUDE_PROJECT_DIR:-.}` instead (below). Not to be confused with
+ * qmd-refresh.ts's resolveVaultRoot, which ignores these variables on purpose
+ * (a detached worker anchors to its own location), or with mcp-context.ts's,
+ * which reads the MCP server's own vault-path override.
+ *
+ * The directory named is not always the vault root (#263). Claude Code sets
+ * CLAUDE_PROJECT_DIR to the folder the session was launched in and does not
+ * update it on `/cd`, so a session started in a vault subfolder and moved to
+ * the root with `/cd` loads the root's hooks while the variable still names
+ * the subfolder. So the result walks up from the named directory to the
+ * nearest one holding `vault-manifest.json`, and falls back to the named
+ * directory itself when there is none above it (a script run outside a
+ * vault keeps today's behaviour). The Claude hook commands do the same walk
+ * in the shell, to find the script at all.
  */
+
+import { statSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const PROJECT_DIR_VARS = [
 	"CLAUDE_PROJECT_DIR",
@@ -22,13 +36,27 @@ const PROJECT_DIR_VARS = [
 	"GEMINI_PROJECT_DIR",
 ] as const;
 
-export function resolveProjectDir(
-	fallback: string,
-	env: NodeJS.ProcessEnv = process.env,
-): string {
-	for (const name of PROJECT_DIR_VARS) {
-		const value = env[name];
-		if (value) return value;
+/** The file whose presence marks a vault root. */
+export const VAULT_MARKER = "vault-manifest.json";
+
+/** A regular file, as the hook commands' `[ -f ]` tests: a directory of that name is not a vault. */
+const holdsMarker = (dir: string): boolean => {
+	try {
+		return statSync(join(dir, VAULT_MARKER), { throwIfNoEntry: false })?.isFile() ?? false;
+	} catch {
+		return false;
 	}
-	return fallback;
+};
+
+export function resolveProjectDir(fallback: string, env: NodeJS.ProcessEnv = process.env): string {
+	const named = PROJECT_DIR_VARS.map((name) => env[name]).find(Boolean) ?? fallback;
+	return nearestVaultRoot(named) ?? named;
+}
+
+/** `dir` or the nearest ancestor that is a vault root, or null when none is. */
+export function nearestVaultRoot(dir: string): string | null {
+	for (let current = dir; ; current = dirname(current)) {
+		if (holdsMarker(current)) return current;
+		if (dirname(current) === current) return null;
+	}
 }

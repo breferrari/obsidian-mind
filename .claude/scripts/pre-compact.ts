@@ -4,7 +4,8 @@
  * compacts its context so lost history can be rehydrated from disk if
  * needed. Keeps the most recent 30 backups; older ones are pruned.
  *
- * Backups land in `${CLAUDE_PROJECT_DIR}/thinking/session-logs/` named
+ * Backups land in the vault root's `thinking/session-logs/` (the root found
+ * by lib/project-dir.ts) named
  * `session_<trigger>_<YYYYMMDD_HHMMSS>.jsonl`.
  */
 
