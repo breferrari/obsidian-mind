@@ -50,9 +50,16 @@ async function runScript($: EngineInterface, root: string, script: string, input
 
 export const register: Register = (on) => {
 	on("classic.SessionStart", async ($, e, next) => {
-		// Cleared first: if this run fails, the settings hook delivers fresh
-		// output and no earlier context may ride beside it.
-		await update($, sessionContext, () => null);
+		// If this run fails, the settings hook runs instead. At a start that
+		// begins a conversation it prints the full layer, so the old context is
+		// cleared first (and the render redrawn) or it would ride beside the
+		// fresh one. At a compaction it prints only a pointer, trusting the
+		// static half to be in the conversation already; under the mod it never
+		// was, so there the last good context is kept rather than lost.
+		if (e.source !== "compact") {
+			await update($, sessionContext, () => null);
+			$.ui.invalidate("prompt.context");
+		}
 		const root = await $.session.root();
 		const text = await runScript($, root, "session-start.ts", { ...e, om_mod: "deliver" });
 		await update($, sessionContext, () => text);

@@ -44,7 +44,7 @@ describe("session context (#265)", () => {
 
 		// What prompt.context will add, and the re-render that makes it add it.
 		expect(lastContext(seen)).toBe(CONTEXT);
-		expect(seen.invalidated).toEqual(["prompt.context"]);
+		expect(seen.invalidated).toEqual(["prompt.context", "prompt.context"], "redrawn when cleared, and again with the new context");
 	});
 
 	test("a run that fails after one that worked clears the old context, so it cannot ride beside fresh hook output", async ($, on) => {
@@ -59,6 +59,20 @@ describe("session context (#265)", () => {
 		expect(seen.runs.length).toBe(2);
 		expect(seen.passedDown[1]?.["om_mod"]).toBe(undefined);
 		expect(lastContext(seen)).toBe(null);
+		expect(seen.invalidated).toEqual(["prompt.context", "prompt.context", "prompt.context"]);
+	});
+
+	test("a compaction whose run fails keeps the last good context: the hook's fallback there is only a pointer", async ($, on) => {
+		let fail = false;
+		const seen = vault(on, () => (fail ? { exitCode: 1, stdout: "" } : { exitCode: 0, stdout: CONTEXT }));
+
+		await $.classic.SessionStart({ source: "startup" });
+		fail = true;
+		await $.classic.SessionStart({ source: "compact" });
+
+		expect(seen.runs.length).toBe(2);
+		expect(seen.passedDown[1]?.["om_mod"]).toBe(undefined);
+		expect(lastContext(seen)).toBe(CONTEXT);
 	});
 
 	test("a context-file write that never settles does not hold up delivery", async ($, on) => {
