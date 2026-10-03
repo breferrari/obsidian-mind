@@ -46,14 +46,7 @@ export function resolveProjectDir(
 	env: NodeJS.ProcessEnv = process.env,
 	isVaultRoot: (dir: string) => boolean = holdsMarker,
 ): string {
-	let named = fallback;
-	for (const name of PROJECT_DIR_VARS) {
-		const value = env[name];
-		if (value) {
-			named = value;
-			break;
-		}
-	}
+	const named = PROJECT_DIR_VARS.map((name) => env[name]).find(Boolean) ?? fallback;
 	return nearestVaultRoot(named, isVaultRoot) ?? named;
 }
 

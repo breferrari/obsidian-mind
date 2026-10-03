@@ -73,7 +73,7 @@ describe("resolveProjectDir — finds the vault root above the named folder", ()
 		try {
 			mkdirSync(join(vault, "work", "deep"), { recursive: true });
 			writeFileSync(join(vault, VAULT_MARKER), "{}");
-			assert.equal(VAULT_MARKER, "vault-manifest.json");
+			assert.equal(VAULT_MARKER, "vault-manifest.json", "the hook commands in settings.json look for this same literal");
 			assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: join(vault, "work", "deep") }), vault);
 			assert.equal(nearestVaultRoot(join(vault, "work")), vault);
 		} finally {
