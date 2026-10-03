@@ -206,3 +206,29 @@ describe("writeStopReportData", () => {
 		assert.equal(parsed.report.agentText.length, agentText.length);
 	});
 });
+
+describe("writeStopReportData on a pipe that writes in parts", () => {
+	test("short writes and a full pipe still deliver every byte, in order", async () => {
+		const { writeStopReportData } = await import("../lib/hook-io.ts");
+		const out: Buffer[] = [];
+		let calls = 0;
+		const write = (buffer: Buffer, offset: number, length: number): number => {
+			calls++;
+			if (calls === 2) throw Object.assign(new Error("full"), { code: "EAGAIN" });
+			const n = Math.min(length, 7);
+			out.push(buffer.subarray(offset, offset + n));
+			return n;
+		};
+		writeStopReportData({ key: "k", claims: ["a claim"], agentText: "the full report, longer than one short write" }, write);
+		const parsed = JSON.parse(Buffer.concat(out).toString("utf8")) as { report: { agentText: string } };
+		assert.equal(parsed.report.agentText, "the full report, longer than one short write");
+	});
+
+	test("any failure but a full pipe throws, so the mod falls back", async () => {
+		const { writeStopReportData } = await import("../lib/hook-io.ts");
+		const write = (): number => {
+			throw Object.assign(new Error("closed"), { code: "EPIPE" });
+		};
+		assert.throws(() => writeStopReportData({ key: "k", claims: [], agentText: "t" }, write), /closed/);
+	});
+});

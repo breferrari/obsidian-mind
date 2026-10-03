@@ -239,11 +239,14 @@ export function writeSilentHookOutput(): void {
  * a run that printed no usable report as failed and lets the settings hook
  * run in its place, which a silently truncated report would not trigger.
  */
-export function writeStopReportData(report: { readonly key: string; readonly claims: readonly string[]; readonly agentText: string }): void {
+export function writeStopReportData(
+	report: { readonly key: string; readonly claims: readonly string[]; readonly agentText: string },
+	write: (buffer: Buffer, offset: number, length: number) => number = (buffer, offset, length) => writeSync(1, buffer, offset, length),
+): void {
 	const bytes = Buffer.from(JSON.stringify({ report }), "utf8");
 	for (let offset = 0; offset < bytes.length; ) {
 		try {
-			offset += writeSync(1, bytes, offset, bytes.length - offset);
+			offset += write(bytes, offset, bytes.length - offset);
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "EAGAIN") throw error;
 		}
