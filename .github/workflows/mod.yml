@@ -17,6 +17,8 @@ on:
     paths: &mod-paths
       - '.claude/skills/obsidian-mind/**'
       - '.claude/scripts/**'
+      # The README check below reads every README's hooks and calls lines.
+      - 'README*.md'
       - '.github/workflows/mod.yml'
   pull_request:
     paths: *mod-paths

@@ -7,12 +7,26 @@ on:
       - '.claude/scripts/**'
       - '.scripts/**'
       - '.shardmind/**'
+      # Suites here also guard files outside .claude/scripts/: the mod's
+      # timeouts against settings.json, plugin.json's version against the
+      # manifest, the hook commands' walk-up, and the delivery gate's judge.
+      - '.claude/skills/obsidian-mind/**'
+      - '.claude/settings.json'
+      - '.github/scripts/**'
+      - 'vault-manifest.json'
       - '.github/workflows/test.yml'
   pull_request:
     paths:
       - '.claude/scripts/**'
       - '.scripts/**'
       - '.shardmind/**'
+      # Suites here also guard files outside .claude/scripts/: the mod's
+      # timeouts against settings.json, plugin.json's version against the
+      # manifest, the hook commands' walk-up, and the delivery gate's judge.
+      - '.claude/skills/obsidian-mind/**'
+      - '.claude/settings.json'
+      - '.github/scripts/**'
+      - 'vault-manifest.json'
       - '.github/workflows/test.yml'
 
 jobs:
