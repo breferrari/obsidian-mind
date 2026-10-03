@@ -1,0 +1,10 @@
+{
+  "name": "obsidian-mind",
+  "version": "8.6.0",
+  "description": "Delivers obsidian-mind's session context as an instruction file, so it survives compaction whole and reaches subagents. The vault's settings hooks stand down for each event it handles and run as before wherever it does not load.",
+  "author": {
+    "name": "Brenno Ferrari",
+    "url": "https://github.com/breferrari/obsidian-mind"
+  },
+  "types": "./types/index.d.ts"
+}

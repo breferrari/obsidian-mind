@@ -51,7 +51,7 @@ Do not register the raw `qmd` server in a consuming repo — it searches every n
 
 ## What's Claude Code-specific
 
-Only the `~/.claude/` auto-memory loader is truly Claude Code-specific. Everything else — hooks, commands, subagent prompts, vault memory — is portable.
+Two things are Claude Code-specific: the `~/.claude/` auto-memory loader, and the `obsidian-mind` mod in `.claude/skills/obsidian-mind/`, which on Claude Code 2.1.287+ delivers the session context as an instruction file and presents the Stop report. Neither is needed elsewhere: the mod only changes how the settings hooks' output reaches a Claude Code session, and every other agent runs those same hooks directly. Everything else (hooks, commands, subagent prompts, vault memory) is portable.
 
 ## Setup
 

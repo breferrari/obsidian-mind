@@ -203,6 +203,25 @@ QMDは**3つの小さなモデルをローカルで**実行します。設定す
 > [!TIP]
 > ただ話すだけ。フックがルーティングを処理します。
 
+### 🧩 Claude Code の mod
+
+Claude Code 2.1.287 以降では、ボールトは mod も同梱しています。`.claude/skills/obsidian-mind/` にある、Claude Code の内部で動くプラグインです。ボールト自身のフックスクリプトを実行し、その出力がセッションに届く経路だけを変えます。
+
+- **セッションコンテキストは、`CLAUDE.md` と同じく instruction ファイルとして届きます。** コンパクションや `/clear` の後もそのまま全体が読み直され（フック出力ではポインタに縮みます）、汎用サブエージェントにも届き（フック出力は届きません）、Claude Code のフック出力の 10,000 文字制限で切られません。予算は `vault-manifest.json` の `eager_layer_instruction_budget_bytes` です。オープンタスクのように縮まないセクションは、それを超えることがあります。`/memory` には `.claude/session-context.md` として表示されます。
+
+mod は処理するイベントごとに、対応するフックに待機を伝えます。mod が読み込まれない場所では、フックはこれまでどおり動きます。Codex と Gemini、古い Claude Code、ボールトのサブフォルダで始めたセッション（ボールトのルートで起動するか、そこへ `/cd` して `/clear`）、信頼していないフォルダです。mod は、ボールトに対する Claude Code の信頼確認を承認した後にだけ読み込まれます。
+
+mod はサンドボックス化されておらず、あなたの権限で動くコードです。フォルダを信頼する前に内容を確認してください。`claude plugin validate .claude/skills/obsidian-mind` が、フックするイベントと行う呼び出しをすべて一覧にします（ボールト自身のスクリプトを実行し、コンテキストファイルを書くだけです）。無効にするには、`.claude/settings.local.json` に `"enabledPlugins": { "obsidian-mind@skills-dir": false }` を追加します。
+
+<!-- mod-validate:start -->
+この版の mod で、その出力のうち確認すべき 2 行は次のとおりです：
+
+```text
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context
+  ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.session.root, $.state.get, $.state.set, $.ui.invalidate
+```
+<!-- mod-validate:end -->
+
 ### ⚡ トークン効率
 
 obsidian-mindはボールト全体をコンテキストに読み込み**ません**。階層型ローディングでトークンコストを抑えます：
@@ -421,7 +440,7 @@ templates/              YAMLフロントマター付きObsidianテンプレー�
   commands/             18個のスラッシュコマンド
   agents/               9個のサブエージェント
   scripts/              フックスクリプト + charcount.tsユーティリティ
-  skills/               Obsidian + QMDスキル
+  skills/               Obsidian + QMDスキル、obsidian-mind mod
   settings.json         5つのフック設定
 
 .scripts/                ボールトレベルのツール — QMDブートストラップ（新規クローン時に一度実行）

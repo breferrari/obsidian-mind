@@ -142,6 +142,9 @@ jobs:
           if [ -f .shardmind/shard.yaml ]; then
             git add .shardmind/shard.yaml
           fi
+          if [ -f .claude/skills/obsidian-mind/.claude-plugin/plugin.json ]; then
+            git add .claude/skills/obsidian-mind/.claude-plugin/plugin.json
+          fi
           # A resumed run finds the changelog and manifests already at $VERSION,
           # so nothing stages and `git commit` exits 1 — which under `bash -e`
           # killed the job here rather than at whatever actually failed. Ask the
@@ -203,6 +206,17 @@ jobs:
             echo "shard.yaml=$shard"
             if [ "$shard" != "$want" ]; then
               echo "::error::Tagged shard.yaml version=$shard, expected $want"
+              exit 1
+            fi
+          fi
+
+          # The mod's plugin.json carries the template's version too (optional, like shard.yaml).
+          plugin_path=".claude/skills/obsidian-mind/.claude-plugin/plugin.json"
+          if git cat-file -e "$VERSION:$plugin_path" 2>/dev/null; then
+            plugin=$(git show "$VERSION:$plugin_path" | sed -n 's/.*"version":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+            echo "plugin.json=$plugin"
+            if [ "$plugin" != "$want" ]; then
+              echo "::error::Tagged plugin.json version=$plugin, expected $want"
               exit 1
             fi
           fi

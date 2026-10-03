@@ -210,6 +210,25 @@ Five lifecycle hooks handle routing automatically:
 > [!TIP]
 > You just talk. The hooks handle the routing.
 
+### 🧩 The Claude Code mod
+
+On Claude Code 2.1.287 or later, the vault also ships a mod: `.claude/skills/obsidian-mind/`, a plugin whose code runs inside Claude Code. It runs the vault's own hook scripts and changes only how their output reaches the session:
+
+- **Session context arrives as an instruction file**, the way `CLAUDE.md` does. It is re-read whole after compaction and `/clear` (as hook output it shrinks to a pointer), it reaches general-purpose subagents (hook output never does), and it is not cut at Claude Code's 10,000-character hook limit. Its budget is `eager_layer_instruction_budget_bytes` in `vault-manifest.json`; sections that never shrink, such as open tasks, can still take it past that. `/memory` lists it as `.claude/session-context.md`.
+
+For each event it handles, the mod tells the matching hook to stand down. Wherever the mod does not load, the hooks run exactly as before: Codex and Gemini, older Claude Code, a session started in a vault subfolder (launch from the vault root, or `/cd` there and `/clear`), or a folder you have not trusted. It loads only after you accept Claude Code's trust prompt for the vault.
+
+A mod is unsandboxed code that runs with your permissions, so check what it does before trusting the folder: `claude plugin validate .claude/skills/obsidian-mind` lists every event it hooks and every call it makes (it runs the vault's own scripts and writes the context file, nothing else). To turn it off, add `"enabledPlugins": { "obsidian-mind@skills-dir": false }` to `.claude/settings.local.json`.
+
+<!-- mod-validate:start -->
+The two lines that matter in its output, for this version of the mod:
+
+```text
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context
+  ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.session.root, $.state.get, $.state.set, $.ui.invalidate
+```
+<!-- mod-validate:end -->
+
 ### ⚡ Token Efficiency
 
 obsidian-mind does **not** dump your entire vault into context. It uses tiered loading to keep token costs low:
@@ -518,7 +537,7 @@ templates/              Obsidian templates with YAML frontmatter
   commands/             18 slash commands
   agents/               9 subagents
   scripts/              Hook scripts + charcount.ts utility
-  skills/               Obsidian + QMD skills
+  skills/               Obsidian + QMD skills, and the obsidian-mind mod
   settings.json         5 hooks configuration
 
 .scripts/                Vault-level tooling — QMD bootstrap (run once on a fresh clone)

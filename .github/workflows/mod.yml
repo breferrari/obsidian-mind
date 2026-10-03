@@ -1,0 +1,81 @@
+name: Mod
+
+# The Claude Code mod in .claude/skills/obsidian-mind/ is checked by Claude
+# Code itself: `plugin validate --strict` reads its manifest and module the way
+# the engine will and refuses what the engine would, and `plugin test` runs its
+# *.test.ts files against the real engine.
+#
+# Pushes and pull requests use a pinned CLI, so main never turns red without a
+# change in the repo. A weekly run uses the latest CLI: the mod API is young
+# and moves between releases, and a break should show there first.
+
+on:
+  push:
+    branches: [main]
+    # The mod runs the vault's hook scripts, so any change under
+    # .claude/scripts/ (lib/ included) can change what it delivers.
+    paths: &mod-paths
+      - '.claude/skills/obsidian-mind/**'
+      - '.claude/scripts/**'
+      # The README check below reads every README's hooks and calls lines.
+      - 'README*.md'
+      - '.github/workflows/mod.yml'
+  pull_request:
+    paths: *mod-paths
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+env:
+  # The version the mod is known to work on; the weekly run overrides it.
+  CLAUDE_CODE_VERSION: ${{ github.event_name == 'schedule' && 'latest' || '2.1.288' }}
+
+jobs:
+  mod:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code (CI-only, not shipped)
+        shell: bash
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && claude --version
+      - name: Validate the mod
+        shell: bash
+        run: claude plugin validate --strict .claude/skills/obsidian-mind
+      - name: Every README shows the hooks and calls validate reports
+        shell: bash
+        run: |
+          # The READMEs quote these two lines so a user can check the mod before
+          # trusting the folder; a mod that gains a hook or a call must say so.
+          out=$(claude plugin validate .claude/skills/obsidian-mind 2>&1 | sed 's/\x1b\[[0-9;]*m//g')
+          for kind in hooks calls; do
+            line=$(printf '%s\n' "$out" | grep "register.ts $kind:" | sed 's/^[[:space:]]*//' | tr -d '\r')
+            [ -n "$line" ] || { echo "::error::validate printed no $kind line"; exit 1; }
+            for readme in README.md README.ja.md README.ko.md README.zh-CN.md; do
+              # The whole line, not a substring: a README listing an extra call
+              # would otherwise still contain the true line and pass.
+              # A here-string, not a pipe: grep -q exits at its first match, and
+              # under pipefail the tr it leaves writing fails a README that matches.
+              grep -qxF -- "$line" <<<"$(sed 's/^[[:space:]]*//' "$readme" | tr -d '\r')" || { echo "::error::$readme does not show: $line"; exit 1; }
+            done
+          done
+      - name: Test the mod
+        shell: bash
+        run: claude plugin test .claude/skills/obsidian-mind
+      - name: The checks left nothing behind
+        shell: bash
+        run: |
+          # --ignored too: the engine's typings and tsconfig are gitignored, and
+          # a check that writes them should still be seen.
+          residue=$(git status --porcelain --ignored --untracked-files=all)
+          if [ -n "$residue" ]; then
+            echo "::error::checking the mod left files behind in the working tree"
+            echo "$residue"
+            exit 1
+          fi

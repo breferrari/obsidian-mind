@@ -451,6 +451,38 @@ function updateShardYaml(version: string): void {
 	writeFileSync(path, bumpShardYamlVersion(content, version), { encoding: "utf-8" });
 }
 
+/** Where the template's Claude Code mod declares its version. */
+export const PLUGIN_JSON = ".claude/skills/obsidian-mind/.claude-plugin/plugin.json";
+
+/**
+ * Set the mod's `version` in its plugin.json to the release version. The mod
+ * ships inside the template, so it carries the template's version; Claude
+ * Code's strict validation requires the field, and a release owns it like it
+ * owns vault-manifest.json and shard.yaml. Key order and formatting are kept.
+ */
+export function bumpPluginJsonVersion(content: string, version: string): string {
+	const plugin = JSON.parse(content) as Record<string, unknown>;
+	if (typeof plugin["version"] !== "string") {
+		throw new Error("plugin.json has no string `version` — refusing to write.");
+	}
+	plugin["version"] = normalizeVersion(version);
+	return JSON.stringify(plugin, null, 2) + "\n";
+}
+
+function updatePluginJson(version: string): void {
+	let content: string;
+	try {
+		content = readFileSync(PLUGIN_JSON, { encoding: "utf-8" });
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+			process.stderr.write(`${PLUGIN_JSON} not present — skipping the mod's version bump.\n`);
+			return;
+		}
+		throw err;
+	}
+	writeFileSync(PLUGIN_JSON, bumpPluginJsonVersion(content, version), { encoding: "utf-8" });
+}
+
 function main(): void {
 	const version = process.argv[2];
 	if (!version) {
@@ -480,6 +512,7 @@ function main(): void {
 	prependToChangelog(section, version);
 	updateManifest(version, prevTag);
 	updateShardYaml(version);
+	updatePluginJson(version);
 
 	// Print section for GitHub Release body
 	process.stdout.write(section);
