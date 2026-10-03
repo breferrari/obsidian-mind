@@ -1,4 +1,4 @@
-import type { test } from "claude-code/testing";
+import { mock, type test } from "claude-code/testing";
 
 // The engine and the vault beneath the mod, for the plugin tests. Each test's
 // `on` hooks sit below the mod; these stand in for the host's calls and for
@@ -17,7 +17,7 @@ export type World = {
 	/** Each script the mod ran: its argv and init (cwd, env, stdin). */
 	runs: Array<{ argv: readonly string[]; init?: { cwd?: string; env?: Record<string, string>; stdin?: string } }>;
 	/** Each settings-hook event the mod passed down, by event name. */
-	passedDown: Record<"SessionStart", Array<Record<string, unknown>>>;
+	passedDown: Record<"SessionStart" | "Stop", Array<Record<string, unknown>>>;
 	writes: Array<{ path: string; text: string }>;
 	invalidated: string[];
 };
@@ -28,8 +28,10 @@ export type World = {
  * never settle, to prove delivery does not wait on it.
  */
 export function engine(on: On, reply: () => Reply, options: { hangFirstWrite?: boolean } = {}): World {
-	const world: World = { runs: [], passedDown: { SessionStart: [] }, writes: [], invalidated: [] };
+	const world: World = { runs: [], passedDown: { SessionStart: [], Stop: [] }, writes: [], invalidated: [] };
 	on("session.root", () => ({ value: ROOT }));
+	// The plugin's own key-value store, kept in memory for the test.
+	mock.store(on);
 	on("process.run", (_$, e) => {
 		world.runs.push(e as World["runs"][number]);
 		const { exitCode, stdout, stderr = "", truncated = false } = reply();
@@ -46,6 +48,10 @@ export function engine(on: On, reply: () => Reply, options: { hangFirstWrite?: b
 	});
 	on("classic.SessionStart", (_$, e) => {
 		world.passedDown.SessionStart.push(e as unknown as Record<string, unknown>);
+		return {};
+	});
+	on("classic.Stop", (_$, e) => {
+		world.passedDown.Stop.push(e as unknown as Record<string, unknown>);
 		return {};
 	});
 	return world;

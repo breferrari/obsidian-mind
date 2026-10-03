@@ -212,14 +212,14 @@ Claude Code 2.1.287 이상에서는 볼트가 mod도 함께 제공합니다. `.c
 
 mod는 처리하는 이벤트마다 해당 훅에 대기하라고 알립니다. mod가 로드되지 않는 곳에서는 훅이 이전과 똑같이 동작합니다. Codex와 Gemini, 이전 버전의 Claude Code, 볼트 하위 폴더에서 시작한 세션(볼트 루트에서 실행하거나, 그곳으로 `/cd`한 뒤 `/clear`), 신뢰하지 않은 폴더입니다. mod는 볼트에 대한 Claude Code의 신뢰 확인을 수락한 뒤에만 로드됩니다.
 
-mod는 샌드박스 없이 사용자의 권한으로 실행되는 코드이므로, 폴더를 신뢰하기 전에 내용을 확인하세요. `claude plugin validate .claude/skills/obsidian-mind`가 훅하는 모든 이벤트와 수행하는 모든 호출을 나열합니다(볼트 자체의 스크립트를 실행하고, 컨텍스트 파일을 쓰고, 긴급한 발견 사항이 있으면 프롬프트를 보내는 것이 전부입니다). 끄려면 `.claude/settings.local.json`에 `"enabledPlugins": { "obsidian-mind@skills-dir": false }`를 추가하세요.
+mod는 샌드박스 없이 사용자의 권한으로 실행되는 코드이므로, 폴더를 신뢰하기 전에 내용을 확인하세요. `claude plugin validate .claude/skills/obsidian-mind`가 훅하는 모든 이벤트와 수행하는 모든 호출을 나열합니다(볼트 자체의 스크립트를 실행하고, 컨텍스트 파일을 쓰고, 각 세션에 어떤 보고서를 보여 줬는지 자체 저장소에 기록하고, 긴급한 발견 사항이 있으면 프롬프트를 보내는 것이 전부입니다). 끄려면 `.claude/settings.local.json`에 `"enabledPlugins": { "obsidian-mind@skills-dir": false }`를 추가하세요.
 
 <!-- mod-validate:start -->
 이 버전의 mod에서 출력 중 확인할 두 줄은 다음과 같습니다:
 
 ```text
-  ❯ ./register.ts hooks: classic.SessionStart, prompt.context
-  ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.session.root, $.state.get, $.state.set, $.ui.invalidate
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context, classic.Stop, turn.complete, prompt.submit
+  ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.prompt.submit, $.session.root, $.state.get, $.state.set, $.store.get (via setShown, shownFor), $.store.set (via setShown), $.ui.invalidate
 ```
 <!-- mod-validate:end -->
 

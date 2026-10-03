@@ -1,4 +1,4 @@
-import type { PromptOrigin } from 'claude-code'
+import type { PromptOrigin } from "claude-code";
 
 /**
  * The Stop report as the mod receives it from `stop-checklist.ts` run with
@@ -6,33 +6,33 @@ import type { PromptOrigin } from 'claude-code'
  */
 export type StopReport = {
 	/** The report's identity: the same findings give the same key. */
-	readonly key: string
+	readonly key: string;
 	/** One short claim per finding, e.g. "1 note(s) marked done but still in active/". */
-	readonly claims: readonly string[]
+	readonly claims: readonly string[];
 	/** The full report, prefaced for the agent. */
-	readonly agentText: string
+	readonly agentText: string;
 	/**
 	 * Set only for a finding that should not wait for the person's next
 	 * message. The template's report has no such class today; a vault that adds
 	 * one (say, an agent artifact in an unpushed commit) gets an immediate turn.
 	 */
-	readonly urgent?: string
-}
+	readonly urgent?: string;
+};
 
 /** The report in `stop-checklist.ts`'s `report` output, or an error naming what was wrong. */
 export function parseStopReport(stdout: string): StopReport {
-	const report = (JSON.parse(stdout) as { report?: Partial<StopReport> }).report
+	const report = (JSON.parse(stdout) as { report?: Partial<StopReport> }).report;
 	if (
 		!report ||
-		typeof report.key !== 'string' ||
+		typeof report.key !== "string" ||
 		!Array.isArray(report.claims) ||
-		!report.claims.every((claim) => typeof claim === 'string') ||
-		typeof report.agentText !== 'string' ||
-		(report.urgent !== undefined && typeof report.urgent !== 'string')
+		!report.claims.every((claim) => typeof claim === "string") ||
+		typeof report.agentText !== "string" ||
+		(report.urgent !== undefined && typeof report.urgent !== "string")
 	) {
-		throw new Error(`stop-checklist.ts returned no usable report: ${stdout.slice(0, 200)}`)
+		throw new Error(`stop-checklist.ts returned no usable report: ${stdout.slice(0, 200)}`);
 	}
-	return { key: report.key, claims: report.claims, agentText: report.agentText, ...(report.urgent !== undefined ? { urgent: report.urgent } : {}) }
+	return { key: report.key, claims: report.claims, agentText: report.agentText, ...(report.urgent !== undefined ? { urgent: report.urgent } : {}) };
 }
 
 /**
@@ -41,8 +41,11 @@ export function parseStopReport(stdout: string): StopReport {
  * the mod's name (observed on 2.1.288: `obsidian-mind: …`).
  */
 export function summaryLine(report: StopReport): string {
-	const what = report.claims.length > 0 ? report.claims.join(' · ') : 'wrap-up checklist'
-	return `vault check: ${what} · the full report reaches the agent with the next message`
+	const what = report.claims.length > 0 ? report.claims.join(" · ") : "wrap-up checklist";
+	// The settings hook's wording (lib/stop-report.ts SUMMARY_TRAILER), except that an
+	// urgent finding sends the report at once, in a turn of its own.
+	const where = report.urgent === undefined ? "the full report reaches the agent with your next message" : "the full report goes to the agent now";
+	return `vault check: ${what} · ${where}`;
 }
 
 /**
@@ -51,7 +54,7 @@ export function summaryLine(report: StopReport): string {
  * after it rather than replacing it.
  */
 export function withLine(textBelow: string, answer: string, line: string): string {
-	return textBelow !== answer && textBelow.trim() !== '' ? `${textBelow}\n${line}` : line
+	return textBelow !== answer && textBelow.trim() !== "" ? `${textBelow}\n${line}` : line;
 }
 
 /**
@@ -61,10 +64,10 @@ export function withLine(textBelow: string, answer: string, line: string): strin
  * is not the person writing, and must not consume the report.
  */
 export function carriesReport(origin: PromptOrigin | undefined): boolean {
-	return fromPerson(origin) || (origin?.kind === 'plugin' && origin.name === 'obsidian-mind')
+	return fromPerson(origin) || (origin?.kind === "plugin" && origin.name === "obsidian-mind");
 }
 
 /** Whether the person sent this prompt: typed, over Remote Control, through the SDK, or as the session's owner pinging it from Slack. */
 export function fromPerson(origin: PromptOrigin | undefined): boolean {
-	return origin === undefined || origin.kind === 'composer' || origin.kind === 'bridge' || origin.kind === 'sdk' || origin.kind === 'slack-ping'
+	return origin === undefined || origin.kind === "composer" || origin.kind === "bridge" || origin.kind === "sdk" || origin.kind === "slack-ping";
 }
