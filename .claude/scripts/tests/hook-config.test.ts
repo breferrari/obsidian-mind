@@ -205,6 +205,17 @@ describe("hook config — Claude commands find the vault root from a subfolder (
 	const commands = eachNodeHookCommand(loadConfig(".claude/settings.json"));
 	const scriptOf = (command: string) => /\/\.claude\/scripts\/([a-z-]+\.ts)"$/.exec(command)?.[1] ?? "";
 
+	test("every command walks up with the same text: one rule, five copies that cannot drift", () => {
+		// JSON cannot share a snippet, so each command carries the walk-up. Each
+		// copy is also run below, but only this keeps one copy from quietly
+		// losing a branch (the fallback, say) that the run cases happen not to reach.
+		const walkOf = (command: string) => command.slice(0, command.indexOf("/.claude/scripts/"));
+		const walks = new Set(commands.map(({ command }) => walkOf(command)));
+		assert.equal(commands.length, 5);
+		assert.equal(walks.size, 1, `the walk-up differs between commands:\n${[...walks].join("\n")}`);
+		assert.match([...walks][0]!, /vault-manifest\.json/);
+	});
+
 	/**
 	 * The POSIX shells to run the commands under. On Windows that is Git Bash,
 	 * the shell Claude Code itself uses there: never a bare `bash`, which can
