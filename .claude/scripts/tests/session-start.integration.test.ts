@@ -388,7 +388,7 @@ describe("session-start — the hook output cap", () => {
 			assert.ok(bytes <= 12_000 + METER_HEADROOM, `stdout is ${bytes} bytes`);
 			// Cut on a line boundary, so up to one task line (about 1.5 KB) short of the limit.
 			assert.ok(bytes > 12_000 + METER_HEADROOM - 1_600, `the budget was used, not undercut: ${bytes} bytes`);
-			assert.ok(!stdout.includes("�"), "no character was split");
+			assert.ok(!stdout.includes("\uFFFD"), "no character was split");
 			assert.ok(stdout.includes("… (truncated to fit the instruction budget)"), "the cut is marked where it happened");
 			assert.match(lastLine(stdout), /^_context injected: .* \/ 12\.0kB budget( — collapsed: .*)? — truncated to fit the instruction budget_$/);
 		} finally {
