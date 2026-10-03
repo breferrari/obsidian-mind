@@ -652,6 +652,25 @@ export function expectationTracker(start: Expected, next: (n: number, before: Ex
 	};
 }
 
+/**
+ * The `result` events in the lines a chunk completes, and the line still
+ * arriving. Counting as lines complete keeps pacing linear in the transcript,
+ * and an event split across two chunks is counted once, when its line ends.
+ */
+export function countResults(pending: string, chunk: string): { results: number; pending: string } {
+	const lines = (pending + chunk).split("\n");
+	const rest = lines.pop() ?? "";
+	let results = 0;
+	for (const line of lines) {
+		try {
+			if ((JSON.parse(line) as { type?: string }).type === "result") results++;
+		} catch {
+			/* not an event line */
+		}
+	}
+	return { results, pending: rest };
+}
+
 /** How one session is run. */
 type SessionOptions = { readonly claude: string; readonly model: string; readonly withMod: boolean; readonly trustedDir?: string | undefined };
 
@@ -671,6 +690,8 @@ function session(
 		if (options.withMod && options.trustedDir === undefined) args.push("--plugin-dir", join(vault, ".claude/skills/obsidian-mind"));
 		const child = spawn(options.claude, args, { cwd: vault, env: fixtureEnv(vault), stdio: ["pipe", "pipe", "pipe"] });
 		let out = "";
+		let pending = ""; // the line still arriving
+		let results = 0;
 		let sent = 0;
 		let ending: Ending = "complete";
 		let exited = false;
@@ -698,7 +719,9 @@ function session(
 		child.stdout.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => {
 			out += chunk;
-			const results = (out.match(/"type":"result"/g) ?? []).length;
+			const counted = countResults(pending, chunk);
+			pending = counted.pending;
+			results += counted.results;
 			// A turn nobody sent (a plugin's own prompt) would pair every later step with the wrong turn.
 			if (results > sent) stop("extra-turn");
 			else if (results === sent) send();
@@ -783,10 +806,12 @@ export function selfTestOutcome(runs: ReadonlyArray<{ readonly breakage: Breakag
 }
 
 /** The issue `--file-issue` opens for a failing run. */
-export function issueBody(version: string, model: string, verdicts: readonly Verdict[]): string {
+export function issueBody(version: string, model: string, verdicts: readonly Verdict[], trusted: boolean): string {
 	const rows = verdicts.map((v) => `| ${v.checkpoint} | ${v.outcome} | ${v.why || "-"} |`).join("\n");
+	const loading = trusted ? "found in a trusted vault, as a user's is (--trusted-dir)" : "loaded with --plugin-dir";
+	const flags = trusted ? " --trusted-dir <an empty folder you trusted once in Claude Code>" : "";
 	return [
-		`The delivery gate failed on Claude Code ${version} (model ${model}): at least one checkpoint did not receive the current session context.`,
+		`The delivery gate failed on Claude Code ${version} (model ${model}, the mod ${loading}): at least one checkpoint did not receive the current session context.`,
 		"",
 		"| Checkpoint | Outcome | Why |",
 		"|---|---|---|",
@@ -795,8 +820,8 @@ export function issueBody(version: string, model: string, verdicts: readonly Ver
 		"Until this is resolved, do not recommend this Claude Code version. Reproduce with:",
 		"",
 		"```bash",
-		"node --experimental-strip-types .github/scripts/delivery-gate.ts --self-test",
-		"node --experimental-strip-types .github/scripts/delivery-gate.ts",
+		`node --experimental-strip-types .github/scripts/delivery-gate.ts${flags} --model ${model} --self-test`,
+		`node --experimental-strip-types .github/scripts/delivery-gate.ts${flags} --model ${model}`,
 		"```",
 		"",
 	].join("\n");
@@ -844,7 +869,7 @@ async function main(): Promise<void> {
 	if (invalid === 0 && failed === 0) console.log("\nEvery checkpoint received the current context, its middle and its end.");
 	if (failed > 0 && argv.includes("--file-issue")) {
 		const bodyFile = join(mkdtempSync(join(tmpdir(), "om-gate-issue-")), "body.md");
-		writeFileSync(bodyFile, issueBody(version, base.model, verdicts));
+		writeFileSync(bodyFile, issueBody(version, base.model, verdicts, trustedDir !== undefined));
 		const filed = spawnSync("gh", ["issue", "create", "--title", `Delivery gate fails on Claude Code ${version}`, "--body-file", bodyFile], {
 			cwd: REPO,
 			encoding: "utf8",

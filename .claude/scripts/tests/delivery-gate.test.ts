@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	buildFixture,
+	countResults,
 	carries,
 	expectationTracker,
 	expectedOf,
@@ -443,6 +444,17 @@ describe("delivery gate: self-test and environment", () => {
 		assert.match(env.npm_config_prefix ?? "", /\.gate-npm$/);
 	});
 
+	test("results are counted as their lines complete, once each, even split across chunks", () => {
+		const result = JSON.stringify({ type: "result", subtype: "success" });
+		const half = Math.floor(result.length / 2);
+		let state = countResults("", `${JSON.stringify({ type: "assistant" })}\n${result.slice(0, half)}`);
+		assert.deepEqual(state.results, 0, "half a line is not counted yet");
+		state = countResults(state.pending, `${result.slice(half)}\n${result}\n`);
+		assert.equal(state.results, 2);
+		assert.equal(state.pending, "");
+		assert.equal(countResults("", `${JSON.stringify({ type: "user", message: { content: '"type":"result"' } })}\n`).results, 0, "the words inside a message are not an event");
+	});
+
 	test("a trusted folder is used only when empty or the gate's own", () => {
 		const foreign = mkdtempSync(join(tmpdir(), "gate-foreign-"));
 		try {
@@ -463,10 +475,13 @@ describe("delivery gate: self-test and environment", () => {
 		const body = issueBody("2.1.300 (Claude Code)", "opus", [
 			{ checkpoint: "at startup", expected: METER, answer: "", outcome: "PASS", why: "" },
 			{ checkpoint: "after /compact", expected: METER, answer: "", outcome: "FAIL", why: "stale" },
-		]);
+		], true);
 		assert.match(body, /Claude Code 2\.1\.300/);
 		assert.match(body, /\| after \/compact \| FAIL \| stale \|/);
 		assert.match(body, /do not recommend this Claude Code version/);
+		assert.match(body, /found in a trusted vault/, "it says which loading path failed");
+		assert.match(body, /delivery-gate\.ts --trusted-dir .* --model opus --self-test/, "it reproduces with the same flags");
+		assert.doesNotMatch(issueBody("v", "opus", [], false), /--trusted-dir/, "a --plugin-dir run is reproduced without it");
 	});
 
 	test("cleanup targets only a fixture's own session folders", () => {
