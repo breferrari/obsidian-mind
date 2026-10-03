@@ -1,59 +1,28 @@
 import { describe, expect, test } from 'claude-code/testing'
 import { CONTEXT_BLOCK, withSessionContext } from './context.ts'
+import { engine, ROOT, type On, type Reply } from './world.ts'
 
 // Run with `claude plugin test .claude/skills/obsidian-mind`. Each test's own
 // `on` hooks sit beneath the mod and stand in for the engine and the vault.
 
-const ROOT = '/vault'
 const CONTEXT = '## Session Context\n\n### Date\n2026-10-03 (Saturday)\n\n_context injected: 0.1kB / 20.0kB budget_\n'
 
-type Seen = { runs: Array<{ argv: readonly string[]; init?: { cwd?: string; env?: Record<string, string>; stdin?: string } }>; writes: Array<{ path: string; text: string }>; passedDown: Array<Record<string, unknown>>; invalidated: string[]; context: unknown[] }
-
 /**
- * Record each value the mod stores as this session's context, and pass the
- * write on to the host. The kit's `$` has no state noun to read it back, so
- * the writes are what a test can see; the last one is what prompt.context reads.
+ * The world beneath the mod, plus every value the mod stores as this
+ * session's context. The kit's `$` has no state noun to read it back, so the
+ * writes are what a test can see; the last one is what prompt.context reads.
  */
-function watchContext(on: Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1], seen: Seen): void {
+function vault(on: On, script: Reply | (() => Reply), options: { hangFirstWrite?: boolean } = {}) {
+	const context: unknown[] = []
 	on('state.set', (_$, e, next) => {
 		const write = e as { plugin?: string; key?: string; value?: unknown }
-		if (write.plugin === 'obsidian-mind' && write.key === 'context') seen.context.push(write.value)
+		if (write.plugin === 'obsidian-mind' && write.key === 'context') context.push(write.value)
 		return next(e)
 	})
+	const world = engine(on, typeof script === 'function' ? script : () => script, options)
+	return { ...world, passedDown: world.passedDown.SessionStart, context }
 }
-const lastContext = (seen: Seen) => seen.context.at(-1) ?? null
-
-/** The world beneath the mod: the vault root, the script run, the file write and the settings hook. */
-function vault(
-	on: Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1],
-	script: { exitCode: number; stdout: string; stderr?: string } | (() => { exitCode: number; stdout: string; stderr?: string }),
-	options: { hangFirstWrite?: boolean } = {},
-): Seen {
-	const seen: Seen = { runs: [], writes: [], passedDown: [], invalidated: [], context: [] }
-	watchContext(on, seen)
-	// A call on `$` is answered `{ value }` (or `{ deny }`).
-	on('session.root', () => ({ value: ROOT }))
-	on('process.run', (_$, e) => {
-		seen.runs.push(e as Seen['runs'][number])
-		const reply = typeof script === 'function' ? script() : script
-		return { value: { exitCode: reply.exitCode, stdout: reply.stdout, stderr: reply.stderr ?? '', isStdoutTruncated: false, isStderrTruncated: false } }
-	})
-	on('fs.write', (_$, e) => {
-		seen.writes.push(e)
-		// A write that never settles, to prove delivery never waits on it.
-		if (options.hangFirstWrite && seen.writes.length === 1) return new Promise<never>(() => {})
-		return { value: undefined }
-	})
-	on('ui.invalidate', (_$, e) => {
-		seen.invalidated.push(e.event)
-		return { value: undefined }
-	})
-	on('classic.SessionStart', (_$, e) => {
-		seen.passedDown.push(e as unknown as Record<string, unknown>)
-		return {}
-	})
-	return seen
-}
+const lastContext = (seen: { context: unknown[] }) => seen.context.at(-1) ?? null
 
 describe('session context (#265)', () => {
 	test('runs the vault script in deliver mode, writes the context file, and stands the settings hook down', async ($, on) => {
