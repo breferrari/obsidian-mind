@@ -18,13 +18,12 @@ declare module "claude-code" {
 			/** Bumped by every start that begins another conversation (startup, /clear, resume, fork). */
 			generation: number;
 			/**
-			 * The report a prompt took, the prompt's text and the generation it was
-			 * taken in, until a turn starts with that prompt. Null when none is.
+			 * The report a prompt took, and the prompt's text, until a turn starts
+			 * with that prompt. Null when none is.
 			 */
 			inFlight: {
 				readonly text: string;
 				readonly record: { readonly sessionId: string; readonly key: string; readonly report: string; readonly line: string | null; readonly urgent: string | null };
-				readonly generation: number;
 			} | null;
 		};
 	}

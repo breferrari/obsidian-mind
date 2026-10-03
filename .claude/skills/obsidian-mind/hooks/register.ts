@@ -108,18 +108,12 @@ export const register: Register = (on) => {
 		// its `$.state`, and a report about another conversation must not ride
 		// the first prompt of this one, so what was queued is dropped.
 		if (e.source !== "compact") {
-			let dropped: Queued | null = null;
-			await update($, queued, (now) => {
-				dropped = now;
-				return null;
-			});
+			// A report dropped here was never marked delivered, so the session it
+			// was for gets it again at its next Stop; one it already had stays given.
+			await update($, queued, () => null);
 			await update($, urgentSpent, () => false);
 			await update($, generation, (now) => now + 1);
 			await update($, inFlight, () => null);
-			// A report dropped here never reached the agent, so the same findings
-			// show again in the session it was for; one it already has stays shown.
-			const lost: Queued | null = dropped;
-			if (lost !== null) await setShown($, lost.sessionId, null);
 			// If this run fails, the settings hook runs instead and prints the full
 			// layer, so the old context is cleared first (and the render redrawn)
 			// or it would ride beside the fresh one. At a compaction the hook
@@ -245,7 +239,7 @@ export const register: Register = (on) => {
 		};
 		// Held before `next`: the prompt's own turn can start inside `next`
 		// (observed on 2.1.288), and turn.start must find it there to count it run.
-		await update($, inFlight, () => ({ text: e.text, record, generation: startedIn }));
+		await update($, inFlight, () => ({ text: e.text, record }));
 		let entered: Awaited<ReturnType<typeof next>>;
 		try {
 			entered = await next({ ...e, context: [...(e.context ?? []), record.report] });
@@ -280,12 +274,9 @@ export const register: Register = (on) => {
 			const given = await shownFor($, waiting.record.sessionId);
 			if (given?.key === waiting.record.key) await setShown($, waiting.record.sessionId, { key: waiting.record.key, delivered: true });
 		} else {
-			let now = waiting.generation;
-			await update($, generation, (g) => {
-				now = g;
-				return g;
-			});
-			if (now === waiting.generation) await update($, queued, (current) => current ?? waiting.record);
+			// A start that begins another conversation clears what is in flight,
+			// so a prompt still held here is from this one.
+			await update($, queued, (current) => current ?? waiting.record);
 		}
 		return next(e);
 	});

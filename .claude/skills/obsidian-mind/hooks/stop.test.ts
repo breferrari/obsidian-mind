@@ -320,14 +320,15 @@ describe("the line under the answer (#266)", () => {
 		expect(world.submitted[1]?.context ?? []).toEqual([]);
 	});
 
-	test("what each session was shown is kept for the most recent sessions only", async ($, on) => {
-		const world = stopWorld(on, ok(report("k")));
-		for (let i = 0; i <= 20; i++) await $.classic.Stop({ stop_hook_active: false, session_id: `s${i}` });
-		// s0 is the oldest of 21: forgotten, so its findings show again; s20 is kept.
+	test("what each session was given is kept for the most recent sessions only", async ($, on) => {
+		// Twenty sessions already had report k; a twenty-first evicts the oldest, s1.
+		const shown = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`s${i + 1}`, { key: "k", delivered: true }]));
+		const world = stopWorld(on, ok(report("k")), { shown });
+		await $.classic.Stop({ stop_hook_active: false, session_id: "s21" });
 		await $.prompt.submit({ text: "drain" });
 		await $.classic.Stop({ stop_hook_active: false, session_id: "s20" });
 		await $.prompt.submit({ text: "kept" });
-		await $.classic.Stop({ stop_hook_active: false, session_id: "s0" });
+		await $.classic.Stop({ stop_hook_active: false, session_id: "s1" });
 		await $.prompt.submit({ text: "forgotten" });
 
 		expect(world.submitted[1]?.context ?? []).toEqual([]);
