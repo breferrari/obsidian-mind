@@ -193,3 +193,16 @@ describe("writeHookOutput — additionalContext fits the hook output cap (#254)"
 		assert.equal(out, '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"hello"}}');
 	});
 });
+
+describe("writeStopReportData", () => {
+	test("a report too large for one pipe write arrives whole", async () => {
+		const { spawnSync } = await import("node:child_process");
+		const lib = new URL("../lib/hook-io.ts", import.meta.url).href;
+		const agentText = "x".repeat(2_000_000);
+		const script = `import { writeStopReportData } from ${JSON.stringify(lib)}; writeStopReportData({ key: "k", claims: ["c"], agentText: "x".repeat(${agentText.length}) });`;
+		const run = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", "--experimental-strip-types", "--input-type=module", "-e", script], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+		assert.equal(run.status, 0, run.stderr);
+		const parsed = JSON.parse(run.stdout) as { report: { agentText: string } };
+		assert.equal(parsed.report.agentText.length, agentText.length);
+	});
+});

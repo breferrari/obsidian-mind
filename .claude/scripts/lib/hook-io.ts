@@ -220,19 +220,32 @@ export function writeStopFeedback(report: string, summary: string): void {
  * silent no-op into a non-zero exit, which the agent would report as a hook
  * failure — the exact class of bug this envelope exists to avoid.
  */
-/**
- * The Stop report as data, for the obsidian-mind mod's own run
- * (`om_mod: "report"`, lib/om-mod.ts). Not a hook envelope: the mod parses it
- * and decides what the user and the agent see.
- */
-export function writeStopReportData(report: { readonly key: string; readonly claims: readonly string[]; readonly agentText: string }): void {
-	writeSync(1, JSON.stringify({ report }));
-}
-
 export function writeSilentHookOutput(): void {
 	try {
 		writeSync(1, "{}");
 	} catch {
 		/* stdout gone — nothing to report it to */
+	}
+}
+
+/**
+ * The Stop report as data, for the obsidian-mind mod's own run
+ * (`om_mod: "report"`, lib/om-mod.ts). Not a hook envelope: the mod parses it
+ * and decides what the user and the agent see.
+ *
+ * Written whole: writeSync can return after part of a large buffer on a pipe,
+ * and can fail with EAGAIN when the pipe is full, so it loops until every
+ * byte is out, retrying a full pipe. Any other failure throws: the mod treats
+ * a run that printed no usable report as failed and lets the settings hook
+ * run in its place, which a silently truncated report would not trigger.
+ */
+export function writeStopReportData(report: { readonly key: string; readonly claims: readonly string[]; readonly agentText: string }): void {
+	const bytes = Buffer.from(JSON.stringify({ report }), "utf8");
+	for (let offset = 0; offset < bytes.length; ) {
+		try {
+			offset += writeSync(1, bytes, offset, bytes.length - offset);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EAGAIN") throw error;
+		}
 	}
 }
