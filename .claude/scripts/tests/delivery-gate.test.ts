@@ -6,19 +6,55 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { carries, expectationTracker, fixtureEnv, isCheckpoint, judge, meterSize, shifts, lastLine, parseTurns, plan, quotes, selfTestOutcome, sessionDirs, subagentReport, SUBAGENT_TASK, type Step, type Verdict } from "../../../.github/scripts/delivery-gate.ts";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+	buildFixture,
+	carries,
+	expectationTracker,
+	expectedOf,
+	fixtureEnv,
+	issueBody,
+	isCheckpoint,
+	judge,
+	meterSize,
+	shifts,
+	lastLine,
+	parseTurns,
+	plan,
+	quotes,
+	selfTestOutcome,
+	sessionDirs,
+	subagentReport,
+	SUBAGENT_TASK,
+	type Step,
+	type Verdict,
+} from "../../../.github/scripts/delivery-gate.ts";
 
 const METER = "_context injected: 15.9kB / 20.0kB budget_";
 
 /** Stream-json events, one per line. */
 const stream = (...events: object[]) => events.map((e) => JSON.stringify(e)).join("\n");
 const said = (text: string) => ({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text }] } });
-const called = (name: string, input: object = {}, id = `toolu_${name}`) => ({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", name, id, input }] } });
+const called = (name: string, input: object = {}, id = `toolu_${name}`) => ({
+	type: "assistant",
+	parent_tool_use_id: null,
+	message: { content: [{ type: "tool_use", name, id, input }] },
+});
 const agentCall = (prompt = SUBAGENT_TASK, subagent_type = "general-purpose") => called("Agent", { prompt, subagent_type });
 /** An Agent tool_result: the framed text for the model, plus the raw result Claude Code reports beside it. */
 const handedBack = (report: string, extra: { totalToolUseCount?: number; agentType?: string } = { totalToolUseCount: 0, agentType: "general-purpose" }) => ({
 	type: "user",
-	message: { content: [{ type: "tool_result", tool_use_id: "toolu_Agent", content: [{ type: "text", text: `[Subagent hand-back] The report follows:\n  ${report}\nagentId: a1 (use SendMessage)` }] }] },
+	message: {
+		content: [
+			{
+				type: "tool_result",
+				tool_use_id: "toolu_Agent",
+				content: [{ type: "text", text: `[Subagent hand-back] The report follows:\n  ${report}\nagentId: a1 (use SendMessage)` }],
+			},
+		],
+	},
 	tool_use_result: { status: "completed", content: [{ type: "text", text: report }], ...extra },
 });
 const hookPrinted = (stdout: string) => ({ type: "system", subtype: "hook_response", hook_event: "SessionStart", stdout });
@@ -35,13 +71,21 @@ type Part = "warm" | "compact" | "afterCompact" | "clear" | "subagent" | "clearA
 /** The continued session, turn by turn, each turn's events overridable. The mod stood the hook down at every start. */
 function continuedStream(over: Partial<Record<Part, object[]>> = {}): string {
 	return stream(
-		stoodDown, ...(over.warm ?? [said("OK")]), done,
-		...(over.compact ?? [stoodDown, compacted, summary("The user asked for OK.")]), done,
-		...(over.afterCompact ?? [said(METER)]), done,
-		...(over.clear ?? [stoodDown, reset]), done,
-		...(over.subagent ?? [agentCall(), handedBack(METER), said(METER)]), done,
-		...(over.clearAgain ?? [stoodDown, reset]), done,
-		...(over.afterClear ?? [said(METER)]), done,
+		stoodDown,
+		...(over.warm ?? [said("OK")]),
+		done,
+		...(over.compact ?? [stoodDown, compacted, summary("The user asked for OK.")]),
+		done,
+		...(over.afterCompact ?? [said(METER)]),
+		done,
+		...(over.clear ?? [stoodDown, reset]),
+		done,
+		...(over.subagent ?? [agentCall(), handedBack(METER), said(METER)]),
+		done,
+		...(over.clearAgain ?? [stoodDown, reset]),
+		done,
+		...(over.afterClear ?? [said(METER)]),
+		done,
 	);
 }
 
@@ -51,13 +95,40 @@ const subagentVerdict = (events: object[]) => run(continued, continuedStream({ s
 
 describe("delivery gate: plan and matching", () => {
 	test("startup is a session of its own; the subagent is asked straight after /clear, before the line is quoted again", () => {
-		assert.deepEqual(startup.map((s) => s.name), ["at startup"]);
-		assert.deepEqual(continued.map((s) => s.kind), ["warm", "compact", "ask", "clear", "ask-subagent", "clear", "ask"]);
-		assert.deepEqual(continued.filter(shifts).map((s) => s.kind), ["compact", "clear", "clear"], "every compact and clear shifts the fixture first");
-		assert.deepEqual(continued.filter(isCheckpoint).map((s) => s.name), ["after /compact", "from a subagent", "after /clear"], "only the questions are judged");
+		assert.deepEqual(
+			startup.map((s) => s.name),
+			["at startup"],
+		);
+		assert.deepEqual(
+			continued.map((s) => s.kind),
+			["warm", "compact", "ask", "clear", "ask-subagent", "clear", "ask"],
+		);
+		assert.deepEqual(
+			continued.filter(shifts).map((s) => s.kind),
+			["compact", "clear", "clear"],
+			"every compact and clear shifts the fixture first",
+		);
+		assert.deepEqual(
+			continued.filter(isCheckpoint).map((s) => s.name),
+			["after /compact", "from a subagent", "after /clear"],
+			"only the questions are judged",
+		);
 		assert.equal(continued[5]!.kind, "clear", "the subagent's answer is cleared away before the main loop is asked again");
 		assert.equal(continued[0]!.prompt.includes("_context"), false, "the warm-up must not put the line into the conversation");
-		assert.deepEqual(plan(false).flat().map((s) => s.name), ["without the mod, at startup"]);
+		assert.deepEqual(
+			plan(false)
+				.flat()
+				.filter(isCheckpoint)
+				.map((s) => s.name),
+			["without the mod, at startup", "without the mod, after /compact", "without the mod, after /clear"],
+		);
+		assert.equal(
+			plan(false)
+				.flat()
+				.some((s) => s.kind === "ask-subagent"),
+			false,
+			"a subagent gets no hook output by design: nothing to ask it without the mod",
+		);
 	});
 
 	test("lastLine and quotes", () => {
@@ -76,11 +147,25 @@ describe("delivery gate: plan and matching", () => {
 		assert.equal(meterSize("NONE"), undefined);
 	});
 
-	test("carries finds the delivered size in any wording, never the budget", () => {
-		assert.equal(carries(`The meter read ${METER}`, METER), true);
-		for (const text of ["it was 15.9kB", "15.9 KB of context", "about 15.9 kilobytes", "context injected 15.9 / 20.0"]) assert.equal(carries(text, METER), true, text);
-		assert.equal(carries("a 20.0kB budget", METER), false, "the budget is the same before and after a shift");
-		assert.equal(carries("115.9kB or 15.95", METER), false, "a longer number is a different number");
+	test("carries finds the delivered size in any wording, or the marker, never the budget", () => {
+		const want = { line: METER, marker: "GATE-MARK-0A1B2C3D" };
+		assert.equal(carries(`The meter read ${METER}`, want), true);
+		for (const text of ["it was 15.9kB", "15.9 KB of context", "about 15.9 kilobytes", "context injected 15.9 / 20.0"])
+			assert.equal(carries(text, want), true, text);
+		assert.equal(carries("the note held GATE-MARK-0A1B2C3D", want), true, "the marker alone is enough to answer");
+		assert.equal(carries("a 20.0kB budget", want), false, "the budget is the same before and after a shift");
+		assert.equal(carries("115.9kB or 15.95", want), false, "a longer number is a different number");
+		assert.equal(carries("an older GATE-MARK-FFFFFFFF", want), false, "another marker is not this one");
+	});
+
+	test("a checkpoint needs both the last line and the marker", () => {
+		const want = { line: METER, marker: "GATE-MARK-0A1B2C3D" };
+		const turns = (text: string) => parseTurns(stream(stoodDown, said(text), done));
+		assert.equal(judge(startup, turns(`${METER}\nGATE-MARK-0A1B2C3D`), want, MOD)[0]!.outcome, "PASS");
+		const tailOnly = judge(startup, turns(`${METER}\nNONE`), want, MOD)[0]!;
+		assert.equal(tailOnly.outcome, "FAIL", "a cut that keeps the tail loses the middle");
+		assert.match(tailOnly.why, /middle of the context did not arrive/);
+		assert.equal(judge(startup, turns("NONE\nGATE-MARK-0A1B2C3D"), want, MOD)[0]!.outcome, "FAIL", "a cut that keeps the middle loses the tail");
 	});
 
 	test("each shift's own line: quoting a neighbour's is a stale FAIL", () => {
@@ -89,22 +174,30 @@ describe("delivery gate: plan and matching", () => {
 		const L3 = "_context injected: 16.2kB / 20.0kB budget_";
 		const lines = [METER, L1, L1, L2, L2, L3, L3];
 		const honest = parseTurns(continuedStream({ afterCompact: [said(L1)], subagent: [agentCall(), handedBack(L2)], afterClear: [said(L3)] }));
-		assert.deepEqual(judge(continued, honest, lines, MOD).map((v) => v.outcome), ["PASS", "PASS", "PASS"]);
+		assert.deepEqual(
+			judge(continued, honest, lines, MOD).map((v) => v.outcome),
+			["PASS", "PASS", "PASS"],
+		);
 		// After the second /clear the main loop quotes the subagent's line from the conversation.
-		const echoed = judge(continued, parseTurns(continuedStream({ afterCompact: [said(L1)], subagent: [agentCall(), handedBack(L2)], afterClear: [said(L2)] })), lines, MOD)[2]!;
+		const echoed = judge(
+			continued,
+			parseTurns(continuedStream({ afterCompact: [said(L1)], subagent: [agentCall(), handedBack(L2)], afterClear: [said(L2)] })),
+			lines,
+			MOD,
+		)[2]!;
 		assert.equal(echoed.outcome, "FAIL");
 		assert.match(echoed.why, /stale/);
 	});
 
 	test("the tracker shifts exactly at the steps that shift, and only when they are reached", () => {
 		const calls: number[] = [];
-		const lineFor = expectationTracker("L0", (n) => {
+		const lineFor = expectationTracker({ line: "L0", marker: null }, (n) => {
 			calls.push(n);
-			return `L${n}`;
+			return { line: `L${n}`, marker: null };
 		});
 		const lines: string[] = [];
 		for (const step of continued) {
-			lines.push(lineFor(step));
+			lines.push(lineFor(step).line);
 			if (step.kind === "compact") assert.deepEqual(calls, [1], "the first shift lands with the /compact, not before");
 		}
 		assert.deepEqual(lines, ["L0", "L1", "L1", "L2", "L2", "L3", "L3"]);
@@ -115,8 +208,18 @@ describe("delivery gate: plan and matching", () => {
 		const LATER = "_context injected: 16.4kB / 20.0kB budget_";
 		const lines = continued.map((_, i) => (i < 1 ? METER : LATER));
 		// The compaction summary repeats the old size: harmless, the new line is what must arrive.
-		const turns = parseTurns(continuedStream({ compact: [stoodDown, compacted, summary(`It ended at ${METER}.`)], afterCompact: [said(LATER)], subagent: [agentCall(), handedBack(LATER)], afterClear: [said(LATER)] }));
-		assert.deepEqual(judge(continued, turns, lines, MOD).map((v) => v.outcome), ["PASS", "PASS", "PASS"]);
+		const turns = parseTurns(
+			continuedStream({
+				compact: [stoodDown, compacted, summary(`It ended at ${METER}.`)],
+				afterCompact: [said(LATER)],
+				subagent: [agentCall(), handedBack(LATER)],
+				afterClear: [said(LATER)],
+			}),
+		);
+		assert.deepEqual(
+			judge(continued, turns, lines, MOD).map((v) => v.outcome),
+			["PASS", "PASS", "PASS"],
+		);
 		// Quoting the old line after a shift is a FAIL: it came from memory, not from delivery.
 		const stale = parseTurns(continuedStream({ afterCompact: [said(METER)], subagent: [agentCall(), handedBack(LATER)], afterClear: [said(LATER)] }));
 		assert.equal(judge(continued, stale, lines, MOD)[0]!.outcome, "FAIL");
@@ -168,7 +271,10 @@ describe("delivery gate: verdicts", () => {
 
 	test("with the mod, a settings hook that printed only at the compaction still spoils the session", () => {
 		const verdicts = run(continued, continuedStream({ compact: [hookPrinted("## Session Context ..."), compacted, summary("OK.")] }));
-		assert.deepEqual(verdicts.map((v) => v.outcome), ["INVALID", "INVALID", "INVALID"]);
+		assert.deepEqual(
+			verdicts.map((v) => v.outcome),
+			["INVALID", "INVALID", "INVALID"],
+		);
 		for (const v of verdicts) assert.match(v.why, /settings hook printed/);
 	});
 
@@ -178,7 +284,10 @@ describe("delivery gate: verdicts", () => {
 	});
 
 	test("a broken preparing step spoils only the checkpoint right after it", () => {
-		assert.deepEqual(run(continued, continuedStream({ compact: [stoodDown, compacted] })).map((v) => v.outcome), ["INVALID", "PASS", "PASS"]);
+		assert.deepEqual(
+			run(continued, continuedStream({ compact: [stoodDown, compacted] })).map((v) => v.outcome),
+			["INVALID", "PASS", "PASS"],
+		);
 	});
 
 	test("a summary sent as blocks is still read; a compaction with no readable summary is invalid", () => {
@@ -211,7 +320,11 @@ describe("delivery gate: the subagent checkpoint", () => {
 	test("the raw result is preferred over the framed text, which a new frame could change", () => {
 		const reframed = {
 			type: "user",
-			message: { content: [{ type: "tool_result", tool_use_id: "toolu_Agent", content: [{ type: "text", text: `A new frame quoting the parent's context: ${METER}\n\nNONE` }] }] },
+			message: {
+				content: [
+					{ type: "tool_result", tool_use_id: "toolu_Agent", content: [{ type: "text", text: `A new frame quoting the parent's context: ${METER}\n\nNONE` }] },
+				],
+			},
 			tool_use_result: { status: "completed", content: [{ type: "text", text: "NONE" }], totalToolUseCount: 0, agentType: "general-purpose" },
 		};
 		assert.equal(subagentVerdict([agentCall(), reframed]).outcome, "FAIL");
@@ -226,12 +339,19 @@ describe("delivery gate: the subagent checkpoint", () => {
 	});
 
 	test("a subagent of another type is invalid: it may not receive instruction files, or may inherit the conversation", () => {
-		assert.match(subagentVerdict([agentCall(SUBAGENT_TASK, "Explore"), handedBack(METER, { totalToolUseCount: 0, agentType: "Explore" })]).why, /not general-purpose/);
+		assert.match(
+			subagentVerdict([agentCall(SUBAGENT_TASK, "Explore"), handedBack(METER, { totalToolUseCount: 0, agentType: "Explore" })]).why,
+			/not general-purpose/,
+		);
 	});
 
 	test("a subagent handed the line in its prompt is invalid", () => {
 		assert.match(subagentVerdict([agentCall(`${SUBAGENT_TASK} The line is ${METER}.`), handedBack(METER)]).why, /handed the line/);
-		assert.match(subagentVerdict([agentCall(`${SUBAGENT_TASK} Hint: it mentions 15.9kB.`), handedBack(METER)]).why, /handed the line/, "a size alone is enough to rebuild it");
+		assert.match(
+			subagentVerdict([agentCall(`${SUBAGENT_TASK} Hint: it mentions 15.9kB.`), handedBack(METER)]).why,
+			/handed the line/,
+			"a size alone is enough to rebuild it",
+		);
 		const described = called("Agent", { prompt: SUBAGENT_TASK, description: "Find 15.9kB", subagent_type: "general-purpose" });
 		assert.match(subagentVerdict([described, handedBack(METER)]).why, /handed the line/, "the description is handed over too");
 	});
@@ -239,7 +359,16 @@ describe("delivery gate: the subagent checkpoint", () => {
 	test("a subagent that used tools, or whose tool count was not reported, is invalid", () => {
 		assert.match(subagentVerdict([agentCall(), handedBack(METER, { totalToolUseCount: 2, agentType: "general-purpose" })]).why, /used 2 tool/);
 		assert.match(subagentVerdict([agentCall(), handedBack(METER, { agentType: "general-purpose" })]).why, /not reported/);
-		const inline = { type: "assistant", parent_tool_use_id: "toolu_Agent", message: { content: [{ type: "tool_use", name: "Read", id: "x" }, { type: "text", text: METER }] } };
+		const inline = {
+			type: "assistant",
+			parent_tool_use_id: "toolu_Agent",
+			message: {
+				content: [
+					{ type: "tool_use", name: "Read", id: "x" },
+					{ type: "text", text: METER },
+				],
+			},
+		};
 		const v = subagentVerdict([agentCall(), inline, handedBack(METER)]);
 		assert.match(v.why, /used 1 tool/, "a subagent's inline tool use counts against it");
 	});
@@ -293,7 +422,16 @@ describe("delivery gate: self-test and environment", () => {
 	});
 
 	test("the fixture's environment keeps what a session needs and drops the caller's session variables", () => {
-		const env = fixtureEnv("/v", { CLAUDECODE: "1", CLAUDE_PROJECT_DIR: "/x", CLAUDE_CONFIG_DIR: "/c", CLAUDE_CODE_GIT_BASH_PATH: "/g", CLAUDE_CODE_OAUTH_TOKEN: "t", NODE_PATH: "/n", PATH: "/bin", ANTHROPIC_API_KEY: "k" });
+		const env = fixtureEnv("/v", {
+			CLAUDECODE: "1",
+			CLAUDE_PROJECT_DIR: "/x",
+			CLAUDE_CONFIG_DIR: "/c",
+			CLAUDE_CODE_GIT_BASH_PATH: "/g",
+			CLAUDE_CODE_OAUTH_TOKEN: "t",
+			NODE_PATH: "/n",
+			PATH: "/bin",
+			ANTHROPIC_API_KEY: "k",
+		});
 		assert.equal(env.CLAUDECODE, undefined);
 		assert.equal(env.CLAUDE_PROJECT_DIR, undefined);
 		assert.equal(env.NODE_PATH, undefined);
@@ -305,12 +443,42 @@ describe("delivery gate: self-test and environment", () => {
 		assert.match(env.npm_config_prefix ?? "", /\.gate-npm$/);
 	});
 
+	test("a trusted folder is used only when empty or the gate's own", () => {
+		const foreign = mkdtempSync(join(tmpdir(), "gate-foreign-"));
+		try {
+			writeFileSync(join(foreign, "notes.md"), "mine");
+			assert.throws(() => buildFixture("none", { trustedDir: foreign, notes: 0 }), /not empty and not the gate's own/);
+			assert.equal(readFileSync(join(foreign, "notes.md"), "utf8"), "mine", "nothing of the owner's is touched");
+		} finally {
+			rmSync(foreign, { recursive: true, force: true });
+		}
+	});
+
+	test("expectedOf takes the last line, and the marker only when the context carries it", () => {
+		assert.deepEqual(expectedOf(`body GATE-MARK-1\n${METER}\n`, "GATE-MARK-1"), { line: METER, marker: "GATE-MARK-1" });
+		assert.deepEqual(expectedOf(`collapsed\n${METER}\n`, "GATE-MARK-1"), { line: METER, marker: null });
+	});
+
+	test("the issue for a failing run names the version and every checkpoint", () => {
+		const body = issueBody("2.1.300 (Claude Code)", "opus", [
+			{ checkpoint: "at startup", expected: METER, answer: "", outcome: "PASS", why: "" },
+			{ checkpoint: "after /compact", expected: METER, answer: "", outcome: "FAIL", why: "stale" },
+		]);
+		assert.match(body, /Claude Code 2\.1\.300/);
+		assert.match(body, /\| after \/compact \| FAIL \| stale \|/);
+		assert.match(body, /do not recommend this Claude Code version/);
+	});
+
 	test("cleanup targets only a fixture's own session folders", () => {
 		const dirs = sessionDirs("C:\\Temp\\om-delivery-gate-AbC123", { CLAUDE_CONFIG_DIR: "/cfg" });
 		assert.equal(dirs.length, 2);
 		assert.ok(dirs[0]!.endsWith("C--Temp-om-delivery-gate-AbC123"));
 		assert.ok(dirs[0]!.includes("projects"));
-		assert.deepEqual(sessionDirs("/home/me/vault", {}, (p) => p), [], "never a folder that is not a gate fixture's");
+		assert.deepEqual(
+			sessionDirs("/home/me/vault", {}, (p) => p),
+			[],
+			"never a folder that is not a gate fixture's",
+		);
 		const both = sessionDirs("/var/folders/om-delivery-gate-x", { CLAUDE_CONFIG_DIR: "/cfg" }, () => "/private/var/folders/om-delivery-gate-x");
 		assert.equal(both.length, 4, "the created and the resolved path are both slugged");
 	});

@@ -121,24 +121,19 @@ This is **not** a demand for permanent negative-fixture CI jobs on every guard â
 
 ### Before recommending a Claude Code release: the delivery gate
 
-Every other check confirms that a hook **ran**. The delivery gate confirms what **arrived**: it runs real Claude Code sessions in a throwaway vault and asks the model to quote the last line of the session context it was given, at startup, after `/compact`, after `/clear` and from a general-purpose subagent, with the `obsidian-mind` mod and without it. Hook output past 10,000 characters once reached the model as a 2,000-character preview while every log said success (#254); this is the check that would have caught it.
+Every other check confirms that a hook **ran**. The delivery gate confirms what **arrived**: it runs real Claude Code sessions in throwaway vaults and asks the model to quote the end of its session context and a marker from its middle, at startup, after `/compact`, after `/clear` and (with the mod) from a general-purpose subagent, with the `obsidian-mind` mod and with the settings hooks alone. Hook output past 10,000 characters once reached the model as a 2,000-character preview while every log said success (#254); this is the check that catches that class.
 
-It needs a logged-in `claude` and costs a few model turns, so it runs by hand, not in CI. Run it on any Claude Code version before the README or `mod.yml` pins it:
+It needs a logged-in `claude` and costs model turns, so it runs by hand, not in CI. Before the README or `mod.yml` pins a Claude Code version:
+
+1. Once: make an empty folder, open it in Claude Code and accept the trust prompt. The gate builds its vaults there, so the mod loads the way a user's does (a headless session cannot accept trust).
+2. Run:
 
 ```bash
-node --experimental-strip-types .github/scripts/delivery-gate.ts --self-test # first: exits 0 when the gate can still fail
-node --experimental-strip-types .github/scripts/delivery-gate.ts             # then: every checkpoint PASS
+node --experimental-strip-types .github/scripts/delivery-gate.ts --trusted-dir <that folder> --self-test        # first: exits 0 when the gate can still fail
+node --experimental-strip-types .github/scripts/delivery-gate.ts --trusted-dir <that folder> --file-issue       # then: every checkpoint PASS
 ```
 
-The self-test runs two broken copies of the mod, one that cuts its context everywhere and one that delivers it whole only at startup. Every checkpoint must fail against both, except the startup-only copy's own startup, which must pass: that control proves the copy delivered at all. Any other outcome means the gate is broken; fix it before trusting a normal run.
-
-Each `/compact` and `/clear` first adds a note to the throwaway vault, so the context delivered after it ends with a size nobody has quoted yet: a compaction summary or an earlier answer cannot supply the new line, only a fresh delivery can.
-
-Only the session's own events decide, and every other road an answer could take counts as INVALID, never PASS: a turn that used a tool, a `/compact` summary that itself carried the new size or could not be read, a `/compact` or `/clear` that left no event of its own, a subagent that was not general-purpose, was handed the line, used tools or did not report its tool count, a settings hook that printed the context when the mod should have delivered it, and a session that errored, timed out or ran an extra turn. Exit codes: 0 pass; 1 a checkpoint did not receive the current context (cut, missing, or stale from before a shift, which means the mod did not deliver it again); 2 the run could not be judged. A FAIL wins over an INVALID elsewhere in the run. With `--self-test`: 0 the gate can fail, 1 the gate is broken (any checkpoint passed against a broken mod, or the control failed), 2 the run could not be judged.
-
-The gate therefore requires the mod to deliver the context again on `/compact` and `/clear`, from the vault as it is then.
-
-Three limits: the mod is loaded with `--plugin-dir` rather than found in the vault after the trust prompt; the fixture's settings-hook context is too short to show a cut, so that path shows only that something arrived; and only the last line is asked for, so a cut that drops the middle and keeps the tail would pass. The throwaway vaults run with qmd unresolvable, so they start no search bootstrap on your machine.
+A self-test that does not exit 0 means the gate is broken: fix it before trusting a normal run. A normal run that fails files an issue with `--file-issue`, and that version is not recommended until it is resolved. What counts as PASS, FAIL and INVALID, the exit codes, and why each `/compact` and `/clear` changes the vault first are documented at the top of `.github/scripts/delivery-gate.ts`.
 
 ## Questions?
 
