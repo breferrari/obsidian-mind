@@ -218,7 +218,7 @@ mod는 샌드박스 없이 사용자의 권한으로 실행되는 코드이므�
 이 버전의 mod에서 출력 중 확인할 두 줄은 다음과 같습니다:
 
 ```text
-  ❯ ./register.ts hooks: classic.SessionStart, prompt.context, classic.Stop, turn.complete, prompt.submit
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context, classic.Stop, turn.complete, prompt.submit, turn.start
   ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.prompt.submit, $.session.root, $.state.get, $.state.set, $.store.get (via setShown, shownFor), $.store.set (via setShown), $.ui.invalidate
 ```
 <!-- mod-validate:end -->

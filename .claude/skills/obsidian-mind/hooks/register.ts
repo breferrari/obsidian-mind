@@ -44,6 +44,13 @@ const queued = atom({ plugin: "obsidian-mind", key: "queued" } as const, null);
 const urgentSpent = atom({ plugin: "obsidian-mind", key: "urgentSpent" } as const, false);
 /** Bumped by every start that begins another conversation, so a report in flight across one is not put back. */
 const generation = atom({ plugin: "obsidian-mind", key: "generation" } as const, 0);
+/**
+ * The report a prompt took, until a turn starts with that prompt. A prompt
+ * enters when it is queued, not when its turn starts, and a queued prompt can
+ * be pulled back out of the queue; if a turn starts with another prompt
+ * first, this one never ran, and the report goes back in the queue.
+ */
+const inFlight = atom({ plugin: "obsidian-mind", key: "inFlight" } as const, null);
 
 type Queued = NonNullable<PluginState["obsidian-mind"]["queued"]>;
 
@@ -106,6 +113,7 @@ export const register: Register = (on) => {
 			});
 			await update($, urgentSpent, () => false);
 			await update($, generation, (now) => now + 1);
+			await update($, inFlight, () => null);
 			// A report dropped here never reached the agent, so the same findings
 			// show again in the session it was for; one it already has stays shown.
 			const lost: Queued | null = dropped;
@@ -224,6 +232,30 @@ export const register: Register = (on) => {
 			await putBack();
 			return entered;
 		}
+		await update($, inFlight, () => ({ text: entered.text, record, generation: startedIn }));
 		return renew(entered);
+	});
+
+	on("turn.start", async ($, e, next) => {
+		// Only the main loop's prompts carry the report; a turn begun without a
+		// prompt (a continuation, text "") says nothing about the queue.
+		let held: PluginState["obsidian-mind"]["inFlight"] = null;
+		await update($, inFlight, (now) => {
+			held = now;
+			return now === null || e.text === "" ? now : null;
+		});
+		const waiting: PluginState["obsidian-mind"]["inFlight"] = held;
+		// Queued prompts run in order and may be folded into one turn, so a turn
+		// whose text holds the prompt's ran it: delivered. Any other prompt's turn
+		// starting first means the one holding the report left the queue unrun.
+		if (waiting !== null && e.text !== "" && !e.text.includes(waiting.text)) {
+			let now = waiting.generation;
+			await update($, generation, (g) => {
+				now = g;
+				return g;
+			});
+			if (now === waiting.generation) await update($, queued, (current) => current ?? waiting.record);
+		}
+		return next(e);
 	});
 };

@@ -218,7 +218,7 @@ mod 是没有沙箱、以你的权限运行的代码，因此在信任该文件�
 对于这一版本的 mod，其输出中值得确认的两行如下：
 
 ```text
-  ❯ ./register.ts hooks: classic.SessionStart, prompt.context, classic.Stop, turn.complete, prompt.submit
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context, classic.Stop, turn.complete, prompt.submit, turn.start
   ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.prompt.submit, $.session.root, $.state.get, $.state.set, $.store.get (via setShown, shownFor), $.store.set (via setShown), $.ui.invalidate
 ```
 <!-- mod-validate:end -->

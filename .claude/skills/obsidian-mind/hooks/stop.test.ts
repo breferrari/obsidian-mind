@@ -48,6 +48,7 @@ function stopWorld(on: On, reply: () => Reply) {
 		return { text: e.text, context: e.context };
 	});
 	on("turn.complete", (_$, e) => ({ text: world.lowerLine ?? e.answer }));
+	on("turn.start", (_$, e) => ({ turnId: e.turnId }));
 	return world;
 }
 type World = ReturnType<typeof stopWorld>;
@@ -209,6 +210,59 @@ describe("the line under the answer (#266)", () => {
 		await settle();
 
 		expect(world.submitted.length).toBe(0);
+	});
+
+	test("a prompt that took the report and then ran: delivered, not put back", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")));
+		await $.classic.Stop({ stop_hook_active: false });
+		await $.prompt.submit({ text: "typed" });
+		await $.turn.start({ text: "typed", turnId: "t1" });
+		await $.prompt.submit({ text: "after" });
+
+		expect(world.submitted[1]?.context ?? []).toEqual([]);
+	});
+
+	test("a queued prompt pulled back before it ran: the report goes back to the queue", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")));
+		await $.classic.Stop({ stop_hook_active: false });
+		await $.prompt.submit({ text: "queued, then pulled back" });
+		// Another prompt's turn starts first: the queue runs in order, so the first one never ran.
+		await $.turn.start({ text: "sent instead", turnId: "t1" });
+		await $.prompt.submit({ text: "next" });
+
+		expect(world.submitted[1]?.context).toEqual([HANDED("k")]);
+	});
+
+	test("queued prompts folded into one turn: the one holding the report ran", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")));
+		await $.classic.Stop({ stop_hook_active: false });
+		await $.prompt.submit({ text: "first" });
+		await $.turn.start({ text: "first\nsecond", turnId: "t1" });
+		await $.prompt.submit({ text: "after" });
+
+		expect(world.submitted[1]?.context ?? []).toEqual([]);
+	});
+
+	test("a turn begun without a prompt says nothing about the queue", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")));
+		await $.classic.Stop({ stop_hook_active: false });
+		await $.prompt.submit({ text: "typed" });
+		await $.turn.start({ text: "", turnId: "t0" });
+		await $.turn.start({ text: "typed", turnId: "t1" });
+		await $.prompt.submit({ text: "after" });
+
+		expect(world.submitted[1]?.context ?? []).toEqual([]);
+	});
+
+	test("a report in flight across a /clear is not put back when another turn starts", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")));
+		await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
+		await $.prompt.submit({ text: "queued" });
+		await $.classic.SessionStart({ source: "clear", session_id: "B" } as never);
+		await $.turn.start({ text: "new conversation", turnId: "t1" });
+		await $.prompt.submit({ text: "next" });
+
+		expect(world.submitted[1]?.context ?? []).toEqual([]);
 	});
 
 	test("a prompt in flight across a /clear does not put the old report back into the new conversation", async ($, on) => {

@@ -225,7 +225,7 @@ A mod is unsandboxed code that runs with your permissions, so check what it does
 The two lines that matter in its output, for this version of the mod:
 
 ```text
-  ❯ ./register.ts hooks: classic.SessionStart, prompt.context, classic.Stop, turn.complete, prompt.submit
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context, classic.Stop, turn.complete, prompt.submit, turn.start
   ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.prompt.submit, $.session.root, $.state.get, $.state.set, $.store.get (via setShown, shownFor), $.store.set (via setShown), $.ui.invalidate
 ```
 <!-- mod-validate:end -->
