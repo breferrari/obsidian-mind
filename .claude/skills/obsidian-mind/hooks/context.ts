@@ -1,7 +1,7 @@
-import type { PromptContextResult } from 'claude-code'
+import type { PromptContextResult } from "claude-code";
 
 /** The name the context renders under when no instruction file can carry it. */
-export const CONTEXT_BLOCK = 'obsidian-mind'
+export const CONTEXT_BLOCK = "obsidian-mind";
 
 /**
  * The first message's context with the session context added: as a project
@@ -17,11 +17,11 @@ export const CONTEXT_BLOCK = 'obsidian-mind'
  */
 export function withSessionContext(below: PromptContextResult, path: string, text: string): PromptContextResult {
 	if (below.instructionFiles) {
-		const others = below.instructionFiles.filter((file) => !samePath(file.path, path))
-		return { ...below, instructionFiles: [...others, { path, kind: 'project', content: text }] }
+		const others = below.instructionFiles.filter((file) => !samePath(file.path, path));
+		return { ...below, instructionFiles: [...others, { path, kind: "project", content: text }] };
 	}
-	const others = below.blocks.filter((block) => block.name !== CONTEXT_BLOCK)
-	return { ...below, blocks: [...others, { name: CONTEXT_BLOCK, text }] }
+	const others = below.blocks.filter((block) => block.name !== CONTEXT_BLOCK);
+	return { ...below, blocks: [...others, { name: CONTEXT_BLOCK, text }] };
 }
 
 /**
@@ -31,6 +31,6 @@ export function withSessionContext(below: PromptContextResult, path: string, tex
  * case are not part of a file's identity.
  */
 export function samePath(a: string, b: string): boolean {
-	const norm = (p: string) => p.replaceAll('\\', '/').replace(/^([a-z]):/i, (d) => d.toLowerCase())
-	return norm(a) === norm(b)
+	const norm = (p: string) => p.replaceAll("\\", "/").replace(/^([a-z]):/i, (d) => d.toLowerCase());
+	return norm(a) === norm(b);
 }

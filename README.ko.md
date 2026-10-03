@@ -213,6 +213,15 @@ mod는 처리하는 이벤트마다 해당 훅에 대기하라고 알립니다. 
 
 mod는 샌드박스 없이 사용자의 권한으로 실행되는 코드이므로, 폴더를 신뢰하기 전에 내용을 확인하세요. `claude plugin validate .claude/skills/obsidian-mind`가 훅하는 모든 이벤트와 수행하는 모든 호출을 나열합니다(볼트 자체의 스크립트를 실행하고 컨텍스트 파일을 쓰는 것이 전부입니다). 끄려면 `.claude/settings.local.json`에 `"enabledPlugins": { "obsidian-mind@skills-dir": false }`를 추가하세요.
 
+<!-- mod-validate:start -->
+이 버전의 mod에서 출력 중 확인할 두 줄은 다음과 같습니다:
+
+```text
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context
+  ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.session.root, $.state.get, $.state.set, $.ui.invalidate
+```
+<!-- mod-validate:end -->
+
 ### ⚡ 토큰 효율성
 
 obsidian-mind는 전체 볼트를 컨텍스트에 로드하지 **않습니다**. 계층형 로딩으로 토큰 비용을 최소화합니다:
@@ -431,7 +440,7 @@ templates/              YAML 프론트매터가 포함된 Obsidian 템플릿
   commands/             18개 슬래시 명령어
   agents/               9개 서브에이전트
   scripts/              훅 스크립트 + charcount.ts 유틸리티
-  skills/               Obsidian + QMD 스킬
+  skills/               Obsidian + QMD 스킬, obsidian-mind mod
   settings.json         5개 훅 설정
 
 .scripts/                볼트 수준 도구 — QMD 부트스트랩 (새 클론에서 한 번 실행)

@@ -12,19 +12,14 @@ name: Mod
 on:
   push:
     branches: [main]
-    paths:
+    # The mod runs the vault's hook scripts, so any change under
+    # .claude/scripts/ (lib/ included) can change what it delivers.
+    paths: &mod-paths
       - '.claude/skills/obsidian-mind/**'
-      - '.claude/scripts/session-start.ts'
-      - '.claude/scripts/stop-checklist.ts'
-      - '.claude/scripts/lib/om-mod.ts'
+      - '.claude/scripts/**'
       - '.github/workflows/mod.yml'
   pull_request:
-    paths:
-      - '.claude/skills/obsidian-mind/**'
-      - '.claude/scripts/session-start.ts'
-      - '.claude/scripts/stop-checklist.ts'
-      - '.claude/scripts/lib/om-mod.ts'
-      - '.github/workflows/mod.yml'
+    paths: *mod-paths
   schedule:
     - cron: '17 6 * * 1'
   workflow_dispatch:
@@ -51,6 +46,21 @@ jobs:
       - name: Validate the mod
         shell: bash
         run: claude plugin validate --strict .claude/skills/obsidian-mind
+      - name: Every README shows the hooks and calls validate reports
+        shell: bash
+        run: |
+          # The READMEs quote these two lines so a user can check the mod before
+          # trusting the folder; a mod that gains a hook or a call must say so.
+          out=$(claude plugin validate .claude/skills/obsidian-mind 2>&1 | sed 's/\x1b\[[0-9;]*m//g')
+          for kind in hooks calls; do
+            line=$(printf '%s\n' "$out" | grep "register.ts $kind:" | sed 's/^[[:space:]]*//' | tr -d '\r')
+            [ -n "$line" ] || { echo "::error::validate printed no $kind line"; exit 1; }
+            for readme in README.md README.ja.md README.ko.md README.zh-CN.md; do
+              # The whole line, not a substring: a README listing an extra call
+              # would otherwise still contain the true line and pass.
+              sed 's/^[[:space:]]*//' "$readme" | tr -d '\r' | grep -qxF -- "$line" || { echo "::error::$readme does not show: $line"; exit 1; }
+            done
+          done
       - name: Test the mod
         shell: bash
         run: claude plugin test .claude/skills/obsidian-mind

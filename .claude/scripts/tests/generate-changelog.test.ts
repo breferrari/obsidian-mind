@@ -7,6 +7,9 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	classifyCommit,
 	generateSection,
@@ -14,7 +17,9 @@ import {
 	toFingerprintKey,
 	pickMarkers,
 	findLatestOpenFingerprint,
+	bumpPluginJsonVersion,
 	bumpShardYamlVersion,
+	PLUGIN_JSON,
 	insertChangelogSection,
 } from "../../../.github/scripts/generate-changelog.ts";
 
@@ -241,6 +246,28 @@ describe("pickMarkers", () => {
 			"mango.md",
 			"zebra.md",
 		]);
+	});
+});
+
+describe("bumpPluginJsonVersion", () => {
+	const FIXTURE = JSON.stringify({ name: "obsidian-mind", version: "8.6.0", description: "d", types: "./types/index.d.ts" }, null, 2) + "\n";
+
+	test("sets the mod's version to the normalized release version, keeping key order", () => {
+		const out = bumpPluginJsonVersion(FIXTURE, "v9.0");
+		assert.equal(JSON.parse(out).version, "9.0.0");
+		assert.deepEqual(Object.keys(JSON.parse(out)), ["name", "version", "description", "types"]);
+		assert.ok(out.endsWith("}\n"));
+	});
+
+	test("refuses a plugin.json without a version", () => {
+		assert.throws(() => bumpPluginJsonVersion('{"name":"obsidian-mind"}', "v9.0"), /no string `version`/);
+	});
+
+	test("the shipped mod carries the template's version", () => {
+		const repo = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+		const plugin = JSON.parse(readFileSync(join(repo, PLUGIN_JSON), "utf-8")) as { version: string };
+		const manifest = JSON.parse(readFileSync(join(repo, "vault-manifest.json"), "utf-8")) as { version: string };
+		assert.equal(plugin.version, manifest.version, "a release bumps both; between releases they must agree");
 	});
 });
 

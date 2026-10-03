@@ -220,6 +220,15 @@ For each event it handles, the mod tells the matching hook to stand down. Wherev
 
 A mod is unsandboxed code that runs with your permissions, so check what it does before trusting the folder: `claude plugin validate .claude/skills/obsidian-mind` lists every event it hooks and every call it makes (it runs the vault's own scripts and writes the context file, nothing else). To turn it off, add `"enabledPlugins": { "obsidian-mind@skills-dir": false }` to `.claude/settings.local.json`.
 
+<!-- mod-validate:start -->
+The two lines that matter in its output, for this version of the mod:
+
+```text
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context
+  ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.session.root, $.state.get, $.state.set, $.ui.invalidate
+```
+<!-- mod-validate:end -->
+
 ### ⚡ Token Efficiency
 
 obsidian-mind does **not** dump your entire vault into context. It uses tiered loading to keep token costs low:
@@ -528,7 +537,7 @@ templates/              Obsidian templates with YAML frontmatter
   commands/             18 slash commands
   agents/               9 subagents
   scripts/              Hook scripts + charcount.ts utility
-  skills/               Obsidian + QMD skills
+  skills/               Obsidian + QMD skills, and the obsidian-mind mod
   settings.json         5 hooks configuration
 
 .scripts/                Vault-level tooling — QMD bootstrap (run once on a fresh clone)

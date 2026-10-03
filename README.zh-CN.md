@@ -205,13 +205,22 @@ QMD **在本地运行三个小模型**，因此不需要配置 API 密钥，没�
 
 ### 🧩 Claude Code mod
 
-在 Claude Code 2.1.287 及以上版本中,仓库还附带一个 mod:`.claude/skills/obsidian-mind/`,一个在 Claude Code 内部运行的插件。它运行仓库自身的钩子脚本,只改变其输出到达会话的方式:
+在 Claude Code 2.1.287 及以上版本中，仓库还附带一个 mod：`.claude/skills/obsidian-mind/`，一个在 Claude Code 内部运行的插件。它运行仓库自身的钩子脚本，只改变其输出到达会话的方式：
 
-- **会话上下文像 `CLAUDE.md` 一样以 instruction 文件的形式送达。** 压缩和 `/clear` 之后会被完整地重新读取(作为钩子输出时会缩减为一个指针),能送达通用子代理(钩子输出送达不了),也不会被 Claude Code 钩子输出的 10,000 字符上限截断。其预算是 `vault-manifest.json` 中的 `eager_layer_instruction_budget_bytes`;像未完成任务这样不会缩减的部分仍可能超出它。`/memory` 中显示为 `.claude/session-context.md`。
+- **会话上下文像 `CLAUDE.md` 一样以 instruction 文件的形式送达。** 压缩和 `/clear` 之后会被完整地重新读取（作为钩子输出时会缩减为一个指针），能送达通用子代理（钩子输出送达不了），也不会被 Claude Code 钩子输出的 10,000 字符上限截断。其预算是 `vault-manifest.json` 中的 `eager_layer_instruction_budget_bytes`；像未完成任务这样不会缩减的部分仍可能超出它。`/memory` 中显示为 `.claude/session-context.md`。
 
-对于它处理的每个事件,mod 会通知对应的钩子让出。在 mod 未加载的地方,钩子与以前完全一样地运行:Codex 和 Gemini、旧版 Claude Code、在仓库子文件夹中启动的会话(请在仓库根目录启动,或 `/cd` 到根目录后执行 `/clear`)、以及未信任的文件夹。只有在你接受了 Claude Code 对该仓库的信任提示之后,mod 才会加载。
+对于它处理的每个事件，mod 会通知对应的钩子让出。在 mod 未加载的地方，钩子与以前完全一样地运行：Codex 和 Gemini、旧版 Claude Code、在仓库子文件夹中启动的会话（请在仓库根目录启动，或 `/cd` 到根目录后执行 `/clear`）、以及未信任的文件夹。只有在你接受了 Claude Code 对该仓库的信任提示之后，mod 才会加载。
 
-mod 是没有沙箱、以你的权限运行的代码,因此在信任该文件夹之前请先检查它的行为:`claude plugin validate .claude/skills/obsidian-mind` 会列出它挂钩的每个事件和发出的每个调用(它只运行仓库自身的脚本并写入上下文文件)。要关闭它,在 `.claude/settings.local.json` 中加入 `"enabledPlugins": { "obsidian-mind@skills-dir": false }`。
+mod 是没有沙箱、以你的权限运行的代码，因此在信任该文件夹之前请先检查它的行为：`claude plugin validate .claude/skills/obsidian-mind` 会列出它挂钩的每个事件和发出的每个调用（它只运行仓库自身的脚本并写入上下文文件）。要关闭它，在 `.claude/settings.local.json` 中加入 `"enabledPlugins": { "obsidian-mind@skills-dir": false }`。
+
+<!-- mod-validate:start -->
+对于这一版本的 mod，其输出中值得确认的两行如下：
+
+```text
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context
+  ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.session.root, $.state.get, $.state.set, $.ui.invalidate
+```
+<!-- mod-validate:end -->
 
 ### ⚡ Token 效率
 
@@ -431,7 +440,7 @@ templates/              带有 YAML frontmatter 的 Obsidian 模板
   commands/             18 个斜杠命令
   agents/               9 个子代理
   scripts/              钩子脚本 + charcount.ts 工具
-  skills/               Obsidian + QMD 技能
+  skills/               Obsidian + QMD 技能，obsidian-mind mod
   settings.json         5 个钩子配置
 
 .scripts/                仓库级工具 — QMD 引导脚本（新克隆时运行一次）

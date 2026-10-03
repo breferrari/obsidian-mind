@@ -1,5 +1,5 @@
-import { atom, read, update, type EngineInterface, type Register } from 'claude-code'
-import { withSessionContext } from './context.ts'
+import { atom, read, update, type EngineInterface, type Register } from "claude-code";
+import { withSessionContext } from "./context.ts";
 
 /**
  * obsidian-mind's Claude Code mod (#262).
@@ -25,50 +25,52 @@ import { withSessionContext } from './context.ts'
  */
 
 /** Where the delivered context is also written, so /memory opens what the model received. Gitignored. */
-const CONTEXT_FILE = '.claude/session-context.md'
+const CONTEXT_FILE = ".claude/session-context.md";
 
 /**
  * The context this session's instruction file carries. In `$.state`, not a
  * module variable: the host keeps it for the session, across a hot reload of
  * this module. Each classic.SessionStart clears it before its run.
  */
-const sessionContext = atom({ plugin: 'obsidian-mind', key: 'context' } as const, null)
+const sessionContext = atom({ plugin: "obsidian-mind", key: "context" } as const, null);
 
 /** Run one of the vault's hook scripts with `input` on stdin; its stdout, or a throw. */
 async function runScript($: EngineInterface, root: string, script: string, input: object): Promise<string> {
-	const run = await $.process.run(
-		['node', '--disable-warning=ExperimentalWarning', '--experimental-strip-types', `${root}/.claude/scripts/${script}`],
-		{ cwd: root, env: { CLAUDE_PROJECT_DIR: root }, stdin: JSON.stringify(input), timeoutMs: 30_000 },
-	)
-	if (run.exitCode !== 0 || run.stdout.trim() === '') {
-		throw new Error(`${script} exited ${run.exitCode}: ${run.stderr.slice(0, 300)}`)
+	const run = await $.process.run(["node", "--disable-warning=ExperimentalWarning", "--experimental-strip-types", `${root}/.claude/scripts/${script}`], {
+		cwd: root,
+		env: { CLAUDE_PROJECT_DIR: root },
+		stdin: JSON.stringify(input),
+		timeoutMs: 30_000,
+	});
+	if (run.exitCode !== 0 || run.stdout.trim() === "") {
+		throw new Error(`${script} exited ${run.exitCode}: ${run.stderr.slice(0, 300)}`);
 	}
-	return run.stdout
+	return run.stdout;
 }
 
 export const register: Register = (on) => {
-	on('classic.SessionStart', async ($, e, next) => {
+	on("classic.SessionStart", async ($, e, next) => {
 		// Cleared first: if this run fails, the settings hook delivers fresh
 		// output and no earlier context may ride beside it.
-		await update($, sessionContext, () => null)
-		const root = await $.session.root()
-		const text = await runScript($, root, 'session-start.ts', { ...e, om_mod: 'deliver' })
-		await update($, sessionContext, () => text)
+		await update($, sessionContext, () => null);
+		const root = await $.session.root();
+		const text = await runScript($, root, "session-start.ts", { ...e, om_mod: "deliver" });
+		await update($, sessionContext, () => text);
 		// Not awaited: delivery does not depend on the file, so a slow, hung or
 		// failed write never holds up the session. The file only backs what
 		// /memory shows. Runs are minutes apart (startup, then a compaction), so
 		// two writes landing out of order is not a case worth machinery: a
 		// deadline would need a timer that outlives this hook, and a chain
 		// without one would let a hung write stall every later write.
-		$.fs.write(`${root}/${CONTEXT_FILE}`, text).catch(() => {})
-		$.ui.invalidate('prompt.context')
-		return next({ ...e, om_mod: 'standdown' } as typeof e)
-	})
+		$.fs.write(`${root}/${CONTEXT_FILE}`, text).catch(() => {});
+		$.ui.invalidate("prompt.context");
+		return next({ ...e, om_mod: "standdown" } as typeof e);
+	});
 
-	on('prompt.context', async ($, e, next) => {
-		const below = await next(e)
-		const text = await read($, sessionContext)
-		if (text === null) return below
-		return withSessionContext(below, `${await $.session.root()}/${CONTEXT_FILE}`, text)
-	})
-}
+	on("prompt.context", async ($, e, next) => {
+		const below = await next(e);
+		const text = await read($, sessionContext);
+		if (text === null) return below;
+		return withSessionContext(below, `${await $.session.root()}/${CONTEXT_FILE}`, text);
+	});
+};
