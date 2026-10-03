@@ -27,7 +27,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -48,10 +48,18 @@ const require = createRequire(import.meta.url);
  * hooks. With no manifest above, the named folder itself.
  */
 export function resolveVaultRoot(metaUrl, env = process.env) {
+	// A regular file, as the hook commands' `[ -f ]` tests: a directory of that name is not a vault.
+	const isFile = (path) => {
+		try {
+			return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
+		} catch {
+			return false;
+		}
+	};
 	const envRoot = env["CLAUDE_PROJECT_DIR"];
 	if (envRoot && isAbsolute(envRoot)) {
 		for (let dir = envRoot; ; dir = dirname(dir)) {
-			if (existsSync(join(dir, "vault-manifest.json"))) return dir;
+			if (isFile(join(dir, "vault-manifest.json"))) return dir;
 			if (dirname(dir) === dir) return envRoot;
 		}
 	}

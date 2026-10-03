@@ -72,6 +72,17 @@ describe("resolveProjectDir — finds the vault root above the named folder", ()
 		assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: elsewhere }), elsewhere);
 	});
 
+	test("a directory named like the marker is not a vault: the walk passes it, as the hook commands' [ -f ] does", () => {
+		// The launcher found the script at the real root; the scripts must agree.
+		const between = join(root, "work", "deep", VAULT_MARKER);
+		mkdirSync(between, { recursive: true });
+		try {
+			assert.equal(resolveProjectDir("/fb", { CLAUDE_PROJECT_DIR: join(root, "work", "deep") }), root);
+		} finally {
+			rmSync(between, { recursive: true, force: true });
+		}
+	});
+
 	test("the fallback is walked up too", () => {
 		assert.equal(resolveProjectDir(join(root, "work"), {}), root);
 	});

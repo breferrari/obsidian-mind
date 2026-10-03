@@ -27,7 +27,7 @@
  * in the shell, to find the script at all.
  */
 
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const PROJECT_DIR_VARS = [
@@ -39,7 +39,14 @@ const PROJECT_DIR_VARS = [
 /** The file whose presence marks a vault root. */
 export const VAULT_MARKER = "vault-manifest.json";
 
-const holdsMarker = (dir: string): boolean => existsSync(join(dir, VAULT_MARKER));
+/** A regular file, as the hook commands' `[ -f ]` tests: a directory of that name is not a vault. */
+const holdsMarker = (dir: string): boolean => {
+	try {
+		return statSync(join(dir, VAULT_MARKER), { throwIfNoEntry: false })?.isFile() ?? false;
+	} catch {
+		return false;
+	}
+};
 
 export function resolveProjectDir(fallback: string, env: NodeJS.ProcessEnv = process.env): string {
 	const named = PROJECT_DIR_VARS.map((name) => env[name]).find(Boolean) ?? fallback;

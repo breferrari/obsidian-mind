@@ -212,6 +212,18 @@ describe("resolveVaultRoot", () => {
 		}
 	});
 
+	test("passes a directory named vault-manifest.json, as the hook commands' [ -f ] does", () => {
+		const vault = mkdtempSync(join(tmpdir(), "qmd-mcp-dirmarker-"));
+		try {
+			mkdirSync(join(vault, "work", "vault-manifest.json"), { recursive: true });
+			writeFileSync(join(vault, "vault-manifest.json"), "{}");
+			const out = resolveVaultRoot("file:///elsewhere/.claude/scripts/qmd-mcp.mjs", { CLAUDE_PROJECT_DIR: join(vault, "work") });
+			assert.equal(out, vault);
+		} finally {
+			rmSync(vault, { recursive: true, force: true });
+		}
+	});
+
 	test("ignores CLAUDE_PROJECT_DIR when value is empty", () => {
 		const out = resolveVaultRoot(
 			"file:///C:/vault/.claude/scripts/qmd-mcp.mjs",
