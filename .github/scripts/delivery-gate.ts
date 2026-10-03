@@ -521,6 +521,8 @@ export function buildFixture(
 		mkdirSync(dirname(join(vault, file)), { recursive: true });
 		cpSync(join(REPO, file), join(vault, file));
 	}
+	// A vault copied from infrastructure alone has no brain/ of its own.
+	mkdirSync(join(vault, "brain"), { recursive: true });
 	for (let i = 1; i <= notes; i++) {
 		const n = String(i).padStart(3, "0");
 		if (i === MARKER_NOTE) continue;
