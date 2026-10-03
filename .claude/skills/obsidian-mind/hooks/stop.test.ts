@@ -1,6 +1,6 @@
 import { describe, expect, test } from "claude-code/testing";
 import { engine, type On, type Reply } from "./world.ts";
-import { carriesReport, fromPerson, parseStopReport, summaryLine, withLine, type StopReport } from "./stop.ts";
+import { carriesReport, fromPerson, parseStopReport, ranIn, summaryLine, withLine, type StopReport } from "./stop.ts";
 
 // Run with `claude plugin test .claude/skills/obsidian-mind`. Each test's own
 // `on` hooks sit beneath the mod and stand in for the engine and the vault.
@@ -242,6 +242,28 @@ describe("the line under the answer (#266)", () => {
 		await $.prompt.submit({ text: "next" });
 
 		expect(world.submitted[1]?.context ?? []).toEqual([]);
+	});
+
+	test("a held short prompt is not taken as run by another prompt that merely contains it", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")));
+		await $.classic.Stop({ stop_hook_active: false });
+		await $.prompt.submit({ text: "ok" });
+		await $.turn.start({ text: "looks ok now", turnId: "t1" });
+		await $.prompt.submit({ text: "next" });
+
+		expect(world.submitted[1]?.context).toEqual([HANDED("k")]);
+	});
+
+	test("when the mod's own Stop run fails, its older queued report is dropped: the settings hook hands over the fresh one", async ($, on) => {
+		let fail = false;
+		const world = stopWorld(on, () => (fail ? { exitCode: 1, stdout: "" } : { exitCode: 0, stdout: JSON.stringify({ report: report("old") }) }));
+		await $.classic.Stop({ stop_hook_active: false });
+		fail = true;
+		await $.classic.Stop({ stop_hook_active: false });
+		await $.prompt.submit({ text: "next" });
+
+		expect(world.passedDown[1]?.["om_mod"]).toBe(undefined);
+		expect(world.submitted[0]?.context ?? []).toEqual([]);
 	});
 
 	test("a queued prompt pulled back before it ran: the report goes back to the queue", async ($, on) => {
@@ -608,5 +630,20 @@ describe("carriesReport", () => {
 		for (const kind of ["peer", "peer-send-message", "task-notification", "scheduled-trigger", "auto-continuation", "unclassified"] as const) {
 			expect(carriesReport({ kind } as never)).toBe(false);
 		}
+	});
+});
+
+describe("ranIn", () => {
+	test("the same prompt, or one of the prompts folded into a turn, as whole lines", () => {
+		expect(ranIn("typed", "typed")).toBe(true);
+		expect(ranIn("first\nsecond", "second")).toBe(true);
+		expect(ranIn("first\n\nsecond", "first")).toBe(true);
+		expect(ranIn("first\nsecond line\nthird", "second line")).toBe(true);
+	});
+
+	test("never a substring: a short prompt inside another's text did not run", () => {
+		expect(ranIn("looks ok now", "ok")).toBe(false);
+		expect(ranIn("okay", "ok")).toBe(false);
+		expect(ranIn("a\nok then", "ok")).toBe(false);
 	});
 });

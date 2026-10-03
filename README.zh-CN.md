@@ -223,15 +223,6 @@ mod 是没有沙箱、以你的权限运行的代码，因此在信任该文件�
 ```
 <!-- mod-validate:end -->
 
-<!-- mod-validate：start -->
-对于这一版本的 mod，其输出中值得确认的两行如下：
-
-```text
-  ❯ ./register.ts hooks： classic.SessionStart， prompt.context， classic.Stop， turn.complete， prompt.submit
-  ❯ ./register.ts calls： $.fs.write， $.process.run （via runScript）， $.prompt.submit， $.session.root， $.state.get， $.state.set， $.store.get （via setShown， shownFor）， $.store.set （via setShown）， $.ui.invalidate
-```
-<!-- mod-validate：end -->
-
 ### ⚡ Token 效率
 
 obsidian-mind **不会**将整个 vault 加载到上下文中。它使用分层加载来控制 token 成本：

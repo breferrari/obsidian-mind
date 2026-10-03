@@ -1,6 +1,6 @@
 import { atom, read, update, type EngineInterface, type PluginState, type Register } from "claude-code";
 import { withSessionContext } from "./context.ts";
-import { carriesReport, fromPerson, parseStopReport, summaryLine, withLine } from "./stop.ts";
+import { carriesReport, fromPerson, parseStopReport, ranIn, summaryLine, withLine } from "./stop.ts";
 
 /**
  * obsidian-mind's Claude Code mod (#262).
@@ -118,10 +118,15 @@ export const register: Register = (on) => {
 			// show again in the session it was for; one it already has stays shown.
 			const lost: Queued | null = dropped;
 			if (lost !== null) await setShown($, lost.sessionId, null);
+			// If this run fails, the settings hook runs instead and prints the full
+			// layer, so the old context is cleared first (and the render redrawn)
+			// or it would ride beside the fresh one. At a compaction the hook
+			// prints only a pointer, trusting the static half to be in the
+			// conversation already; under the mod it never was, so there the last
+			// good context is kept rather than lost.
+			await update($, sessionContext, () => null);
+			$.ui.invalidate("prompt.context");
 		}
-		// Cleared first: if this run fails, the settings hook delivers fresh
-		// output and no earlier context may ride beside it.
-		await update($, sessionContext, () => null);
 		const root = await $.session.root();
 		const text = await runScript($, root, "session-start.ts", { ...e, om_mod: "deliver" }, 30_000);
 		await update($, sessionContext, () => text);
@@ -147,7 +152,15 @@ export const register: Register = (on) => {
 		// A turn some Stop hook forced: the settings hook exits on its own.
 		if (e.stop_hook_active) return next(e);
 		const root = await $.session.root();
-		const report = parseStopReport(await runScript($, root, "stop-checklist.ts", { ...e, om_mod: "report" }, 5_000));
+		let report: ReturnType<typeof parseStopReport>;
+		try {
+			report = parseStopReport(await runScript($, root, "stop-checklist.ts", { ...e, om_mod: "report" }, 5_000));
+		} catch (error) {
+			// The settings hook runs in this hook's place and hands over its own
+			// report; one still queued here would ride the same prompt beside it.
+			await update($, queued, () => null);
+			throw error;
+		}
 		// Per session, so a new session shows its first report even with the
 		// same findings, as the settings hook's dedupe does.
 		const sessionId = String(e.session_id);
@@ -248,7 +261,7 @@ export const register: Register = (on) => {
 		// Queued prompts run in order and may be folded into one turn, so a turn
 		// whose text holds the prompt's ran it: delivered. Any other prompt's turn
 		// starting first means the one holding the report left the queue unrun.
-		if (waiting !== null && e.text !== "" && !e.text.includes(waiting.text)) {
+		if (waiting !== null && e.text !== "" && !ranIn(e.text, waiting.text)) {
 			let now = waiting.generation;
 			await update($, generation, (g) => {
 				now = g;

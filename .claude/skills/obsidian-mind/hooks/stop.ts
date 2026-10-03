@@ -63,6 +63,15 @@ export function withLine(textBelow: string, answer: string, line: string): strin
  * this mod's urgent prompt. A peer's message, a notification or a schedule
  * is not the person writing, and must not consume the report.
  */
+/**
+ * Whether a turn that started with `turnText` ran the prompt `promptText`:
+ * the same text, or queued prompts folded into one turn with it among them as
+ * whole lines. Never a substring: a held "ok" is not run by "looks ok now".
+ */
+export function ranIn(turnText: string, promptText: string): boolean {
+	return `\n${turnText}\n`.includes(`\n${promptText}\n`);
+}
+
 export function carriesReport(origin: PromptOrigin | undefined): boolean {
 	return fromPerson(origin) || (origin?.kind === "plugin" && origin.name === "obsidian-mind");
 }
