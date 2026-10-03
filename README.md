@@ -215,17 +215,18 @@ Five lifecycle hooks handle routing automatically:
 On Claude Code 2.1.287 or later, the vault also ships a mod: `.claude/skills/obsidian-mind/`, a plugin whose code runs inside Claude Code. It runs the vault's own hook scripts and changes only how their output reaches the session:
 
 - **Session context arrives as an instruction file**, the way `CLAUDE.md` does. It is re-read whole after compaction and `/clear` (as hook output it shrinks to a pointer), it reaches general-purpose subagents (hook output never does), and it is not cut at Claude Code's 10,000-character hook limit. Its budget is `eager_layer_instruction_budget_bytes` in `vault-manifest.json`; sections that never shrink, such as open tasks, can still take it past that. `/memory` lists it as `.claude/session-context.md`.
+- **The Stop report becomes one line under the answer.** When the findings change you see `obsidian-mind: vault check: …` beneath Claude's reply, and Claude gets the full report with your next message, unseen. A finding marked urgent gets Claude's attention at once instead, once per message you send (a second one waits inside the report); the template's own report has none.
 
 For each event it handles, the mod tells the matching hook to stand down. Wherever the mod does not load, the hooks run exactly as before: Codex and Gemini, older Claude Code, a session started in a vault subfolder (launch from the vault root, or `/cd` there and `/clear`), or a folder you have not trusted. It loads only after you accept Claude Code's trust prompt for the vault.
 
-A mod is unsandboxed code that runs with your permissions, so check what it does before trusting the folder: `claude plugin validate .claude/skills/obsidian-mind` lists every event it hooks and every call it makes (it runs the vault's own scripts and writes the context file, nothing else). To turn it off, add `"enabledPlugins": { "obsidian-mind@skills-dir": false }` to `.claude/settings.local.json`.
+A mod is unsandboxed code that runs with your permissions, so check what it does before trusting the folder: `claude plugin validate .claude/skills/obsidian-mind` lists every event it hooks and every call it makes (it runs the vault's own scripts, writes the context file, remembers in its own store which report each session was shown, and can submit a prompt for an urgent finding, nothing else). To turn it off, add `"enabledPlugins": { "obsidian-mind@skills-dir": false }` to `.claude/settings.local.json`.
 
 <!-- mod-validate:start -->
 The two lines that matter in its output, for this version of the mod:
 
 ```text
-  ❯ ./register.ts hooks: classic.SessionStart, prompt.context
-  ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.session.root, $.state.get, $.state.set, $.ui.invalidate
+  ❯ ./register.ts hooks: classic.SessionStart, prompt.context, classic.Stop, turn.complete, prompt.submit, turn.start
+  ❯ ./register.ts calls: $.fs.write, $.process.run (via runScript), $.prompt.submit, $.session.root, $.state.get, $.state.set, $.store.get (via setShown, shownFor), $.store.set (via setShown), $.ui.invalidate
 ```
 <!-- mod-validate:end -->
 

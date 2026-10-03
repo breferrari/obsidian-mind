@@ -63,6 +63,10 @@ jobs:
               # A here-string, not a pipe: grep -q exits at its first match, and
               # under pipefail the tr it leaves writing fails a README that matches.
               grep -qxF -- "$line" <<<"$(sed 's/^[[:space:]]*//' "$readme" | tr -d '\r')" || { echo "::error::$readme does not show: $line"; exit 1; }
+              # And only once: a stale second copy (a translation artifact, an
+              # old version left behind) would show the reader the wrong list.
+              copies=$(grep -cE "register\.ts $kind[:：]" "$readme" || true)
+              [ "$copies" = 1 ] || { echo "::error::$readme shows the $kind line $copies times"; exit 1; }
             done
           done
       - name: Test the mod
