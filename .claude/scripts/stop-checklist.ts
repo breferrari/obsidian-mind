@@ -39,6 +39,12 @@
  * (lib/hook-io.ts).
  * The documented event name is the only branch — no agent sniffing and no
  * agent-specific argument.
+ *
+ * Under the template's Claude Code mod (#264, lib/om-mod.ts) the mod presents
+ * the report itself: it runs this script with `om_mod: "report"` to get the
+ * report as data, and flags the Stop it passes down with
+ * `om_mod: "standdown"`, on which this hook writes the empty envelope and
+ * does nothing else. Without the mod, nothing sends the flag.
  */
 
 import { readFileSync } from "node:fs";
@@ -48,11 +54,13 @@ import {
 	readStdinJson,
 	writeSilentHookOutput,
 	writeStopFeedback,
+	writeStopReportData,
 	writeSystemMessage,
 } from "./lib/hook-io.ts";
+import { readOmMod } from "./lib/om-mod.ts";
 import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 import { HANDOFF_DIR, pruneHandoffs, writeHandoff } from "./lib/stop-handoff.ts";
-import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, stopSummary } from "./lib/stop-report.ts";
+import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, MOD_PREFACE, stopSummary } from "./lib/stop-report.ts";
 import {
 	formatActiveHygiene,
 	hygieneClaims,
@@ -87,12 +95,20 @@ type HookInput = {
 };
 
 const input = await readStdinJson<HookInput>();
+// The mod presents this Stop (lib/om-mod.ts): the empty envelope, no state,
+// no handoff, no refresh. The mod's own `report` run does the refresh.
+const omMod = readOmMod(input);
+if (omMod === "standdown") {
+	writeSilentHookOutput();
+	process.exit(0);
+}
 // Re-entry (the Stop after a turn some Stop hook forced, or a secondary
 // agent's): say nothing, which keeps a forced turn from looping, spawn no second refresh,
 // but still emit the empty envelope rather than zero bytes — see
 // writeSilentHookOutput for why "sometimes silent, sometimes JSON" is the
 // weaker contract.
-if (input?.stop_hook_active === true) {
+// The mod's `report` run is not a re-entry: the mod decides when to ask.
+if (input?.stop_hook_active === true && omMod !== "report") {
 	writeSilentHookOutput();
 	process.exit(0);
 }
@@ -152,13 +168,18 @@ const VOLATILE_FIELDS = new Set(["sizeKb", "ageDays", "oldestDays"]);
 const sessionId = input?.session_id;
 const isStop = input?.hook_event_name === "Stop";
 const hasSession = typeof sessionId === "string" && sessionId !== "";
-const show =
-	!isStop || !hasSession || claimChanged(STATE_PATH, sessionId, reportKey({ checklist, report }, VOLATILE_FIELDS));
+const key = reportKey({ checklist, report }, VOLATILE_FIELDS);
+const claims = hygieneClaims(report);
 
-if (!show) writeSilentHookOutput();
+if (omMod === "report") {
+	// The mod's own run (lib/om-mod.ts): the report as data. The mod draws the
+	// line, hands the agent the report and decides when it changed, so no
+	// state is claimed and nothing is handed over here. `key` is the report's
+	// identity, the same one the Stop dedupe below compares.
+	writeStopReportData({ key, claims, agentText: `${MOD_PREFACE}\n\n${message}` });
+} else if (isStop && hasSession && !claimChanged(STATE_PATH, sessionId, key)) writeSilentHookOutput();
 else if (isStop && hasSession) {
 	// The summary now, the full report with the next prompt; Stop feedback if it cannot be saved.
-	const claims = hygieneClaims(report);
 	try {
 		pruneHandoffs(HANDOFF_DIR, Date.now());
 		writeHandoff(HANDOFF_DIR, sessionId, `${AGENT_PREFACE}\n\n${message}`);

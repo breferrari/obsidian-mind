@@ -14,6 +14,7 @@
     "what to watch"
   ],
   "eager_layer_budget_bytes": 9100,
+  "eager_layer_instruction_budget_bytes": 20000,
   "listing_collapse_threshold": 12,
   "memory_root": "memories",
   "mcp_exposed_roots": [],

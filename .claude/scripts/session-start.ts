@@ -8,6 +8,14 @@
  * vault markdown file listing.
  *
  * Also persists VAULT_PATH to CLAUDE_ENV_FILE when Claude Code provides it.
+ *
+ * Under the template's Claude Code mod (#264, lib/om-mod.ts) the mod
+ * delivers this output as an instruction file: it runs this script with
+ * `om_mod: "deliver"` (always the full layer, held to
+ * `eager_layer_instruction_budget_bytes` rather than the hook-output cap) and
+ * flags the event it passes down with `om_mod: "standdown"`, on which this
+ * hook exits before any output or side effect. Without the mod, nothing
+ * sends the flag.
  */
 
 import {
@@ -47,6 +55,10 @@ import {
 	applyInjectionBudget,
 	effectiveInjectionBudget,
 	parseInjectionBudget,
+	parseInstructionBudget,
+	DEFAULT_INSTRUCTION_BUDGET_BYTES,
+	METER_HEADROOM,
+	type InjectionBudget,
 	parseListingCollapseThreshold,
 	shouldCollapseDir,
 	formatCollapsedDir,
@@ -65,7 +77,8 @@ import {
 	scanActiveHygiene,
 } from "./lib/active-hygiene.ts";
 
-import { fitHookOutput, readStdinJson } from "./lib/hook-io.ts";
+import { fitWithMeter, HOOK_OUTPUT_LIMIT, type OutputLimit, readStdinJson } from "./lib/hook-io.ts";
+import { readOmMod } from "./lib/om-mod.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
 type HookInput = { readonly source?: unknown };
@@ -95,7 +108,6 @@ async function readHookInput(): Promise<HookInput | null> {
 	return result;
 }
 const hookInput = await readHookInput();
-const mode = injectionMode(hookInput?.source);
 
 function readManifestRaw(): string | null {
 	try {
@@ -106,7 +118,6 @@ function readManifestRaw(): string | null {
 }
 
 const cwd = resolveProjectDir(process.cwd());
-process.chdir(cwd);
 
 // Persist vault path for any downstream shell consumers (Claude Code feature).
 // The whole line comes from formatEnvExport so quoting is not a step anyone
@@ -121,6 +132,21 @@ if (envFile) {
 		/* best-effort — session continues even if persistence fails */
 	}
 }
+
+// A Claude Code mod that delivers this layer itself flags the event it
+// passes down (lib/om-mod.ts): stand down before every other side effect,
+// since the mod's own run of this script performs them. The export above is
+// the exception: Claude Code gives CLAUDE_ENV_FILE to hook processes only, so
+// the mod's run never sees it and this run is the only one that can write it.
+// `deliver` is the mod's run: the output becomes an instruction file, which
+// compaction keeps whole, so it is always the full layer and is not held
+// under the hook-output cap.
+const omMod = readOmMod(hookInput);
+if (omMod === "standdown") process.exit(0);
+const delivering = omMod === "deliver";
+const mode = delivering ? "full" : injectionMode(hookInput?.source);
+
+process.chdir(cwd);
 
 // Manifest is read once and reused: QMD's named index, the infrastructure
 // allowlist for openTasks(), and any future manifest-driven sections all
@@ -619,18 +645,30 @@ if (hygieneLines.length > 0) {
 // The eager layer is held under a byte budget, and the budget under Claude
 // Code's hook output cap: past the cap the session gets a 2,000-character
 // preview, so a larger budget never binds (#254). An unset or larger
-// manifest value is clamped, and the meter says so. fitHookOutput is the
-// backstop for the sections that never degrade.
-const budget = effectiveInjectionBudget(parseInjectionBudget(manifestJson));
+// manifest value is clamped, and the meter says so. fitWithMeter is the
+// backstop for the sections that never degrade. Delivered by a mod as an
+// instruction file, the layer is under no hook cap: it gets its own budget,
+// and the backstop holds the whole file to that budget plus the meter's
+// headroom, in bytes, as the hook path holds its budget under the cap.
+const budget: InjectionBudget = delivering
+	? { bytes: parseInstructionBudget(manifestJson) ?? DEFAULT_INSTRUCTION_BUDGET_BYTES }
+	: effectiveInjectionBudget(parseInjectionBudget(manifestJson));
 const budgeted = applyInjectionBudget(sections, budget.bytes);
+const limit: OutputLimit = delivering
+	? { max: budget.bytes + METER_HEADROOM, unit: "bytes", name: "the instruction budget" }
+	: HOOK_OUTPUT_LIMIT;
 
 process.stdout.write(
-	fitHookOutput(budgeted.text + "\n", (cut, bodyBytes) =>
-		formatInjectionSize(bodyBytes, {
-			budgetBytes: budget.bytes,
-			collapsed: budgeted.collapsed,
-			clampedFrom: budget.clampedFrom,
-			cut,
-		}),
+	fitWithMeter(
+		budgeted.text + "\n",
+		(cut, bodyBytes) =>
+			formatInjectionSize(bodyBytes, {
+				budgetBytes: budget.bytes,
+				collapsed: budgeted.collapsed,
+				clampedFrom: budget.clampedFrom,
+				cut,
+				cutTo: limit.name,
+			}),
+		limit,
 	),
 );

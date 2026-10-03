@@ -193,3 +193,42 @@ describe("writeHookOutput — additionalContext fits the hook output cap (#254)"
 		assert.equal(out, '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"hello"}}');
 	});
 });
+
+describe("writeStopReportData", () => {
+	test("a report too large for one pipe write arrives whole", async () => {
+		const { spawnSync } = await import("node:child_process");
+		const lib = new URL("../lib/hook-io.ts", import.meta.url).href;
+		const agentText = "x".repeat(2_000_000);
+		const script = `import { writeStopReportData } from ${JSON.stringify(lib)}; writeStopReportData({ key: "k", claims: ["c"], agentText: "x".repeat(${agentText.length}) });`;
+		const run = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", "--experimental-strip-types", "--input-type=module", "-e", script], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+		assert.equal(run.status, 0, run.stderr);
+		const parsed = JSON.parse(run.stdout) as { report: { agentText: string } };
+		assert.equal(parsed.report.agentText.length, agentText.length);
+	});
+});
+
+describe("writeStopReportData on a pipe that writes in parts", () => {
+	test("short writes and a full pipe still deliver every byte, in order", async () => {
+		const { writeStopReportData } = await import("../lib/hook-io.ts");
+		const out: Buffer[] = [];
+		let calls = 0;
+		const write = (buffer: Buffer, offset: number, length: number): number => {
+			calls++;
+			if (calls === 2) throw Object.assign(new Error("full"), { code: "EAGAIN" });
+			const n = Math.min(length, 7);
+			out.push(buffer.subarray(offset, offset + n));
+			return n;
+		};
+		writeStopReportData({ key: "k", claims: ["a claim"], agentText: "the full report, longer than one short write" }, write);
+		const parsed = JSON.parse(Buffer.concat(out).toString("utf8")) as { report: { agentText: string } };
+		assert.equal(parsed.report.agentText, "the full report, longer than one short write");
+	});
+
+	test("any failure but a full pipe throws, so the mod falls back", async () => {
+		const { writeStopReportData } = await import("../lib/hook-io.ts");
+		const write = (): number => {
+			throw Object.assign(new Error("closed"), { code: "EPIPE" });
+		};
+		assert.throws(() => writeStopReportData({ key: "k", claims: [], agentText: "t" }, write), /closed/);
+	});
+});

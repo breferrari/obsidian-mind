@@ -23,6 +23,8 @@ import {
 	shouldCollapseDir,
 	formatCollapsedDir,
 	parseInjectionBudget,
+	parseInstructionBudget,
+	DEFAULT_INSTRUCTION_BUDGET_BYTES,
 	effectiveInjectionBudget,
 	INJECTION_CEILING_BYTES,
 	parseListingCollapseThreshold,
@@ -49,7 +51,8 @@ import {
 	collectOpenTasks,
 } from "../lib/session-start.ts";
 
-import { CUT_LINE, fitHookOutput, HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
+import { cutLine, fitEncoded, fitWithMeter, HOOK_OUTPUT_LIMIT, HOOK_OUTPUT_MAX_CHARS, type OutputLimit } from "../lib/hook-io.ts";
+const CUT_LINE = cutLine(HOOK_OUTPUT_LIMIT);
 import { rmTemp } from "./_helpers.ts";
 
 describe("take", () => {
@@ -1167,6 +1170,25 @@ describe("manifest budget fields", () => {
 		assert.equal(parseListingCollapseThreshold('{"eager_layer_budget_bytes":25}'), null);
 	});
 
+	test("parseInstructionBudget reads its own field, with the same validation", () => {
+		assert.equal(parseInstructionBudget('{"eager_layer_instruction_budget_bytes":40000}'), 40_000);
+		assert.equal(parseInstructionBudget('{"eager_layer_budget_bytes":40000}'), null);
+		assert.equal(parseInstructionBudget('{"eager_layer_instruction_budget_bytes":0}'), null);
+		assert.equal(parseInstructionBudget('{"eager_layer_instruction_budget_bytes":"40000"}'), null);
+		assert.equal(parseInstructionBudget(null), null);
+	});
+
+	test("the instruction-file default is above the hook-output ceiling, or delivering would gain nothing", () => {
+		assert.ok(DEFAULT_INSTRUCTION_BUDGET_BYTES > INJECTION_CEILING_BYTES);
+	});
+
+	test("the shipped manifest states the same instruction budget the code falls back to", () => {
+		// The manifest shows users the key; the constant covers a vault whose
+		// manifest omits it. They are one default, so they must not drift apart.
+		const manifest = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../vault-manifest.json"), "utf-8");
+		assert.equal(parseInstructionBudget(manifest), DEFAULT_INSTRUCTION_BUDGET_BYTES);
+	});
+
 	test("the shipped default threshold is a positive integer", () => {
 		assert.ok(Number.isInteger(DEFAULT_LISTING_COLLAPSE_THRESHOLD));
 		assert.ok(DEFAULT_LISTING_COLLAPSE_THRESHOLD > 0);
@@ -1232,16 +1254,17 @@ describe("the injection budget under the hook output cap (#254)", () => {
 	});
 });
 
-describe("fitHookOutput", () => {
+describe("fitWithMeter", () => {
+	const chars = (max: number): OutputLimit => ({ ...HOOK_OUTPUT_LIMIT, max });
 	const meter = (cut: boolean, bytes: number) => `_meter ${bytes}${cut ? " cut" : ""}_`;
 
 	test("output under the cap is the body and the meter, unchanged", () => {
-		assert.equal(fitHookOutput("a\nb\n", meter, 100), "a\nb\n\n_meter 4_\n");
+		assert.equal(fitWithMeter("a\nb\n", meter, chars(100)), "a\nb\n\n_meter 4_\n");
 	});
 
 	test("output over the cap is cut on a line, marked, and closed by the meter", () => {
 		const body = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n") + "\n";
-		const out = fitHookOutput(body, meter, 500);
+		const out = fitWithMeter(body, meter, chars(500));
 		assert.ok(out.length <= 500, `output is ${out.length} characters`);
 		assert.ok(out.includes(`\n${CUT_LINE}\n`), "the cut is marked");
 		const lines = out.split("\n");
@@ -1254,12 +1277,12 @@ describe("fitHookOutput", () => {
 		// Every position is a line boundary, so the kept prefix is the longest
 		// the arithmetic allows; an off-by-one either way moves this length.
 		// A fixed-width meter, so a size with fewer digits cannot move it too.
-		const out = fitHookOutput("\n".repeat(2_000), (cut) => (cut ? "_m cut_" : "_m_"), 500);
+		const out = fitWithMeter("\n".repeat(2_000), (cut) => (cut ? "_m cut_" : "_m_"), chars(500));
 		assert.equal(out.length, 499);
 	});
 
 	test("a body with no line to cut on keeps the partial line, filling the cap exactly", () => {
-		const out = fitHookOutput("x".repeat(2_000), (cut) => (cut ? "_m cut_" : "_m_"), 500);
+		const out = fitWithMeter("x".repeat(2_000), (cut) => (cut ? "_m cut_" : "_m_"), chars(500));
 		assert.equal(out.length, 500);
 		assert.ok(out.startsWith("x".repeat(100)), "the partial line is kept, not dropped");
 	});
@@ -1267,7 +1290,7 @@ describe("fitHookOutput", () => {
 	test("a partial line never ends in half of a surrogate pair", () => {
 		// Each emoji is two UTF-16 units; one of the two parities lands mid-pair.
 		for (const cap of [500, 501]) {
-			const out = fitHookOutput("😀".repeat(1_000), (cut) => (cut ? "_m cut_" : "_m_"), cap);
+			const out = fitWithMeter("😀".repeat(1_000), (cut) => (cut ? "_m cut_" : "_m_"), chars(cap));
 			assert.ok(out.length <= cap);
 			assert.doesNotThrow(() => encodeURIComponent(out), `a lone surrogate at cap ${cap}`);
 		}
@@ -1275,22 +1298,45 @@ describe("fitHookOutput", () => {
 
 	test("an oversized meter is cut without leaving half of a surrogate pair", () => {
 		for (const cap of [500, 501]) {
-			const out = fitHookOutput("x".repeat(2_000), () => "😀".repeat(600), cap);
+			const out = fitWithMeter("x".repeat(2_000), () => "😀".repeat(600), chars(cap));
 			assert.ok(out.length <= cap);
 			assert.doesNotThrow(() => encodeURIComponent(out), `a lone surrogate at cap ${cap}`);
 		}
 	});
 
 	test("a meter longer than the cap is cut too: the cap holds for any input", () => {
-		const out = fitHookOutput("a\nb\n", () => "m".repeat(600), 500);
+		const out = fitWithMeter("a\nb\n", () => "m".repeat(600), chars(500));
 		assert.ok(out.length <= 500, `output is ${out.length} characters`);
 	});
 
 	test("the meter reports the size of what was kept, not of the whole body", () => {
 		const body = "x\n".repeat(1_000);
-		const out = fitHookOutput(body, meter, 300);
+		const out = fitWithMeter(body, meter, chars(300));
 		const kept = out.slice(0, out.lastIndexOf("\n\n_meter") + 1);
 		assert.match(out, new RegExp(`_meter ${Buffer.byteLength(kept, "utf-8")} cut_\n$`));
+	});
+
+	test("a byte limit is measured in UTF-8 bytes, cuts on a line, and never splits a character", () => {
+		const limit: OutputLimit = { max: 500, unit: "bytes", name: "a test budget" };
+		// Three bytes per character: 400 characters fit a character cap of 500, not this one.
+		const body = Array.from({ length: 40 }, () => "界".repeat(10)).join("\n") + "\n";
+		const out = fitWithMeter(body, meter, limit);
+		assert.ok(Buffer.byteLength(out, "utf-8") <= 500, `output is ${Buffer.byteLength(out, "utf-8")} bytes`);
+		assert.ok(out.includes(`\n${cutLine(limit)}\n`), "the cut is marked with the limit's name");
+		const lines = out.split("\n");
+		for (const l of lines.slice(0, lines.indexOf(cutLine(limit)))) assert.equal(l, "界".repeat(10));
+	});
+
+	test("a byte limit with no line to cut on keeps whole characters only", () => {
+		for (const max of [500, 501, 502]) {
+			const out = fitWithMeter("界".repeat(1_000), (cut) => (cut ? "_m cut_" : "_m_"), { max, unit: "bytes", name: "a test budget" });
+			assert.ok(Buffer.byteLength(out, "utf-8") <= max);
+			assert.ok(!out.includes("\uFFFD"), `a split character at ${max}`);
+		}
+	});
+
+	test("the hook limit's cut line is the one fitEncoded uses", () => {
+		assert.ok(fitEncoded("x".repeat(100), 60).endsWith(`\n${CUT_LINE}`));
 	});
 });
 
@@ -1306,7 +1352,7 @@ describe("the eager layer end to end under the cap (#254)", () => {
 		];
 		const budget = effectiveInjectionBudget(80_000);
 		const budgeted = applyInjectionBudget(sections, budget.bytes);
-		const out = fitHookOutput(budgeted.text + "\n", (cut, bytes) =>
+		const out = fitWithMeter(budgeted.text + "\n", (cut, bytes) =>
 			formatInjectionSize(bytes, { budgetBytes: budget.bytes, collapsed: budgeted.collapsed, clampedFrom: budget.clampedFrom, cut }),
 		);
 		assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `output is ${out.length} characters`);
@@ -1324,7 +1370,7 @@ describe("the eager layer end to end under the cap (#254)", () => {
 		];
 		const budget = effectiveInjectionBudget(null);
 		const budgeted = applyInjectionBudget(sections, budget.bytes);
-		const out = fitHookOutput(budgeted.text + "\n", (cut, bytes) =>
+		const out = fitWithMeter(budgeted.text + "\n", (cut, bytes) =>
 			formatInjectionSize(bytes, { budgetBytes: budget.bytes, collapsed: budgeted.collapsed, cut }),
 		);
 		assert.ok(out.length <= HOOK_OUTPUT_MAX_CHARS, `output is ${out.length} characters`);

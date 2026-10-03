@@ -122,7 +122,7 @@ The hook scripts, subagent prompts, command definitions, and vault conventions a
 | Which files are user content? | `user_content_roots[]`, `scaffold{}` |
 | What frontmatter is required for each note type? | `frontmatter_required{}` |
 | Which notes does the `om` server serve, and where do memories live? | `mcp_exposed_roots[]`, `mcp_never_expose[]`, `memory_root`, `mcp_inbox` |
-| How much context may the eager layer spend? | `eager_layer_budget_bytes`, `listing_collapse_threshold` |
+| How much context may the eager layer spend? | `eager_layer_budget_bytes` (as hook output, held under the 10,000-char hook cap), `eager_layer_instruction_budget_bytes` (when the mod delivers it as an instruction file), `listing_collapse_threshold` |
 | Which model does a `reason` spawn run on? | `reason.model` — unset means the user's own CLI default |
 
 The `qmd_index` field is the most load-bearing. **Five independent callers** read it, and they fail *silently* when they disagree — one writes to a store another never reads, which surfaces only as "0 documents" or as an empty search:
@@ -203,7 +203,7 @@ sequenceDiagram
 
 A few specific design choices are worth calling out:
 
-- **`SessionStart` injects, it does not load.** It builds a briefing (filename listing, North Star excerpt, git summary, open tasks aggregated from `work/active/` and the vault root) and hands it to the agent. Full note contents never flow through this hook. Its size is bounded by `eager_layer_budget_bytes`, held under Claude Code's 10,000-character hook output cap, and reported by the meter on the last line of every injection, so the cost is visible rather than assumed. The open-tasks scan is filesystem-only so the hook never spawns the Obsidian CLI — that subprocess flashes the Electron app on macOS when no instance is running (#83).
+- **`SessionStart` injects, it does not load.** It builds a briefing (filename listing, North Star excerpt, git summary, open tasks aggregated from `work/active/` and the vault root) and hands it to the agent. Full note contents never flow through this hook. Its size is bounded by `eager_layer_budget_bytes`, held under Claude Code's 10,000-character hook output cap, and reported by the meter on the last line of every injection, so the cost is visible rather than assumed. When the template's Claude Code mod delivers the same briefing as an instruction file instead, the hook stands down and the briefing is bounded by `eager_layer_instruction_budget_bytes`, since instruction files are not under the hook cap (#264). The same backstop holds there, in bytes: sections that never degrade are cut at the budget plus the meter's room, and the meter says "truncated to fit the instruction budget". The open-tasks scan is filesystem-only so the hook never spawns the Obsidian CLI — that subprocess flashes the Electron app on macOS when no instance is running (#83).
 - **`UserPromptSubmit` classifies, it does not route.** It tags the prompt with hints like `ARCHITECTURE discussion` or `DECISION`; the agent decides where to file. Keeping the hook opinion-free means the routing logic lives in `CLAUDE.md`, which is editable per-user without touching scripts.
 - **QMD refresh is shared, debounced, and detached.** Three hook entries fire the same refresh helper — `PostToolUse` (after `.md` writes), `PreCompact` (before transcript backup; writes tend to cluster before compaction), and `Stop` (after a response) — sharing one sentinel file so a burst of events produces at most one worker per debounce window. The actual indexing runs in `.claude/scripts/qmd-refresh-run.ts` as a detached, stdio-silent worker (`qmd update` → `qmd embed` → tail-chase `qmd update`), so the parent hook returns in milliseconds and nothing flows to the agent's context.
 - **`PreCompact` also backs up the transcript.** In addition to kicking the QMD refresh, it copies the current session transcript out to `thinking/session-logs/` so long conversations remain recoverable after compaction.
@@ -1002,7 +1002,7 @@ The design makes these changes easy:
 | Change which notes `om` serves | `vault-manifest.json` → `mcp_exposed_roots` / `mcp_never_expose`, or tag a note `private` |
 | Move the memory store | Rename the folder in Obsidian — discovery finds it and `health` reports the drift; pin it with `memory_root` to be explicit |
 | Add a new `om` tool | A declaration in `.claude/scripts/lib/mcp-tools.ts` + a case in `mcp-server.ts` — the description is what the model reads when deciding to call it |
-| Change what the eager layer may spend | `vault-manifest.json` → `eager_layer_budget_bytes`, `listing_collapse_threshold` |
+| Change what the eager layer may spend | `vault-manifest.json` → `eager_layer_budget_bytes` (hook path), `eager_layer_instruction_budget_bytes` (mod path), `listing_collapse_threshold` |
 
 The design is hostile to these changes (on purpose):
 

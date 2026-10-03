@@ -32,8 +32,10 @@ export function formatInjectionSize(
 		readonly collapsed?: readonly string[] | undefined;
 		/** The configured budget, when it was clamped to the hook output cap. */
 		readonly clampedFrom?: number | undefined;
-		/** True when the output was truncated to fit the hook output cap. */
+		/** True when the output was truncated to fit its limit. */
 		readonly cut?: boolean | undefined;
+		/** The limit a cut was to; the hook output cap when unset. */
+		readonly cutTo?: string | undefined;
 	},
 ): string {
 	const safe = Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
@@ -50,7 +52,7 @@ export function formatInjectionSize(
 	let line = `_context injected: ${size} / ${kb(budget)} budget${clamp}`;
 	const collapsed = opts?.collapsed ?? [];
 	if (collapsed.length > 0) line += ` — collapsed: ${collapsed.join(", ")}`;
-	if (opts?.cut === true) line += " — truncated to fit the hook output cap";
+	if (opts?.cut === true) line += ` — truncated to fit ${opts.cutTo ?? "the hook output cap"}`;
 	return `${line}_`;
 }
 
@@ -208,19 +210,34 @@ export const METER_HEADROOM = 400;
  */
 export const INJECTION_CEILING_BYTES = HOOK_OUTPUT_MAX_CHARS - METER_HEADROOM;
 
+/** A budget the eager layer is held to, and the configured value when it was clamped. */
+export type InjectionBudget = { readonly bytes: number; readonly clampedFrom?: number };
+
 /**
  * The budget actually enforced: the configured one, held under the ceiling.
  * An unset budget gets the ceiling too, since a vault with no budget is the
  * one most likely to pass the cap. `clampedFrom` is the manifest value when
  * it was clamped, so the meter can say so, and absent otherwise.
  */
-export function effectiveInjectionBudget(configured: number | null): {
-	readonly bytes: number;
-	readonly clampedFrom?: number;
-} {
+export function effectiveInjectionBudget(configured: number | null): InjectionBudget {
 	if (configured === null) return { bytes: INJECTION_CEILING_BYTES };
 	if (configured <= INJECTION_CEILING_BYTES) return { bytes: configured };
 	return { bytes: INJECTION_CEILING_BYTES, clampedFrom: configured };
+}
+
+/**
+ * The budget when a Claude Code mod delivers the eager layer as an
+ * instruction file (`om_mod: "deliver"`, #264), unless the manifest sets
+ * `eager_layer_instruction_budget_bytes`. Instruction files are not under the
+ * hook-output cap, so INJECTION_CEILING_BYTES does not apply there. The layer
+ * still gets a deliberate size, because it is paid in every session and by
+ * every general-purpose subagent: about 5,000 tokens.
+ */
+export const DEFAULT_INSTRUCTION_BUDGET_BYTES = 20_000;
+
+/** `eager_layer_instruction_budget_bytes` from the manifest; null when unset or invalid. */
+export function parseInstructionBudget(manifestJson: string | null): number | null {
+	return parsePositiveIntField(manifestJson, "eager_layer_instruction_budget_bytes");
 }
 
 

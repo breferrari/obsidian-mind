@@ -3,11 +3,22 @@
  * report for the agent. Why two, and how the full one travels: lib/stop-handoff.ts.
  */
 
-/** What both framings close with, so the two cannot drift apart on it. */
+/** What every framing closes with, so they cannot drift apart on it. */
 const STANDING_RULES = "Never move or delete notes without asking, and do not recite the report back.";
 
+/** The choice both next-prompt framings hand the agent, and the rules after it. */
+const DECIDE = `then decide what the report calls for: act on what bears on the current work, ask the user when something needs their call, or leave it unmentioned if nothing needs doing. ${STANDING_RULES}`;
+
 /** Framing for the agent, which reads the report alongside the user's next message. */
-export const AGENT_PREFACE = `Stop hook report, handed over with this message: when your previous response ended, these findings were new or changed since the last report this session. The user saw only a one-line summary of each section. Deal with the user's message first, then decide what the report calls for: act on what bears on the current work, ask the user when something needs their call, or leave it unmentioned if nothing needs doing. ${STANDING_RULES}`;
+export const AGENT_PREFACE = `Stop hook report, handed over with this message: when your previous response ended, these findings were new or changed since the last report this session. The user saw only a one-line summary of each section. Deal with the user's message first, ${DECIDE}`;
+
+/**
+ * Framing for the agent under the obsidian-mind mod (`om_mod: "report"`), whose
+ * delivery differs: the user saw one line under an earlier answer, the report
+ * rides a later prompt (not always the next one), and that prompt may be the
+ * mod's own notice rather than the user's.
+ */
+export const MOD_PREFACE = `Stop hook report, handed over with this message: when one of your earlier responses this session ended, these findings were new or changed since the last report. The user saw one line naming them under that response. Deal with this message first (it may be the user's, or a vault notice from the obsidian-mind plugin), ${DECIDE}`;
 
 /** The closing line of the summary: where the detail went. */
 export const SUMMARY_TRAILER = "The full report reaches the agent with your next message.";

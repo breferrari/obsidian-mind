@@ -113,7 +113,19 @@ export function writeSystemMessage(message: string): void {
  */
 export const HOOK_OUTPUT_MAX_CHARS = 9_500;
 
-const CUT_MARKER = "\n… (truncated to fit the hook output cap)";
+/**
+ * A limit a plain-text output is held under: its size, the unit it is
+ * measured in, and its name for the line that marks a cut.
+ */
+export type OutputLimit = { readonly max: number; readonly unit: "chars" | "bytes"; readonly name: string };
+
+/** Claude Code's hook output cap, counted in UTF-16 units as Claude Code counts characters. */
+export const HOOK_OUTPUT_LIMIT: OutputLimit = { max: HOOK_OUTPUT_MAX_CHARS, unit: "chars", name: "the hook output cap" };
+
+/** The line that replaces whatever a cut to `limit` removed. */
+export const cutLine = (limit: OutputLimit): string => `… (truncated to fit ${limit.name})`;
+
+const CUT_MARKER = `\n${cutLine(HOOK_OUTPUT_LIMIT)}`;
 
 /**
  * `text`, cut with a marker so that its JSON-encoded form is at most `max`
@@ -135,40 +147,43 @@ export function fitEncoded(text: string, max: number): string {
 	return text.slice(0, lo) + CUT_MARKER;
 }
 
-/** The line that replaces whatever a plain-text cut removed: the same words as fitEncoded's marker. */
-export const CUT_LINE = CUT_MARKER.trimStart();
-
 /**
- * A plain-text hook's whole stdout, held under Claude Code's output cap with
- * its closing meter intact: the plain-stdout counterpart of fitEncoded.
- * SessionStart's budget already holds the sections that can degrade; this is
- * the backstop for the ones that never do (the date, open tasks, hygiene)
- * (#254). The length is counted in UTF-16 units, never fewer than the
- * characters Claude Code counts. Over the cap, the body is cut at a line boundary and the meter,
- * built with `cut` set, still closes the output, so a cut is never silent.
+ * A plain-text output, held under `limit` with its closing meter intact: the
+ * plain-stdout counterpart of fitEncoded. SessionStart's budget already holds
+ * the sections that can degrade; this is the backstop for the ones that never
+ * do (the date, open tasks, hygiene) (#254), under the hook output cap or,
+ * delivered by a mod, under the instruction budget in bytes. Over the limit,
+ * the body is cut at a line boundary and the meter, built with `cut` set,
+ * still closes the output, so a cut is never silent.
  *
  * `meter` gets the UTF-8 size of the body it closes. The cut is sized with
  * the uncut body's meter; the meter is then rebuilt for what was kept, and a
  * smaller size never formats longer, so the rebuilt output still fits.
  */
-export function fitHookOutput(
+export function fitWithMeter(
 	body: string,
 	meter: (cut: boolean, bodyBytes: number) => string,
-	cap: number = HOOK_OUTPUT_MAX_CHARS,
+	limit: OutputLimit = HOOK_OUTPUT_LIMIT,
 ): string {
+	const size = (text: string) => (limit.unit === "bytes" ? Buffer.byteLength(text, "utf-8") : text.length);
+	// The longest prefix of `text` at most `n` units long, never half a character.
+	const prefix = (text: string, n: number) =>
+		limit.unit === "bytes"
+			? Buffer.from(text, "utf-8").subarray(0, n).toString("utf-8").replace(/\uFFFD+$/, "")
+			: text.slice(0, n).replace(/[\uD800-\uDBFF]$/, "");
 	const bodyBytes = Buffer.byteLength(body, "utf-8");
 	const whole = `${body}\n${meter(false, bodyBytes)}\n`;
-	if (whole.length <= cap) return whole;
-	const room = cap - `\n${CUT_LINE}\n\n${meter(true, bodyBytes)}\n`.length;
+	if (size(whole) <= limit.max) return whole;
+	const marker = cutLine(limit);
+	const room = limit.max - size(`\n${marker}\n\n${meter(true, bodyBytes)}\n`);
 	// A meter that cannot fit beside any body is itself cut: never in practice
-	// (it is a few hundred characters), but the cap must hold for any input.
-	if (room < 0) return `${meter(true, 0).slice(0, Math.max(0, cap - 1)).replace(/[\uD800-\uDBFF]$/, "")}\n`;
-	let head = body.slice(0, room);
+	// (it is a few hundred characters), but the limit must hold for any input.
+	if (room < 0) return `${prefix(meter(true, 0), Math.max(0, limit.max - 1))}\n`;
+	let head = prefix(body, room);
 	const lastBreak = head.lastIndexOf("\n");
+	// No line to cut on: keep the partial line.
 	if (lastBreak >= 0) head = head.slice(0, lastBreak);
-	// No line to cut on: keep the partial line, minus any half of a surrogate pair.
-	else if (/[\uD800-\uDBFF]$/.test(head)) head = head.slice(0, -1);
-	const kept = `${head}\n${CUT_LINE}\n`;
+	const kept = `${head}\n${marker}\n`;
 	return `${kept}\n${meter(true, Buffer.byteLength(kept, "utf-8"))}\n`;
 }
 
@@ -225,5 +240,30 @@ export function writeSilentHookOutput(): void {
 		writeSync(1, "{}");
 	} catch {
 		/* stdout gone — nothing to report it to */
+	}
+}
+
+/**
+ * The Stop report as data, for the obsidian-mind mod's own run
+ * (`om_mod: "report"`, lib/om-mod.ts). Not a hook envelope: the mod parses it
+ * and decides what the user and the agent see.
+ *
+ * Written whole: writeSync can return after part of a large buffer on a pipe,
+ * and can fail with EAGAIN when the pipe is full, so it loops until every
+ * byte is out, retrying a full pipe. Any other failure throws: the mod treats
+ * a run that printed no usable report as failed and lets the settings hook
+ * run in its place, which a silently truncated report would not trigger.
+ */
+export function writeStopReportData(
+	report: { readonly key: string; readonly claims: readonly string[]; readonly agentText: string },
+	write: (buffer: Buffer, offset: number, length: number) => number = (buffer, offset, length) => writeSync(1, buffer, offset, length),
+): void {
+	const bytes = Buffer.from(JSON.stringify({ report }), "utf8");
+	for (let offset = 0; offset < bytes.length; ) {
+		try {
+			offset += write(bytes, offset, bytes.length - offset);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EAGAIN") throw error;
+		}
 	}
 }
