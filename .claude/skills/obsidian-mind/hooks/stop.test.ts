@@ -17,8 +17,8 @@ const report = (key: string, extra: Partial<StopReport> = {}): StopReport => ({
 });
 
 /** The shared world beneath the mod, plus the prompt and answer stubs these tests steer. */
-function stopWorld(on: On, reply: () => Reply) {
-	const base = engine(on, reply);
+function stopWorld(on: On, reply: () => Reply, store?: Readonly<Record<string, unknown>>) {
+	const base = engine(on, reply, store ? { store } : {});
 	const world = {
 		runs: base.runs,
 		passedDown: base.passedDown.Stop,
@@ -361,14 +361,22 @@ describe("the line under the answer (#266)", () => {
 	});
 
 	test("a report queued but never delivered survives a resume in a new process: it is queued again", async ($, on) => {
-		const world = stopWorld(on, ok(report("k")));
-		await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
-		// A new process: nothing in $.state, only the plugin's store.
+		// A new process: nothing in $.state, only what the plugin's store kept from the old one.
+		const world = stopWorld(on, ok(report("k")), { shown: { A: { key: "k", delivered: false } } });
 		await $.classic.SessionStart({ source: "resume", session_id: "A" } as never);
 		await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
 		await $.prompt.submit({ text: "first after the resume" });
 
 		expect(world.submitted[0]?.context).toEqual([HANDED("k")]);
+	});
+
+	test("a report delivered before a resume in a new process is not sent again", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")), { shown: { A: { key: "k", delivered: true } } });
+		await $.classic.SessionStart({ source: "resume", session_id: "A" } as never);
+		await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
+		await $.prompt.submit({ text: "first after the resume" });
+
+		expect(world.submitted[0]?.context ?? []).toEqual([]);
 	});
 
 	test("each report rides one prompt, its turn starting inside the submit, across many turns", async ($, on) => {

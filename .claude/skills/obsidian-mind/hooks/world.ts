@@ -27,11 +27,11 @@ export type World = {
  * on `$` is answered `{ value }`. `hangFirstWrite` makes the first `fs.write`
  * never settle, to prove delivery does not wait on it.
  */
-export function engine(on: On, reply: () => Reply, options: { hangFirstWrite?: boolean } = {}): World {
+export function engine(on: On, reply: () => Reply, options: { hangFirstWrite?: boolean; store?: Readonly<Record<string, unknown>> } = {}): World {
 	const world: World = { runs: [], passedDown: { SessionStart: [], Stop: [] }, writes: [], invalidated: [] };
 	on("session.root", () => ({ value: ROOT }));
 	// The plugin's own key-value store, kept in memory for the test.
-	mock.store(on);
+	mock.store(on, options.store);
 	on("process.run", (_$, e) => {
 		world.runs.push(e as World["runs"][number]);
 		const { exitCode, stdout, stderr = "", truncated = false } = reply();
