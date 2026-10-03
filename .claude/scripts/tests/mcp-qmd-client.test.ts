@@ -10,6 +10,7 @@
  * does nothing at all, which is why the absence cases carry the weight.
  */
 
+import { spawn, type ChildProcess } from "node:child_process";
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -308,6 +309,28 @@ describe("client liveness", () => {
 		assert.equal(c.alive, false);
 	});
 
+	test("a broken stdin fails waiting calls at once and never escapes as an uncaught error (#243)", async () => {
+		// A launcher that stays alive, so only the stream fails. The error is
+		// emitted on the real stdin: whether a write to a closed pipe raises
+		// EPIPE depends on the platform and on timing, and the property here
+		// does not.
+		let child: ChildProcess | undefined;
+		const dir = mkdtempSync(join(tmpdir(), "qmd-stdin-"));
+		const launcher = join(dir, "idle.mjs");
+		writeFileSync(launcher, "setTimeout(() => {}, 10_000);\n");
+		const c = createQmdClient(process.cwd(), launcher, ((...args: Parameters<typeof spawn>) => (child = spawn(...args))) as typeof spawn);
+		try {
+			const waiting = c.call("tools/call", {}, 30_000);
+			child?.stdin?.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+			await assert.rejects(waiting, /qmd launcher stdin closed: write EPIPE/);
+			assert.equal(c.alive, false);
+		} finally {
+			c.dispose();
+			await waitFor(() => child?.exitCode !== null || child?.signalCode !== null);
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("a call against a dead client rejects rather than hanging", async () => {
 		const c = createQmdClient(process.cwd(), join(process.cwd(), "still-missing.mjs"));
 		await waitFor(() => !c.alive);
@@ -435,11 +458,14 @@ describe("what a timeout tells the caller", () => {
 });
 
 describe("client warmth", () => {
-	test("a fresh client is not warm", () => {
+	test("a fresh client is not warm", async () => {
 		const c = createQmdClient(process.cwd(), join(process.cwd(), "no-launcher.mjs"));
 		try {
 			assert.equal(c.warmed, false, "nothing has come back yet, so nothing is proven");
 		} finally {
+			// Settle before disposing: the constructor's write is still in flight,
+			// and its outcome must land inside this test, not after it (#243).
+			await waitFor(() => !c.alive);
 			c.dispose();
 		}
 	});

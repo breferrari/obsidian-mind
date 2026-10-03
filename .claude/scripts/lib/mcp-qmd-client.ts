@@ -254,9 +254,9 @@ export interface QmdClient {
  * rather than hardcoding the path matters because #71 is actively moving hook
  * scripts, and a stale path here kills search silently.
  */
-export function createQmdClient(vaultRoot: string, launcherPath: string | null): QmdClient {
+export function createQmdClient(vaultRoot: string, launcherPath: string | null, spawnChild: typeof spawn = spawn): QmdClient {
 	const launcher = launcherPath ?? join(vaultRoot, ".claude", "scripts", "qmd-mcp.mjs");
-	const child: ChildProcess = spawn(process.execPath, [launcher], {
+	const child: ChildProcess = spawnChild(process.execPath, [launcher], {
 		stdio: ["pipe", "pipe", "ignore"],
 		env: { ...process.env, CLAUDE_PROJECT_DIR: vaultRoot },
 	});
@@ -304,6 +304,11 @@ export function createQmdClient(vaultRoot: string, launcherPath: string | null):
 	};
 	child.on("error", (e) => failAll(`qmd launcher failed: ${e.message}`));
 	child.on("exit", () => failAll("qmd launcher exited"));
+	// A write to a child that is gone fails on the stream itself (EPIPE), not
+	// on the child. With no listener that is an uncaughtException, which takes
+	// the whole MCP server down; and no reply can come over a broken stdin, so
+	// waiting calls fail now rather than at their budget.
+	child.stdin?.on("error", (e) => failAll(`qmd launcher stdin closed: ${e.message}`));
 
 	const call = (method: string, params?: unknown, timeoutMs?: number): Promise<unknown> =>
 		new Promise((resolve, reject) => {
