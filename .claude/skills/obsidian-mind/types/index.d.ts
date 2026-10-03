@@ -8,14 +8,14 @@ declare module "claude-code" {
 			context: string | null
 			/** The session id and identity of the last Stop report shown. */
 			shownReport: string | null
-			/** The line to draw under the next main-loop answer. */
-			pendingLine: string | null
-			/** The full report, for the next prompt. */
-			pendingReport: string | null
-			/** An urgent finding, for a turn of its own. */
-			pendingUrgent: string | null
-			/** The urgent finding that got a turn of its own; cleared when the person next speaks. */
-			urgentSpent: string | null
+			/**
+			 * The Stop report waiting to be delivered: its full text for the next
+			 * prompt, and the line and urgent finding until the next completed
+			 * answer uses them. Null when nothing is waiting.
+			 */
+			queued: { readonly report: string; readonly line: string | null; readonly urgent: string | null } | null
+			/** Whether an urgent finding has had its turn since the person last spoke. */
+			urgentSpent: boolean
 		}
 	}
 }

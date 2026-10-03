@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
+import { engine, type On, type Reply } from './world.ts'
 import { carriesReport, fromPerson, parseStopReport, summaryLine, withLine, type StopReport } from './stop.ts'
 
 // Run with `claude plugin test .claude/skills/obsidian-mind`. Each test's own
@@ -6,40 +7,30 @@ import { carriesReport, fromPerson, parseStopReport, summaryLine, withLine, type
 // What the kit cannot establish is the order a live session raises them in
 // (classic.Stop before turn.complete); that is checked in a live session.
 
-const ROOT = '/vault'
+const HANDED = (key: string) => `Stop hook report, handed over with this message: ${key}`
+
 const report = (key: string, extra: Partial<StopReport> = {}): StopReport => ({
 	key,
 	claims: ['1 note(s) marked done but still in active/'],
-	agentText: `Stop hook report, handed over with this message: ${key}`,
+	agentText: HANDED(key),
 	...extra,
 })
 
-type World = {
-	runs: string[]
-	passedDown: Array<Record<string, unknown>>
-	submitted: Array<{ text: string; context?: readonly string[]; origin?: unknown }>
-	/** The next prompt is dropped below, or the next one throws below. */
-	dropNext: boolean
-	throwNext: boolean
-	/** A line another hook below sets under the answer, if any. */
-	lowerLine: string | null
-	/** Runs inside the next prompt's submit, before it enters or is dropped. */
-	duringNext: (() => Promise<unknown>) | null
-}
-
-/** The world beneath the mod. `reply` is what stop-checklist.ts prints, per call. */
-function vault(on: Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1], reply: () => { exitCode: number; stdout: string }): World {
-	const world: World = { runs: [], passedDown: [], submitted: [], dropNext: false, throwNext: false, lowerLine: null, duringNext: null }
-	on('session.root', () => ({ value: ROOT }))
-	on('process.run', (_$, e) => {
-		world.runs.push(e.init?.stdin ?? '')
-		const { exitCode, stdout } = reply()
-		return { value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
-	})
-	on('classic.Stop', (_$, e) => {
-		world.passedDown.push(e as unknown as Record<string, unknown>)
-		return {}
-	})
+/** The shared world beneath the mod, plus the prompt and answer stubs these tests steer. */
+function vault(on: On, reply: () => Reply) {
+	const base = engine(on, reply)
+	const world = {
+		runs: base.runs,
+		passedDown: base.passedDown.Stop,
+		submitted: [] as Array<{ text: string; context?: readonly string[]; origin?: unknown }>,
+		/** The next prompt is dropped below, or the next one throws below. */
+		dropNext: false,
+		throwNext: false,
+		/** A line another hook below sets under the answer, if any. */
+		lowerLine: null as string | null,
+		/** Runs inside the next prompt's submit, before it enters or is dropped. */
+		duringNext: null as (() => Promise<unknown>) | null,
+	}
 	on('prompt.submit', async (_$, e) => {
 		world.submitted.push({ text: e.text, context: e.context, origin: e.origin })
 		const during = world.duringNext
@@ -57,11 +48,9 @@ function vault(on: Parameters<Extract<Parameters<typeof test>[1], (...args: neve
 		return { text: e.text, context: e.context }
 	})
 	on('turn.complete', (_$, e) => ({ text: world.lowerLine ?? e.answer }))
-	on('fs.write', () => ({ value: undefined }))
-	on('ui.invalidate', () => ({ value: undefined }))
-	on('classic.SessionStart', () => ({}))
 	return world
 }
+type World = ReturnType<typeof vault>
 
 const ok = (r: StopReport) => () => ({ exitCode: 0, stdout: JSON.stringify({ report: r }) })
 
@@ -72,7 +61,6 @@ const answered = (extra: Record<string, unknown> = {}) => ({ answer: 'the answer
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const LINE = 'vault check: 1 note(s) marked done but still in active/ · the full report reaches the agent with the next message'
-const HANDED = (key: string) => `Stop hook report, handed over with this message: ${key}`
 
 describe('Stop report (#266)', () => {
 	test('a changed report: the settings hook stands down and the next prompt carries the full report, once', async ($, on) => {
@@ -80,11 +68,11 @@ describe('Stop report (#266)', () => {
 		await $.classic.Stop({ stop_hook_active: false })
 
 		expect(world.runs.length).toBe(1)
-		expect(JSON.parse(world.runs[0] ?? '{}')).toEqual(expect.objectContaining({ om_mod: 'report' }))
+		expect(JSON.parse(world.runs[0]?.init?.stdin ?? '{}')).toEqual(expect.objectContaining({ om_mod: 'report' }))
 		expect(world.passedDown[0]?.['om_mod']).toBe('standdown')
 
 		await $.prompt.submit({ text: 'next' })
-		expect(world.submitted[0]?.context).toEqual(['Stop hook report, handed over with this message: k1'])
+		expect(world.submitted[0]?.context).toEqual([HANDED('k1')])
 		await $.prompt.submit({ text: 'after' })
 		expect(world.submitted[1]?.context ?? []).toEqual([])
 	})
@@ -97,7 +85,7 @@ describe('Stop report (#266)', () => {
 		await $.prompt.submit({ text: 'second' })
 
 		expect(world.runs.length).toBe(2)
-		expect(world.submitted[0]?.context).toEqual(['Stop hook report, handed over with this message: same'])
+		expect(world.submitted[0]?.context).toEqual([HANDED('same')])
 		expect(world.submitted[1]?.context ?? []).toEqual([])
 		expect(world.passedDown[1]?.['om_mod']).toBe('standdown')
 	})
@@ -111,7 +99,7 @@ describe('Stop report (#266)', () => {
 		await $.classic.Stop({ stop_hook_active: false })
 		await $.prompt.submit({ text: 'second' })
 
-		expect(world.submitted[1]?.context).toEqual(['Stop hook report, handed over with this message: b'])
+		expect(world.submitted[1]?.context).toEqual([HANDED('b')])
 	})
 
 	test('each session sees its own first report, even with the same findings', async ($, on) => {
@@ -123,8 +111,8 @@ describe('Stop report (#266)', () => {
 		await $.classic.Stop({ stop_hook_active: false, session_id: 's2' })
 		await $.prompt.submit({ text: 'second' })
 
-		expect(world.submitted[0]?.context).toEqual(['Stop hook report, handed over with this message: shared'])
-		expect(world.submitted[1]?.context).toEqual(['Stop hook report, handed over with this message: shared'])
+		expect(world.submitted[0]?.context).toEqual([HANDED('shared')])
+		expect(world.submitted[1]?.context).toEqual([HANDED('shared')])
 	})
 
 	test('a prompt that is dropped below keeps the report for the next one', async ($, on) => {
@@ -134,7 +122,7 @@ describe('Stop report (#266)', () => {
 		await $.prompt.submit({ text: 'blocked' })
 		await $.prompt.submit({ text: 'entered' })
 
-		expect(world.submitted[1]?.context).toEqual(['Stop hook report, handed over with this message: kept'])
+		expect(world.submitted[1]?.context).toEqual([HANDED('kept')])
 	})
 
 	test("a peer's message passes without the report; the person's next prompt gets it", async ($, on) => {
@@ -144,7 +132,7 @@ describe('Stop report (#266)', () => {
 		await $.prompt.submit({ text: 'typed' })
 
 		expect(world.submitted[0]?.context ?? []).toEqual([])
-		expect(world.submitted[1]?.context).toEqual(['Stop hook report, handed over with this message: mine'])
+		expect(world.submitted[1]?.context).toEqual([HANDED('mine')])
 	})
 
 	test('a forced turn passes straight through: no run, no flag', async ($, on) => {

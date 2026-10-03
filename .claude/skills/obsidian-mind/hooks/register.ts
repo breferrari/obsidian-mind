@@ -38,22 +38,25 @@ const CONTEXT_FILE = ".claude/session-context.md";
 
 const sessionContext = atom({ plugin: 'obsidian-mind', key: 'context' } as const, null)
 const shownReport = atom({ plugin: 'obsidian-mind', key: 'shownReport' } as const, null)
-const pendingLine = atom({ plugin: 'obsidian-mind', key: 'pendingLine' } as const, null)
-const pendingReport = atom({ plugin: 'obsidian-mind', key: 'pendingReport' } as const, null)
-const pendingUrgent = atom({ plugin: 'obsidian-mind', key: 'pendingUrgent' } as const, null)
-/** Set once an urgent finding got a turn of its own; cleared when the person next speaks. */
-const urgentSpent = atom({ plugin: 'obsidian-mind', key: 'urgentSpent' } as const, null)
+/** The report waiting to be delivered: its text, and its line and urgent finding until they are used. */
+const queued = atom({ plugin: 'obsidian-mind', key: 'queued' } as const, null)
+/** Whether an urgent finding has had its turn since the person last spoke. */
+const urgentSpent = atom({ plugin: 'obsidian-mind', key: 'urgentSpent' } as const, false)
 
-/** Run one of the vault's hook scripts with `input` on stdin; its stdout, or a throw. */
-async function runScript($: EngineInterface, root: string, script: string, input: object): Promise<string> {
-	const run = await $.process.run(["node", "--disable-warning=ExperimentalWarning", "--experimental-strip-types", `${root}/.claude/scripts/${script}`], {
-		cwd: root,
-		env: { CLAUDE_PROJECT_DIR: root },
-		stdin: JSON.stringify(input),
-		timeoutMs: 30_000,
-	});
-	if (run.exitCode !== 0 || run.stdout.trim() === "") {
-		throw new Error(`${script} exited ${run.exitCode}: ${run.stderr.slice(0, 300)}`);
+type Queued = { readonly report: string; readonly line: string | null; readonly urgent: string | null }
+
+/**
+ * Run one of the vault's hook scripts with `input` on stdin; its stdout, or a
+ * throw. `timeoutMs` matches the script's own timeout in settings.json, so the
+ * mod never waits longer than the hook it replaces would have.
+ */
+async function runScript($: EngineInterface, root: string, script: string, input: object, timeoutMs: number): Promise<string> {
+	const run = await $.process.run(
+		['node', '--disable-warning=ExperimentalWarning', '--experimental-strip-types', `${root}/.claude/scripts/${script}`],
+		{ cwd: root, env: { CLAUDE_PROJECT_DIR: root }, stdin: JSON.stringify(input), timeoutMs },
+	)
+	if (run.exitCode !== 0 || run.stdout.trim() === '') {
+		throw new Error(`${script} exited ${run.exitCode}: ${run.stderr.slice(0, 300)}`)
 	}
 	// A cut output would stand the hook down for part of what it delivers.
 	if (run.isStdoutTruncated) throw new Error(`${script} printed more than process.run keeps`);
@@ -67,25 +70,22 @@ export const register: Register = (on) => {
 		// its `$.state`, and a report about another conversation must not ride
 		// the first prompt of this one, so what was queued is dropped.
 		if (e.source !== 'compact') {
-			// One call per atom: the validator reads each state source statically.
 			let dropped = false
-			await update($, pendingReport, (now) => {
+			await update($, queued, (now) => {
 				dropped = now !== null
 				return null
 			})
-			await update($, pendingLine, () => null)
-			await update($, pendingUrgent, () => null)
-			await update($, urgentSpent, () => null)
+			await update($, urgentSpent, () => false)
 			// A report dropped here never reached the agent, so the same findings
 			// show again; one it already has stays shown.
 			if (dropped) await update($, shownReport, () => null)
 		}
 		// Cleared first: if this run fails, the settings hook delivers fresh
 		// output and no earlier context may ride beside it.
-		await update($, sessionContext, () => null);
-		const root = await $.session.root();
-		const text = await runScript($, root, "session-start.ts", { ...e, om_mod: "deliver" });
-		await update($, sessionContext, () => text);
+		await update($, sessionContext, () => null)
+		const root = await $.session.root()
+		const text = await runScript($, root, 'session-start.ts', { ...e, om_mod: 'deliver' }, 30_000)
+		await update($, sessionContext, () => text)
 		// Not awaited: delivery does not depend on the file, so a slow, hung or
 		// failed write never holds up the session. The file only backs what
 		// /memory shows. Runs are minutes apart (startup, then a compaction), so
@@ -108,17 +108,16 @@ export const register: Register = (on) => {
 		// A turn some Stop hook forced: the settings hook exits on its own.
 		if (e.stop_hook_active) return next(e)
 		const root = await $.session.root()
-		const report = parseStopReport(await runScript($, root, 'stop-checklist.ts', { ...e, om_mod: 'report' }))
+		const report = parseStopReport(await runScript($, root, 'stop-checklist.ts', { ...e, om_mod: 'report' }, 5_000))
 		// Keyed by session too, so a new session shows its first report even
 		// with the same findings, as the settings hook's dedupe does.
 		const identity = `${e.session_id}:${report.key}`
 		if ((await read($, shownReport)) !== identity) {
 			await update($, shownReport, () => identity)
-			await update($, pendingLine, () => summaryLine(report))
 			// The urgent finding rides inside the report too, so whatever happens
 			// to its own turn, the agent gets it with the report.
-			await update($, pendingReport, () => (report.urgent === undefined ? report.agentText : `${report.agentText}\n\nUrgent: ${report.urgent}`))
-			await update($, pendingUrgent, () => report.urgent ?? null)
+			const text = report.urgent === undefined ? report.agentText : `${report.agentText}\n\nUrgent: ${report.urgent}`
+			await update($, queued, (): Queued => ({ report: text, line: summaryLine(report), urgent: report.urgent ?? null }))
 		}
 		return next({ ...e, om_mod: 'standdown' } as typeof e)
 	})
@@ -128,16 +127,20 @@ export const register: Register = (on) => {
 		// Only under a main-loop answer that completed: a subagent's turn, an
 		// interrupted one or one an error ended keeps the line for the next.
 		if (e.agentId !== undefined || e.reason !== 'answer') return done
-		const line = await read($, pendingLine)
+		// The line and the urgent finding are used once; the report stays queued for the next prompt.
+		let line: string | null = null
+		let urgent: string | null = null
+		await update($, queued, (now) => {
+			line = now?.line ?? null
+			urgent = now?.urgent ?? null
+			return now === null || now.line === null ? now : { ...now, line: null, urgent: null }
+		})
 		if (line === null) return done
-		await update($, pendingLine, () => null)
-		const urgent = await read($, pendingUrgent)
-		await update($, pendingUrgent, () => null)
 		// One urgent turn per prompt the person sends: findings that keep
 		// changing while the agent fixes them must not chain turns. A finding
 		// that gets no turn still reaches the agent inside the queued report.
-		if (urgent !== null && (await read($, urgentSpent)) === null) {
-			await update($, urgentSpent, () => urgent)
+		if (urgent !== null && !(await read($, urgentSpent))) {
+			await update($, urgentSpent, () => true)
 			// Never from classic.Stop: the engine refuses a submit that would wait
 			// on the turn the hook may be holding, and names turn.complete instead.
 			// Framed as this plugin's message, so the model knows it is not the
@@ -151,19 +154,26 @@ export const register: Register = (on) => {
 	on('prompt.submit', async ($, e, next) => {
 		// The person speaking renews the urgent allowance, once their prompt has entered.
 		const renew = async (entered: Awaited<ReturnType<typeof next>>) => {
-			if (entered.drop === undefined && fromPerson(e.origin)) await update($, urgentSpent, () => null)
+			if (entered.drop === undefined && fromPerson(e.origin)) await update($, urgentSpent, () => false)
 			return entered
 		}
-		const report = await read($, pendingReport)
-		if (report === null || !carriesReport(e.origin)) return renew(await next(e))
-		// Taken before `next`, so two prompts entering at once cannot both carry
-		// it; put back if this one never enters (dropped or blocked below, or a
-		// throw), unless a newer report was queued meanwhile.
-		await update($, pendingReport, () => null)
-		const putBack = () => update($, pendingReport, (now) => now ?? report)
+		if (!carriesReport(e.origin)) return renew(await next(e))
+		// The whole record is taken before `next`, so two prompts entering at
+		// once cannot both carry it, and a report queued while this one enters
+		// is a different record that nothing here touches. Put back if this
+		// prompt never enters (dropped or blocked below, or a throw), unless a
+		// newer one was queued meanwhile.
+		let taken: Queued | null = null
+		await update($, queued, (now) => {
+			taken = now
+			return null
+		})
+		if (taken === null) return renew(await next(e))
+		const record: Queued = taken
+		const putBack = () => update($, queued, (now) => now ?? record)
 		let entered: Awaited<ReturnType<typeof next>>
 		try {
-			entered = await next({ ...e, context: [...(e.context ?? []), report] })
+			entered = await next({ ...e, context: [...(e.context ?? []), record.report] })
 		} catch (error) {
 			await putBack()
 			throw error
@@ -171,20 +181,6 @@ export const register: Register = (on) => {
 		if (entered.drop !== undefined) {
 			await putBack()
 			return entered
-		}
-		// The report is with the agent: a line still waiting would say it is
-		// coming, and an urgent finding still waiting is already in it. Unless a
-		// newer report was queued while this prompt was entering: the line and
-		// the urgent finding waiting now are that one's. Checked through `update`,
-		// whose function sees writes made while `next` ran; `read` here may not.
-		let newer = false
-		await update($, pendingReport, (now) => {
-			newer = now !== null
-			return now
-		})
-		if (!newer) {
-			await update($, pendingLine, () => null)
-			await update($, pendingUrgent, () => null)
 		}
 		return renew(entered)
 	})
