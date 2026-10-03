@@ -349,13 +349,40 @@ describe("the line under the answer (#266)", () => {
 	test("a resume after the agent already had the report does not send it again", async ($, on) => {
 		const world = stopWorld(on, ok(report("k")));
 		await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
+		// As observed on 2.1.288: the prompt's turn starts inside its own submit.
+		world.duringNext = () => $.turn.start({ text: "first", turnId: "t1" });
 		await $.prompt.submit({ text: "first" });
-		await $.classic.SessionStart({ source: "resume" } as never);
+		await $.classic.SessionStart({ source: "resume", session_id: "A" } as never);
 		await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
 		await $.prompt.submit({ text: "second" });
 
 		expect(world.submitted[0]?.context).toEqual([HANDED("k")]);
 		expect(world.submitted[1]?.context ?? []).toEqual([]);
+	});
+
+	test("a report queued but never delivered survives a resume in a new process: it is queued again", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")));
+		await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
+		// A new process: nothing in $.state, only the plugin's store.
+		await $.classic.SessionStart({ source: "resume", session_id: "A" } as never);
+		await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
+		await $.prompt.submit({ text: "first after the resume" });
+
+		expect(world.submitted[0]?.context).toEqual([HANDED("k")]);
+	});
+
+	test("each report rides one prompt, its turn starting inside the submit, across many turns", async ($, on) => {
+		// The live bed's failure: turn.start fired inside next, before the prompt was held,
+		// so every other prompt re-delivered the same report.
+		const world = stopWorld(on, ok(report("k")));
+		for (let turn = 1; turn <= 6; turn++) {
+			await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
+			world.duringNext = () => $.turn.start({ text: `prompt ${turn}`, turnId: `t${turn}` });
+			await $.prompt.submit({ text: `prompt ${turn}` });
+		}
+
+		const carried = world.submitted.map((p) => (p.context ?? []).length);
+		expect(carried).toEqual([1, 0, 0, 0, 0, 0]);
 	});
 
 	test("a compaction keeps the queued report, and what was shown stays shown", async ($, on) => {

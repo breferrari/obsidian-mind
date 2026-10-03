@@ -55,24 +55,26 @@ const inFlight = atom({ plugin: "obsidian-mind", key: "inFlight" } as const, nul
 type Queued = NonNullable<PluginState["obsidian-mind"]["queued"]>;
 
 /**
- * Which report each session was last shown, by session id: in `$.store`, not
- * `$.state`, because the store outlives the process, so a `claude --resume`
- * in a new process does not show unchanged findings again (the settings
+ * Which report each session was last given, by session id, and whether it
+ * reached the agent: in `$.store`, not `$.state`, because the store outlives
+ * the process. A `claude --resume` in a new process then neither repeats a
+ * report the agent had nor loses one that was still waiting (the settings
  * hook's dedupe is file-backed for the same reason). Only the most recent
  * sessions are kept.
  */
 const SHOWN = "shown";
 const SHOWN_KEEP = 20;
+type Shown = { readonly key: string; readonly delivered: boolean };
 
-async function shownFor($: EngineInterface, sessionId: string): Promise<string | undefined> {
-	const shown = ((await $.store.get(SHOWN)) ?? {}) as Record<string, string>;
+async function shownFor($: EngineInterface, sessionId: string): Promise<Shown | undefined> {
+	const shown = ((await $.store.get(SHOWN)) ?? {}) as Record<string, Shown>;
 	return shown[sessionId];
 }
 
-async function setShown($: EngineInterface, sessionId: string, key: string | null): Promise<void> {
-	const shown = { ...(((await $.store.get(SHOWN)) ?? {}) as Record<string, string>) };
+async function setShown($: EngineInterface, sessionId: string, entry: Shown | null): Promise<void> {
+	const shown = { ...(((await $.store.get(SHOWN)) ?? {}) as Record<string, Shown>) };
 	delete shown[sessionId];
-	if (key !== null) shown[sessionId] = key;
+	if (entry !== null) shown[sessionId] = entry;
 	// Insertion order is recency: drop the oldest sessions past the cap.
 	const ids = Object.keys(shown);
 	for (const id of ids.slice(0, Math.max(0, ids.length - SHOWN_KEEP))) delete shown[id];
@@ -164,12 +166,19 @@ export const register: Register = (on) => {
 		// Per session, so a new session shows its first report even with the
 		// same findings, as the settings hook's dedupe does.
 		const sessionId = String(e.session_id);
-		if ((await shownFor($, sessionId)) !== report.key) {
-			await setShown($, sessionId, report.key);
+		const given = await shownFor($, sessionId);
+		const waiting = (record: { readonly sessionId: string; readonly key: string } | null | undefined) =>
+			record?.sessionId === sessionId && record.key === report.key;
+		// The same findings again: skip them if the agent had them, or if they are
+		// still on their way in this process. Not delivered and not on their way
+		// (a resume in a new process, a dropped queue) means queue them again.
+		const already = given?.key === report.key && (given.delivered || waiting(await read($, queued)) || waiting((await read($, inFlight))?.record));
+		if (!already) {
+			await setShown($, sessionId, { key: report.key, delivered: false });
 			// The urgent finding rides inside the report too, so whatever happens
 			// to its own turn, the agent gets it with the report.
 			const text = report.urgent === undefined ? report.agentText : `${report.agentText}\n\nUrgent: ${report.urgent}`;
-			await update($, queued, (): Queued => ({ sessionId, report: text, line: summaryLine(report), urgent: report.urgent ?? null }));
+			await update($, queued, (): Queued => ({ sessionId, key: report.key, report: text, line: summaryLine(report), urgent: report.urgent ?? null }));
 		}
 		return next({ ...e, om_mod: "standdown" } as typeof e);
 	});
@@ -234,18 +243,22 @@ export const register: Register = (on) => {
 			});
 			if (now === startedIn) await update($, queued, (current) => current ?? record);
 		};
+		// Held before `next`: the prompt's own turn can start inside `next`
+		// (observed on 2.1.288), and turn.start must find it there to count it run.
+		await update($, inFlight, () => ({ text: e.text, record, generation: startedIn }));
 		let entered: Awaited<ReturnType<typeof next>>;
 		try {
 			entered = await next({ ...e, context: [...(e.context ?? []), record.report] });
 		} catch (error) {
+			await update($, inFlight, () => null);
 			await putBack();
 			throw error;
 		}
 		if (entered.drop !== undefined) {
+			await update($, inFlight, () => null);
 			await putBack();
 			return entered;
 		}
-		await update($, inFlight, () => ({ text: entered.text, record, generation: startedIn }));
 		return renew(entered);
 	});
 
@@ -258,10 +271,15 @@ export const register: Register = (on) => {
 			return now === null || e.text === "" ? now : null;
 		});
 		const waiting: PluginState["obsidian-mind"]["inFlight"] = held;
+		if (waiting === null || e.text === "") return next(e);
 		// Queued prompts run in order and may be folded into one turn, so a turn
-		// whose text holds the prompt's ran it: delivered. Any other prompt's turn
-		// starting first means the one holding the report left the queue unrun.
-		if (waiting !== null && e.text !== "" && !ranIn(e.text, waiting.text)) {
+		// whose text holds the prompt's ran it: delivered, and remembered as
+		// delivered so no later start repeats it. Any other prompt's turn starting
+		// first means the one holding the report left the queue unrun.
+		if (ranIn(e.text, waiting.text)) {
+			const given = await shownFor($, waiting.record.sessionId);
+			if (given?.key === waiting.record.key) await setShown($, waiting.record.sessionId, { key: waiting.record.key, delivered: true });
+		} else {
 			let now = waiting.generation;
 			await update($, generation, (g) => {
 				now = g;

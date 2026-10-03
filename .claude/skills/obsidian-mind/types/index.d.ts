@@ -12,7 +12,7 @@ declare module "claude-code" {
 			 * prompt, and the line and urgent finding until the next completed
 			 * answer uses them. Null when nothing is waiting.
 			 */
-			queued: { readonly sessionId: string; readonly report: string; readonly line: string | null; readonly urgent: string | null } | null;
+			queued: { readonly sessionId: string; readonly key: string; readonly report: string; readonly line: string | null; readonly urgent: string | null } | null;
 			/** Whether an urgent finding has had its turn since the person last spoke. */
 			urgentSpent: boolean;
 			/** Bumped by every start that begins another conversation (startup, /clear, resume, fork). */
@@ -23,7 +23,7 @@ declare module "claude-code" {
 			 */
 			inFlight: {
 				readonly text: string;
-				readonly record: { readonly sessionId: string; readonly report: string; readonly line: string | null; readonly urgent: string | null };
+				readonly record: { readonly sessionId: string; readonly key: string; readonly report: string; readonly line: string | null; readonly urgent: string | null };
 				readonly generation: number;
 			} | null;
 		};
