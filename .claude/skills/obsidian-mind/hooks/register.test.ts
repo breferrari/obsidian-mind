@@ -96,6 +96,15 @@ describe("session context (#265)", () => {
 		expect(seen.writes.length).toBe(0);
 	});
 
+	test("a context process.run cut short counts as a failure: the hook is not stood down for part of it", async ($, on) => {
+		const seen = vault(on, { exitCode: 0, stdout: CONTEXT, truncated: true });
+		await $.classic.SessionStart({ source: "startup" });
+
+		expect(seen.runs.length).toBe(1);
+		expect(seen.passedDown[0]?.["om_mod"]).toBe(undefined);
+		expect(seen.writes.length).toBe(0);
+	});
+
 	test("an empty context counts as a failure too: nothing is stood down for nothing", async ($, on) => {
 		const seen = vault(on, { exitCode: 0, stdout: "  \n" });
 		await $.classic.SessionStart({ source: "clear" });

@@ -45,6 +45,8 @@ async function runScript($: EngineInterface, root: string, script: string, input
 	if (run.exitCode !== 0 || run.stdout.trim() === "") {
 		throw new Error(`${script} exited ${run.exitCode}: ${run.stderr.slice(0, 300)}`);
 	}
+	// A cut output would stand the hook down for part of what it delivers.
+	if (run.isStdoutTruncated) throw new Error(`${script} printed more than process.run keeps`);
 	return run.stdout;
 }
 

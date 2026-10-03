@@ -9,7 +9,7 @@ import type { test } from "claude-code/testing";
 export type On = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1];
 
 /** What a vault script prints, as `process.run` reports it. */
-export type Reply = { exitCode: number; stdout: string; stderr?: string };
+export type Reply = { exitCode: number; stdout: string; stderr?: string; truncated?: boolean };
 
 export const ROOT = "/vault";
 
@@ -32,8 +32,8 @@ export function engine(on: On, reply: () => Reply, options: { hangFirstWrite?: b
 	on("session.root", () => ({ value: ROOT }));
 	on("process.run", (_$, e) => {
 		world.runs.push(e as World["runs"][number]);
-		const { exitCode, stdout, stderr = "" } = reply();
-		return { value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } };
+		const { exitCode, stdout, stderr = "", truncated = false } = reply();
+		return { value: { exitCode, stdout, stderr, isStdoutTruncated: truncated, isStderrTruncated: false } };
 	});
 	on("fs.write", (_$, e) => {
 		world.writes.push(e);
