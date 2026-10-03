@@ -1181,6 +1181,13 @@ describe("manifest budget fields", () => {
 		assert.ok(DEFAULT_INSTRUCTION_BUDGET_BYTES > INJECTION_CEILING_BYTES);
 	});
 
+	test("the shipped manifest states the same instruction budget the code falls back to", () => {
+		// The manifest shows users the key; the constant covers a vault whose
+		// manifest omits it. They are one default, so they must not drift apart.
+		const manifest = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../vault-manifest.json"), "utf-8");
+		assert.equal(parseInstructionBudget(manifest), DEFAULT_INSTRUCTION_BUDGET_BYTES);
+	});
+
 	test("the shipped default threshold is a positive integer", () => {
 		assert.ok(Number.isInteger(DEFAULT_LISTING_COLLAPSE_THRESHOLD));
 		assert.ok(DEFAULT_LISTING_COLLAPSE_THRESHOLD > 0);

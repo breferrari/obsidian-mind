@@ -208,16 +208,16 @@ export const METER_HEADROOM = 400;
  */
 export const INJECTION_CEILING_BYTES = HOOK_OUTPUT_MAX_CHARS - METER_HEADROOM;
 
+/** A budget the eager layer is held to, and the configured value when it was clamped. */
+export type InjectionBudget = { readonly bytes: number; readonly clampedFrom?: number };
+
 /**
  * The budget actually enforced: the configured one, held under the ceiling.
  * An unset budget gets the ceiling too, since a vault with no budget is the
  * one most likely to pass the cap. `clampedFrom` is the manifest value when
  * it was clamped, so the meter can say so, and absent otherwise.
  */
-export function effectiveInjectionBudget(configured: number | null): {
-	readonly bytes: number;
-	readonly clampedFrom?: number;
-} {
+export function effectiveInjectionBudget(configured: number | null): InjectionBudget {
 	if (configured === null) return { bytes: INJECTION_CEILING_BYTES };
 	if (configured <= INJECTION_CEILING_BYTES) return { bytes: configured };
 	return { bytes: INJECTION_CEILING_BYTES, clampedFrom: configured };

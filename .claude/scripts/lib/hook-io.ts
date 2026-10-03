@@ -220,6 +220,15 @@ export function writeStopFeedback(report: string, summary: string): void {
  * silent no-op into a non-zero exit, which the agent would report as a hook
  * failure — the exact class of bug this envelope exists to avoid.
  */
+/**
+ * The Stop report as data, for the obsidian-mind mod's own run
+ * (`om_mod: "report"`, lib/om-mod.ts). Not a hook envelope: the mod parses it
+ * and decides what the user and the agent see.
+ */
+export function writeStopReportData(report: { readonly key: string; readonly claims: readonly string[]; readonly agentText: string }): void {
+	writeSync(1, JSON.stringify({ report }));
+}
+
 export function writeSilentHookOutput(): void {
 	try {
 		writeSync(1, "{}");

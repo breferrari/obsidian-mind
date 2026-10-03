@@ -47,13 +47,14 @@
  * does nothing else. Without the mod, nothing sends the flag.
  */
 
-import { readFileSync, writeSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	readStdinJson,
 	writeSilentHookOutput,
 	writeStopFeedback,
+	writeStopReportData,
 	writeSystemMessage,
 } from "./lib/hook-io.ts";
 import { readOmMod } from "./lib/om-mod.ts";
@@ -175,7 +176,7 @@ if (omMod === "report") {
 	// line, hands the agent the report and decides when it changed, so no
 	// state is claimed and nothing is handed over here. `key` is the report's
 	// identity, the same one the Stop dedupe below compares.
-	writeSync(1, JSON.stringify({ report: { key, claims, agentText: `${MOD_PREFACE}\n\n${message}` } }));
+	writeStopReportData({ key, claims, agentText: `${MOD_PREFACE}\n\n${message}` });
 } else if (isStop && hasSession && !claimChanged(STATE_PATH, sessionId, key)) writeSilentHookOutput();
 else if (isStop && hasSession) {
 	// The summary now, the full report with the next prompt; Stop feedback if it cannot be saved.

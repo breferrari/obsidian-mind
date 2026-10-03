@@ -57,6 +57,7 @@ import {
 	parseInjectionBudget,
 	parseInstructionBudget,
 	DEFAULT_INSTRUCTION_BUDGET_BYTES,
+	type InjectionBudget,
 	parseListingCollapseThreshold,
 	shouldCollapseDir,
 	formatCollapsedDir,
@@ -647,7 +648,7 @@ if (hygieneLines.length > 0) {
 // backstop for the sections that never degrade. Delivered by a mod as an
 // instruction file, the layer is under no such cap: it gets its own budget,
 // and the backstop is lifted.
-const budget: { readonly bytes: number; readonly clampedFrom?: number } = delivering
+const budget: InjectionBudget = delivering
 	? { bytes: parseInstructionBudget(manifestJson) ?? DEFAULT_INSTRUCTION_BUDGET_BYTES }
 	: effectiveInjectionBudget(parseInjectionBudget(manifestJson));
 const budgeted = applyInjectionBudget(sections, budget.bytes);
