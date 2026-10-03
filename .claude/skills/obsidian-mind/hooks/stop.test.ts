@@ -115,6 +115,15 @@ describe('Stop report (#266)', () => {
 		expect(world.submitted[1]?.context).toEqual([HANDED('shared')])
 	})
 
+	test('a prompt dropped below before the answer completes leaves the line for that answer', async ($, on) => {
+		const world = vault(on, ok(report('k')))
+		await $.classic.Stop({ stop_hook_active: false })
+		world.dropNext = true
+		await $.prompt.submit({ text: 'blocked' })
+
+		expect((await $.turn.complete(answered())).text).toBe(LINE)
+	})
+
 	test('a prompt that is dropped below keeps the report for the next one', async ($, on) => {
 		const world = vault(on, ok(report('kept')))
 		await $.classic.Stop({ stop_hook_active: false })
