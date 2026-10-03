@@ -539,9 +539,9 @@ describe("stop-checklist — om_mod (a Claude Code mod)", () => {
 		const dir = join(TMP_DIR, "handoff-ommod-report");
 		const result = run(flagged("s-report", "report"), { vault: root, state, handoffDir: dir, keep: true, env: DEBUG });
 		assert.equal(result.code, 0);
-		const { report } = envelopeOf(result.stdout) as { report: { key: string; summary: string; claims: string[]; agentText: string } };
+		const { report } = envelopeOf(result.stdout) as { report: { key: string; claims: string[]; agentText: string } };
+		assert.deepEqual(Object.keys(report).sort(), ["agentText", "claims", "key"], "data only: the mod draws its own line");
 		assert.match(report.key, /^[0-9a-f]{16,}$/);
-		assert.match(report.summary, /^Wrap-up checklist: /);
 		assert.ok(report.claims.length > 0, "the drift is a claim");
 		assert.ok(report.agentText.startsWith(`${MOD_PREFACE}\n\n`), "the mod's report carries the mod's framing, not the settings hook's");
 		assert.match(report.agentText, /work\/active\/Done\.md/);

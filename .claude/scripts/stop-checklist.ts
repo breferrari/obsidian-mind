@@ -167,31 +167,18 @@ const VOLATILE_FIELDS = new Set(["sizeKb", "ageDays", "oldestDays"]);
 const sessionId = input?.session_id;
 const isStop = input?.hook_event_name === "Stop";
 const hasSession = typeof sessionId === "string" && sessionId !== "";
-const show =
-	omMod !== "report" &&
-	(!isStop || !hasSession || claimChanged(STATE_PATH, sessionId, reportKey({ checklist, report }, VOLATILE_FIELDS)));
+const key = reportKey({ checklist, report }, VOLATILE_FIELDS);
+const claims = hygieneClaims(report);
 
 if (omMod === "report") {
-	// The mod's own run (lib/om-mod.ts): the report as data. The mod shows the
-	// summary, hands the agent the report and decides when it changed, so no
+	// The mod's own run (lib/om-mod.ts): the report as data. The mod draws the
+	// line, hands the agent the report and decides when it changed, so no
 	// state is claimed and nothing is handed over here. `key` is the report's
-	// identity, the same one the Stop dedupe above compares.
-	const claims = hygieneClaims(report);
-	writeSync(
-		1,
-		JSON.stringify({
-			report: {
-				key: reportKey({ checklist, report }, VOLATILE_FIELDS),
-				summary: stopSummary(CHECKLIST_SUMMARY, claims),
-				claims,
-				agentText: `${MOD_PREFACE}\n\n${message}`,
-			},
-		}),
-	);
-} else if (!show) writeSilentHookOutput();
+	// identity, the same one the Stop dedupe below compares.
+	writeSync(1, JSON.stringify({ report: { key, claims, agentText: `${MOD_PREFACE}\n\n${message}` } }));
+} else if (isStop && hasSession && !claimChanged(STATE_PATH, sessionId, key)) writeSilentHookOutput();
 else if (isStop && hasSession) {
 	// The summary now, the full report with the next prompt; Stop feedback if it cannot be saved.
-	const claims = hygieneClaims(report);
 	try {
 		pruneHandoffs(HANDOFF_DIR, Date.now());
 		writeHandoff(HANDOFF_DIR, sessionId, `${AGENT_PREFACE}\n\n${message}`);

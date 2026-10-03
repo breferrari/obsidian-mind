@@ -313,29 +313,35 @@ describe("session-start — listing collapse and injection budget", () => {
  * session gets a file path and the first 2,000 characters (#254). The output
  * must fit whole, with the meter as its last line, whatever the vault holds.
  */
+const lastLine = (stdout: string) => stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
+
+/**
+ * ~250 nested notes: the shape that reproduced #254. Nested project folders,
+ * each under the listing-collapse threshold, so nothing folds by count and
+ * the listing alone passes the hook cap.
+ */
+function nestedVault(manifest: Record<string, unknown> = {}): string {
+	const dir = mkdtempSync(join(tmpdir(), "session-start-nested-"));
+	mkdirSync(join(dir, "brain"), { recursive: true });
+	writeFileSync(join(dir, "brain", "North Star.md"), "---\ndescription: test\n---\n\n# North Star\n\n- placeholder\n");
+	for (let p = 0; p < 12; p++) {
+		for (const sub of ["notes", "decisions"]) {
+			mkdirSync(join(dir, "projects", `project-${p}`, sub), { recursive: true });
+			for (let i = 0; i < 10; i++) {
+				writeFileSync(join(dir, "projects", `project-${p}`, sub, `Example project-${p} ${sub} note ${i}.md`), "---\ndescription: x\n---\n");
+			}
+		}
+	}
+	writeFileSync(join(dir, "vault-manifest.json"), JSON.stringify(manifest));
+	return dir;
+}
+
 describe("session-start — the hook output cap", () => {
 	const CAP = HOOK_OUTPUT_MAX_CHARS;
-	const lastLine = (stdout: string) => stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
 
 	test("an ordinary vault of ~250 nested notes fits, the listing degrading first", () => {
-		// The shape that reproduced #254: nested project folders, each under
-		// the listing-collapse threshold, so nothing folds by count.
-		const dir = mkdtempSync(join(tmpdir(), "session-start-cap-"));
+		const dir = nestedVault({ eager_layer_budget_bytes: 80_000 });
 		try {
-			mkdirSync(join(dir, "brain"), { recursive: true });
-			writeFileSync(join(dir, "brain", "North Star.md"), "---\ndescription: test\n---\n\n# North Star\n\n- placeholder\n");
-			for (let p = 0; p < 12; p++) {
-				for (const sub of ["notes", "decisions"]) {
-					mkdirSync(join(dir, "projects", `project-${p}`, sub), { recursive: true });
-					for (let i = 0; i < 10; i++) {
-						writeFileSync(
-							join(dir, "projects", `project-${p}`, sub, `Example project-${p} ${sub} note ${i}.md`),
-							"---\ndescription: x\n---\n",
-						);
-					}
-				}
-			}
-			writeFileSync(join(dir, "vault-manifest.json"), JSON.stringify({ eager_layer_budget_bytes: 80_000 }));
 			const { stdout, code, stderr } = spawnHook(SCRIPT, "", { CLAUDE_PROJECT_DIR: dir });
 			assert.equal(code, 0);
 			assert.equal(stderr, "");
@@ -373,25 +379,6 @@ describe("session-start — the hook output cap", () => {
  * always the full layer, held to its own budget, never cut to the hook cap.
  */
 describe("session-start — om_mod (a Claude Code mod)", () => {
-	const lastLine = (stdout: string) => stdout.split("\n").filter((l) => l.trim() !== "").pop() ?? "";
-
-	/** ~250 nested notes: the shape whose listing passes the hook cap (#254). */
-	function nestedVault(manifest: Record<string, unknown> = {}): string {
-		const dir = mkdtempSync(join(tmpdir(), "session-start-ommod-"));
-		mkdirSync(join(dir, "brain"), { recursive: true });
-		writeFileSync(join(dir, "brain", "North Star.md"), "---\ndescription: test\n---\n\n# North Star\n\n- placeholder\n");
-		for (let p = 0; p < 12; p++) {
-			for (const sub of ["notes", "decisions"]) {
-				mkdirSync(join(dir, "projects", `project-${p}`, sub), { recursive: true });
-				for (let i = 0; i < 10; i++) {
-					writeFileSync(join(dir, "projects", `project-${p}`, sub, `Example project-${p} ${sub} note ${i}.md`), "---\ndescription: x\n---\n");
-				}
-			}
-		}
-		writeFileSync(join(dir, "vault-manifest.json"), JSON.stringify(manifest));
-		return dir;
-	}
-
 	test("standdown prints nothing and runs no side effect", () => {
 		const envFile = join(TMP_DIR, "env-standdown.sh");
 		writeFileSync(envFile, "");
