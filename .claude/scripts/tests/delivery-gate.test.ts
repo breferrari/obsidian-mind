@@ -6,7 +6,7 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { carries, expectationTracker, fixtureEnv, judge, lastLine, parseTurns, plan, quotes, selfTestOutcome, sessionDirs, subagentReport, SUBAGENT_TASK, type Step, type Verdict } from "../../../.github/scripts/delivery-gate.ts";
+import { carries, expectationTracker, fixtureEnv, isCheckpoint, judge, meterSize, shifts, lastLine, parseTurns, plan, quotes, selfTestOutcome, sessionDirs, subagentReport, SUBAGENT_TASK, type Step, type Verdict } from "../../../.github/scripts/delivery-gate.ts";
 
 const METER = "_context injected: 15.9kB / 20.0kB budget_";
 
@@ -53,7 +53,8 @@ describe("delivery gate: plan and matching", () => {
 	test("startup is a session of its own; the subagent is asked straight after /clear, before the line is quoted again", () => {
 		assert.deepEqual(startup.map((s) => s.name), ["at startup"]);
 		assert.deepEqual(continued.map((s) => s.kind), ["warm", "compact", "ask", "clear", "ask-subagent", "clear", "ask"]);
-		assert.deepEqual(continued.filter((s) => s.shifts).map((s) => s.kind), ["compact", "clear", "clear"], "every compact and clear shifts the fixture first");
+		assert.deepEqual(continued.filter(shifts).map((s) => s.kind), ["compact", "clear", "clear"], "every compact and clear shifts the fixture first");
+		assert.deepEqual(continued.filter(isCheckpoint).map((s) => s.name), ["after /compact", "from a subagent", "after /clear"], "only the questions are judged");
 		assert.equal(continued[5]!.kind, "clear", "the subagent's answer is cleared away before the main loop is asked again");
 		assert.equal(continued[0]!.prompt.includes("_context"), false, "the warm-up must not put the line into the conversation");
 		assert.deepEqual(plan(false).flat().map((s) => s.name), ["without the mod, at startup"]);
@@ -67,6 +68,12 @@ describe("delivery gate: plan and matching", () => {
 		assert.equal(quotes("_context injected: 2.0kB / 9.1kB budget_", METER), false);
 		assert.equal(quotes("_context injected: 15.9kB", METER), false);
 		assert.equal(quotes("anything", ""), false, "an empty expected line never passes");
+	});
+
+	test("meterSize reads the delivered size off the meter line, not the budget", () => {
+		assert.equal(meterSize(METER), "15.9");
+		assert.equal(meterSize("_context injected: 0.6kB / 9.1kB budget — collapsed: Vault File Listing_"), "0.6");
+		assert.equal(meterSize("NONE"), undefined);
 	});
 
 	test("carries finds the delivered size in any wording, never the budget", () => {

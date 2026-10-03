@@ -81,10 +81,19 @@ export const WARM_UP = "Reply with the single word OK.";
 export type StepKind = "ask" | "ask-subagent" | "warm" | "compact" | "clear";
 /**
  * One turn of a session. A named step is a checkpoint; the others prepare the
- * next one. A step that `shifts` changes the fixture just before it is sent,
+ * next one. A step that shifts (every `/compact` and `/clear`) changes the fixture just before it is sent,
  * so the context delivered from then on ends with a line nobody has seen yet.
  */
-export type Step = { readonly name: string; readonly kind: StepKind; readonly prompt: string; readonly shifts?: boolean };
+export type Step = { readonly name: string; readonly kind: StepKind; readonly prompt: string };
+
+/** Whether a step changes the fixture first: every `/compact` and `/clear`. */
+export const shifts = (step: Step): boolean => step.kind === "compact" || step.kind === "clear";
+
+/** Whether a step's answer is judged: the questions, not the turns that prepare them. */
+export const isCheckpoint = (step: Step): boolean => step.kind === "ask" || step.kind === "ask-subagent";
+
+/** A turn that prepares the next checkpoint. */
+const prepare = (kind: Exclude<StepKind, "ask" | "ask-subagent">, prompt: string): Step => ({ name: "", kind, prompt });
 
 const ask = (name: string): Step => ({ name, kind: "ask", prompt: QUESTION });
 
@@ -103,13 +112,13 @@ export function plan(withMod: boolean): ReadonlyArray<readonly Step[]> {
 	return [
 		[ask("at startup")],
 		[
-			{ name: "", kind: "warm", prompt: WARM_UP },
-			{ name: "", kind: "compact", prompt: "/compact", shifts: true },
+			prepare("warm", WARM_UP),
+			prepare("compact", "/compact"),
 			ask("after /compact"),
-			{ name: "", kind: "clear", prompt: "/clear", shifts: true },
+			prepare("clear", "/clear"),
 			{ name: "from a subagent", kind: "ask-subagent", prompt: SUBAGENT_QUESTION },
 			// Cleared and shifted again: the subagent's answer is in this conversation, and the main loop must not quote it from there.
-			{ name: "", kind: "clear", prompt: "/clear", shifts: true },
+			prepare("clear", "/clear"),
 			ask("after /clear"),
 		],
 	];
@@ -136,11 +145,17 @@ export function quotes(answer: string, expected: string): boolean {
  */
 export function carries(text: string, expected: string): boolean {
 	if (quotes(text, expected)) return true;
-	const size = expected.match(/(\d+(?:\.\d+)?)\s*kB/i)?.[1];
+	const size = meterSize(expected);
 	if (size === undefined) return false;
 	// The number on its own, whatever unit, case or spacing comes after it.
 	return new RegExp(`(?<![\\d.])${size.replace(".", "\\.")}(?![\\d])`).test(text);
 }
+
+/** The delivered size on a context's meter line (`15.2` from `_context injected: 15.2kB / ...`), or undefined. */
+export const meterSize = (line: string): string | undefined => line.match(/(\d+(?:\.\d+)?)\s*kB/i)?.[1];
+
+/** Whether a meter line says the context collapsed sections to fit its budget. */
+const collapsed = (line: string): boolean => line.includes("collapsed");
 
 /** One Agent call: what the main loop asked for, and what came back. */
 export type AgentCall = {
@@ -208,7 +223,7 @@ export function parseTurns(streamJson: string): Turn[] {
 	const fresh = () => ({
 		text: "",
 		tools: [] as string[],
-		calls: new Map<string, { type: string | null; prompt: string; report: string | null; toolUses: number | null }>(),
+		calls: new Map<string, { -readonly [K in keyof AgentCall]: AgentCall[K] }>(),
 		subagentToolUses: 0,
 		compacted: false,
 		summaries: [] as string[],
@@ -301,16 +316,17 @@ export function judge(steps: readonly Step[], turns: readonly Turn[], expected: 
 			else if (calls[0]!.toolUses === null) problem ??= "the subagent's tool count was not reported";
 			else if (calls[0]!.toolUses > 0 || turn.subagentToolUses > 0) problem ??= `the subagent used ${Math.max(calls[0]!.toolUses, turn.subagentToolUses)} tool(s)`;
 		}
-		if (step.name === "") {
+		if (!isCheckpoint(step)) {
 			carried = problem;
 			return;
 		}
 		carried = null;
 		const answer = step.kind === "ask-subagent" ? (turn?.agentCalls[0]?.report ?? "") : (turn?.text ?? "");
 		if (problem === null && answer.trim() === "") problem = "no answer";
-		const shown = quotes(answer, want) ? want : lastLine(answer);
+		const hit = quotes(answer, want);
+		const shown = hit ? want : lastLine(answer);
 		if (problem !== null) verdicts.push({ checkpoint: step.name, expected: want, answer: shown, outcome: "INVALID", why: problem });
-		else if (quotes(answer, want)) verdicts.push({ checkpoint: step.name, expected: want, answer: shown, outcome: "PASS", why: "" });
+		else if (hit) verdicts.push({ checkpoint: step.name, expected: want, answer: shown, outcome: "PASS", why: "" });
 		else {
 			// A line from before a shift arrived whole, but stale: the context was not delivered again.
 			const earlier = steps.slice(0, i).map((_, j) => expectedAt(j)).filter((line) => line !== "" && line !== want);
@@ -433,9 +449,8 @@ export function shiftFixture(vault: string, n: number, withMod: boolean, before:
 		`---\ndescription: "Added mid-session (shift ${n}) so the context ends with a size nobody has quoted yet; ${"padding ".repeat(30)}"\ntags:\n  - brain\n---\n\n# Gate Shift ${n}\n`,
 	);
 	const after = lastLine(contextOf(vault, withMod));
-	const size = (line: string) => line.match(/\d+(?:\.\d+)?\s*kB/i)?.[0];
-	if (size(after) === undefined || size(after) === size(before)) throw new Error(`shift ${n} did not move the delivered size: ${after}`);
-	if (after.includes("collapsed")) throw new Error(`shift ${n} pushed the context past the instruction budget, so it collapsed: ${after}`);
+	if (meterSize(after) === undefined || meterSize(after) === meterSize(before)) throw new Error(`shift ${n} did not move the delivered size: ${after}`);
+	if (collapsed(after)) throw new Error(`shift ${n} pushed the context past the instruction budget, so it collapsed: ${after}`);
 	return after;
 }
 
@@ -447,9 +462,9 @@ export function shiftFixture(vault: string, n: number, withMod: boolean, before:
  */
 export function expectationTracker(start: string, shift: (n: number, before: string) => string): (step: Step) => string {
 	let current = start;
-	let shifts = 0;
+	let count = 0;
 	return (step) => {
-		if (step.shifts) current = shift(++shifts, current);
+		if (shifts(step)) current = shift(++count, current);
 		return current;
 	};
 }
@@ -521,7 +536,7 @@ async function runSession(steps: readonly Step[], breakage: Breakage, options: {
 			// line; and whole, not collapsed under the instruction budget, or the
 			// gate would be checking a pointer.
 			if (context.length <= 12_000) throw new Error(`fixture too small to test the cap: ${context.length} characters`);
-			if (expected.includes("collapsed")) throw new Error(`fixture past the instruction budget, so the context collapsed: ${expected}`);
+			if (collapsed(expected)) throw new Error(`fixture past the instruction budget, so the context collapsed: ${expected}`);
 		}
 		// The line each step's answer must quote: the startup one until a step shifts the fixture.
 		const expectedByStep: string[] = [];
