@@ -119,6 +119,22 @@ That is one demonstrated red at introduction time, which is cheap, and it conver
 
 This is **not** a demand for permanent negative-fixture CI jobs on every guard — whether one is worth keeping stays a per-case call, and `hook-config.test.ts` shows the pattern where it is. It is also **not retroactive**: existing checks get the treatment opportunistically, when next touched.
 
+### Before recommending a Claude Code release: the delivery gate
+
+Every other check confirms that a hook **ran**. The delivery gate confirms what **arrived**: it runs real Claude Code sessions in throwaway vaults and asks the model to quote the end of its session context and a marker from its middle, at startup, after `/compact`, after `/clear` and (with the mod) from a general-purpose subagent, with the `obsidian-mind` mod and with the settings hooks alone. Hook output past 10,000 characters once reached the model as a 2,000-character preview while every log said success (#254); this is the check that catches that class.
+
+It needs a logged-in `claude` and costs model turns, so it runs by hand, not in CI. Before the README or `mod.yml` pins a Claude Code version:
+
+1. Once: make an empty folder, open it in Claude Code and accept the trust prompt. The gate builds its vaults there, so the mod loads the way a user's does (a headless session cannot accept trust).
+2. Run:
+
+```bash
+node --experimental-strip-types .github/scripts/delivery-gate.ts --trusted-dir <that folder> --self-test        # first: exits 0 when the gate can still fail
+node --experimental-strip-types .github/scripts/delivery-gate.ts --trusted-dir <that folder> --file-issue       # then: every checkpoint PASS
+```
+
+A self-test that does not exit 0 means the gate is broken: fix it before trusting a normal run. A normal run that fails files an issue with `--file-issue`, and that version is not recommended until it is resolved. What counts as PASS, FAIL and INVALID, the exit codes, and why each `/compact` and `/clear` changes the vault first are documented at the top of `.github/scripts/delivery-gate.ts`.
+
 ## Questions?
 
 Open an issue or start a discussion. For small changes, PRs are welcome directly. For anything bigger, see [Before You Open a PR](#before-you-open-a-pr).
