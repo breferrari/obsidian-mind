@@ -58,7 +58,9 @@ jobs:
             for readme in README.md README.ja.md README.ko.md README.zh-CN.md; do
               # The whole line, not a substring: a README listing an extra call
               # would otherwise still contain the true line and pass.
-              sed 's/^[[:space:]]*//' "$readme" | tr -d '\r' | grep -qxF -- "$line" || { echo "::error::$readme does not show: $line"; exit 1; }
+              # A here-string, not a pipe: grep -q exits at its first match, and
+              # under pipefail the tr it leaves writing fails a README that matches.
+              grep -qxF -- "$line" <<<"$(sed 's/^[[:space:]]*//' "$readme" | tr -d '\r')" || { echo "::error::$readme does not show: $line"; exit 1; }
             done
           done
       - name: Test the mod
