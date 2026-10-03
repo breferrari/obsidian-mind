@@ -331,6 +331,11 @@ describe("delivery gate: the subagent checkpoint", () => {
 		assert.equal(subagentVerdict([agentCall(), reframed]).outcome, "FAIL");
 	});
 
+	test("two subagents are invalid: which one answered is no longer clear", () => {
+		const second = { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", name: "Agent", id: "toolu_Second", input: { prompt: SUBAGENT_TASK, subagent_type: "general-purpose" } }] } };
+		assert.match(subagentVerdict([agentCall(), second, handedBack(METER)]).why, /no single subagent/);
+	});
+
 	test("the parent answering itself is invalid", () => {
 		assert.match(subagentVerdict([said(METER)]).why, /no single subagent/);
 	});
