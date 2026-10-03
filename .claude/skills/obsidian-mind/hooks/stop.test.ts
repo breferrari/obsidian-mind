@@ -222,6 +222,28 @@ describe("the line under the answer (#266)", () => {
 		expect(world.submitted[1]?.context ?? []).toEqual([]);
 	});
 
+	test("a delivered report stays delivered when later turns start", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")));
+		await $.classic.Stop({ stop_hook_active: false });
+		await $.prompt.submit({ text: "typed" });
+		await $.turn.start({ text: "typed", turnId: "t1" });
+		await $.turn.start({ text: "a later prompt", turnId: "t2" });
+		await $.prompt.submit({ text: "after" });
+
+		expect(world.submitted[1]?.context ?? []).toEqual([]);
+	});
+
+	test("a /clear while the prompt entered: its report is not put back when another turn starts", async ($, on) => {
+		const world = stopWorld(on, ok(report("k")));
+		await $.classic.Stop({ stop_hook_active: false, session_id: "A" });
+		world.duringNext = () => $.classic.SessionStart({ source: "clear", session_id: "B" } as never);
+		await $.prompt.submit({ text: "entering across the clear" });
+		await $.turn.start({ text: "new conversation", turnId: "t1" });
+		await $.prompt.submit({ text: "next" });
+
+		expect(world.submitted[1]?.context ?? []).toEqual([]);
+	});
+
 	test("a queued prompt pulled back before it ran: the report goes back to the queue", async ($, on) => {
 		const world = stopWorld(on, ok(report("k")));
 		await $.classic.Stop({ stop_hook_active: false });
