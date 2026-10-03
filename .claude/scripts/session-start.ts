@@ -57,6 +57,7 @@ import {
 	parseInjectionBudget,
 	parseInstructionBudget,
 	DEFAULT_INSTRUCTION_BUDGET_BYTES,
+	METER_HEADROOM,
 	type InjectionBudget,
 	parseListingCollapseThreshold,
 	shouldCollapseDir,
@@ -76,7 +77,7 @@ import {
 	scanActiveHygiene,
 } from "./lib/active-hygiene.ts";
 
-import { fitHookOutput, readStdinJson } from "./lib/hook-io.ts";
+import { fitWithMeter, HOOK_OUTPUT_LIMIT, type OutputLimit, readStdinJson } from "./lib/hook-io.ts";
 import { readOmMod } from "./lib/om-mod.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
@@ -644,17 +645,21 @@ if (hygieneLines.length > 0) {
 // The eager layer is held under a byte budget, and the budget under Claude
 // Code's hook output cap: past the cap the session gets a 2,000-character
 // preview, so a larger budget never binds (#254). An unset or larger
-// manifest value is clamped, and the meter says so. fitHookOutput is the
+// manifest value is clamped, and the meter says so. fitWithMeter is the
 // backstop for the sections that never degrade. Delivered by a mod as an
-// instruction file, the layer is under no such cap: it gets its own budget,
-// and the backstop is lifted.
+// instruction file, the layer is under no hook cap: it gets its own budget,
+// and the backstop holds the whole file to that budget plus the meter's
+// headroom, in bytes, as the hook path holds its budget under the cap.
 const budget: InjectionBudget = delivering
 	? { bytes: parseInstructionBudget(manifestJson) ?? DEFAULT_INSTRUCTION_BUDGET_BYTES }
 	: effectiveInjectionBudget(parseInjectionBudget(manifestJson));
 const budgeted = applyInjectionBudget(sections, budget.bytes);
+const limit: OutputLimit = delivering
+	? { max: budget.bytes + METER_HEADROOM, unit: "bytes", name: "the instruction budget" }
+	: HOOK_OUTPUT_LIMIT;
 
 process.stdout.write(
-	fitHookOutput(
+	fitWithMeter(
 		budgeted.text + "\n",
 		(cut, bodyBytes) =>
 			formatInjectionSize(bodyBytes, {
@@ -662,7 +667,8 @@ process.stdout.write(
 				collapsed: budgeted.collapsed,
 				clampedFrom: budget.clampedFrom,
 				cut,
+				cutTo: limit.name,
 			}),
-		delivering ? Number.POSITIVE_INFINITY : undefined,
+		limit,
 	),
 );

@@ -32,8 +32,10 @@ export function formatInjectionSize(
 		readonly collapsed?: readonly string[] | undefined;
 		/** The configured budget, when it was clamped to the hook output cap. */
 		readonly clampedFrom?: number | undefined;
-		/** True when the output was truncated to fit the hook output cap. */
+		/** True when the output was truncated to fit its limit. */
 		readonly cut?: boolean | undefined;
+		/** The limit a cut was to; the hook output cap when unset. */
+		readonly cutTo?: string | undefined;
 	},
 ): string {
 	const safe = Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
@@ -50,7 +52,7 @@ export function formatInjectionSize(
 	let line = `_context injected: ${size} / ${kb(budget)} budget${clamp}`;
 	const collapsed = opts?.collapsed ?? [];
 	if (collapsed.length > 0) line += ` — collapsed: ${collapsed.join(", ")}`;
-	if (opts?.cut === true) line += " — truncated to fit the hook output cap";
+	if (opts?.cut === true) line += ` — truncated to fit ${opts.cutTo ?? "the hook output cap"}`;
 	return `${line}_`;
 }
 

@@ -35,6 +35,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
+import { METER_HEADROOM } from "../lib/session-start.ts";
 import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -366,6 +367,30 @@ describe("session-start — the hook output cap", () => {
 			assert.ok(stdout.length <= CAP, `stdout is ${stdout.length} characters`);
 			assert.ok(stdout.includes("… (truncated to fit the hook output cap)"), "the cut is marked where it happened");
 			assert.match(lastLine(stdout), /^_context injected: .* — truncated to fit the hook output cap_$/);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("deliver holds sections that never degrade to its own budget, in bytes: cut, and the meter says so", () => {
+		// Three bytes per character, so the output is under the budget in
+		// characters and over it in bytes: a character count would pass it.
+		const dir = mkdtempSync(join(tmpdir(), "session-start-deliver-cut-"));
+		try {
+			writeFileSync(join(dir, "vault-manifest.json"), JSON.stringify({ eager_layer_instruction_budget_bytes: 12_000 }));
+			const tasks = Array.from({ length: 10 }, (_, i) => `- [ ] task ${i} ${"界".repeat(500)}`).join("\n");
+			writeFileSync(join(dir, "Tasks.md"), `# Tasks\n\n${tasks}\n`);
+			const { stdout, code, stderr } = spawnHook(SCRIPT, { source: "startup", om_mod: "deliver" }, { CLAUDE_PROJECT_DIR: dir });
+			assert.equal(code, 0);
+			assert.equal(stderr, "");
+			assert.ok(stdout.includes("task 0 "), "the fixture's tasks reached the output");
+			const bytes = Buffer.byteLength(stdout, "utf-8");
+			assert.ok(bytes <= 12_000 + METER_HEADROOM, `stdout is ${bytes} bytes`);
+			// Cut on a line boundary, so up to one task line (about 1.5 KB) short of the limit.
+			assert.ok(bytes > 12_000 + METER_HEADROOM - 1_600, `the budget was used, not undercut: ${bytes} bytes`);
+			assert.ok(!stdout.includes("�"), "no character was split");
+			assert.ok(stdout.includes("… (truncated to fit the instruction budget)"), "the cut is marked where it happened");
+			assert.match(lastLine(stdout), /^_context injected: .* \/ 12\.0kB budget( — collapsed: .*)? — truncated to fit the instruction budget_$/);
 		} finally {
 			rmTemp(dir);
 		}
