@@ -30,7 +30,11 @@ const SCRIPT = resolve(
 let ROOT = "";
 let MEMDIR = "";
 
-function run(args: string[]): { stdout: string; code: number } {
+function run(
+	args: string[],
+	root = ROOT,
+	memDir = MEMDIR,
+): { stdout: string; code: number } {
 	const r = spawnSync(
 		process.execPath,
 		["--disable-warning=ExperimentalWarning", "--experimental-strip-types", SCRIPT, ...args],
@@ -38,16 +42,29 @@ function run(args: string[]): { stdout: string; code: number } {
 			encoding: "utf-8",
 			env: {
 				...process.env,
-				CLAUDE_PROJECT_DIR: ROOT,
-				TIDY_FIX_MEMORY_DIR: MEMDIR,
+				CLAUDE_PROJECT_DIR: root,
+				TIDY_FIX_MEMORY_DIR: memDir,
 			},
 		},
 	);
 	return { stdout: r.stdout ?? "", code: r.status ?? -1 };
 }
 
-function note(rel: string, status: string, date: string): void {
-	const full = join(ROOT, rel);
+/** The lines under one report heading, up to the next blank line. */
+function section(stdout: string, heading: RegExp): string[] {
+	const lines = stdout.split(/\r?\n/);
+	const at = lines.findIndex((l) => heading.test(l));
+	if (at === -1) return [];
+	const out: string[] = [];
+	for (const l of lines.slice(at + 1)) {
+		if (l.trim() === "") break;
+		out.push(l.trim());
+	}
+	return out;
+}
+
+function note(rel: string, status: string, date: string, root = ROOT): void {
+	const full = join(root, rel);
 	mkdirSync(dirname(full), { recursive: true });
 	writeFileSync(
 		full,
@@ -143,5 +160,71 @@ describe("tidy-fix", () => {
 		// The judgment findings are still surfaced.
 		assert.match(stdout, /Mixed Topic\/ — mixed cluster/);
 		assert.match(stdout, /Refused \(judgment — run \/om-tidy\)/);
+	});
+});
+
+/**
+ * "Fixed:" under --apply used to be written before the action ran and never
+ * corrected, so a move that failed — or a stray that could not be read —
+ * still printed as fixed, and an unreadable stray threw and ended the run.
+ */
+describe("tidy-fix — failures are reported as failed, never fixed", () => {
+	let root = "";
+	let mem = "";
+
+	before(() => {
+		root = mkdtempSync(join(tmpdir(), "tidy-fix-fail-"));
+		mem = mkdtempSync(join(tmpdir(), "tidy-fix-fail-mem-"));
+		note("work/active/Blocked.md", "completed", "2025-06-01", root);
+		note("work/active/Movable.md", "completed", "2025-06-01", root);
+		// The destination is a non-empty directory: neither git mv (no repo
+		// here) nor a plain rename can put the note there.
+		mkdirSync(join(root, "work/archive/2025/Blocked.md"), { recursive: true });
+		writeFileSync(join(root, "work/archive/2025/Blocked.md/keep.txt"), "x");
+		mkdirSync(join(root, "brain"), { recursive: true });
+		writeFileSync(join(mem, "MEMORY.md"), "old index\n");
+		// A directory with a markdown name: listed as a stray, unreadable.
+		mkdirSync(join(mem, "unreadable.md"));
+		writeFileSync(join(mem, "good.md"), "# good\n");
+	});
+
+	after(() => {
+		rmTemp(root);
+		rmTemp(mem);
+	});
+
+	test("a failed move and an unreadable stray land under Failed, the rest still go", () => {
+		const { stdout, code } = run(["--apply"], root, mem);
+		const fixed = section(stdout, /^Fixed:$/);
+		const failed = section(stdout, /^Failed/);
+
+		assert.ok(failed.some((l) => l.startsWith("work/active/Blocked.md →")), stdout);
+		assert.ok(!fixed.some((l) => l.includes("Blocked.md")), stdout);
+		assert.ok(existsSync(join(root, "work/active/Blocked.md")));
+
+		assert.ok(failed.some((l) => l.startsWith("memory/unreadable.md →")), stdout);
+		assert.ok(!fixed.some((l) => l.includes("unreadable.md")), stdout);
+
+		// The run did not stop at the first failure.
+		assert.ok(fixed.some((l) => l.startsWith("work/active/Movable.md →")), stdout);
+		assert.ok(existsSync(join(root, "work/archive/2025/Movable.md")));
+		assert.ok(fixed.some((l) => l.startsWith("memory/good.md →")), stdout);
+		assert.equal(readFileSync(join(root, "brain/good.md"), "utf-8"), "# good\n");
+
+		assert.equal(code, 1, "a failed fix must not exit clean");
+	});
+
+	test("dry-run still lists every planned fix and exits 0", () => {
+		const r = mkdtempSync(join(tmpdir(), "tidy-fix-dry-"));
+		try {
+			note("work/active/Blocked.md", "completed", "2025-06-01", r);
+			mkdirSync(join(r, "work/archive/2025/Blocked.md"), { recursive: true });
+			const { stdout, code } = run([], r, mem);
+			assert.equal(code, 0);
+			assert.ok(section(stdout, /^Would fix:$/).some((l) => l.startsWith("work/active/Blocked.md →")));
+			assert.deepEqual(section(stdout, /^Failed/), []);
+		} finally {
+			rmTemp(r);
+		}
 	});
 });
