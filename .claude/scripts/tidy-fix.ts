@@ -35,8 +35,8 @@
  *   node --experimental-strip-types .claude/scripts/tidy-fix.ts [--apply]
  *
  * TIDY_FIX_MEMORY_DIR overrides the auto-memory dir (tests); otherwise it
- * is derived from Claude Code's project-slug convention on POSIX paths and
- * skipped (with a note) when it can't be derived or doesn't exist.
+ * is derived from Claude Code's project-folder naming (see `projectSlug`)
+ * on every platform, and skipped when that folder doesn't exist.
  */
 
 import { spawnSync } from "node:child_process";
@@ -45,6 +45,7 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -93,14 +94,39 @@ function recordFix(
 	else report.failed.push(line);
 }
 
-/** Claude Code's project slug: POSIX path with separators dashed. */
-function deriveMemoryDir(vaultRoot: string): string | null {
+/**
+ * Claude Code's project folder name: every character that is not a letter,
+ * a digit or `-` becomes `-`, case kept, on every platform. Observed:
+ * `C:\Dev\site.com-next` → `C--Dev-site-com-next`, a path with spaces →
+ * dashes, `C:\` → `C--`, `/home/a/vault` → `-home-a-vault`. The same rule as
+ * `.github/scripts/delivery-gate.ts:sessionDirs`.
+ */
+export function projectSlug(path: string): string {
+	return path.replace(/[^A-Za-z0-9-]/g, "-");
+}
+
+/**
+ * The auto-memory folder for this vault. Claude Code may slug the path as
+ * given or as resolved (macOS's /var is /private/var), so both are tried and
+ * the first that exists wins; neither existing means no memory here.
+ */
+function deriveMemoryDir(vaultRoot: string): string {
 	const override = process.env["TIDY_FIX_MEMORY_DIR"];
 	if (override) return override;
-	const posix = vaultRoot.replaceAll("\\", "/").replace(/\/+$/, "");
-	if (!posix.startsWith("/")) return null; // Windows slug convention unknown
-	const slug = posix.replaceAll("/", "-");
-	return join(homedir(), ".claude", "projects", slug, "memory");
+	const projects = join(
+		process.env["CLAUDE_CONFIG_DIR"] ?? join(homedir(), ".claude"),
+		"projects",
+	);
+	let real = vaultRoot;
+	try {
+		real = realpathSync(vaultRoot);
+	} catch {
+		/* keep the path as given */
+	}
+	const dirs = [...new Set([vaultRoot, real].map(projectSlug))].map((slug) =>
+		join(projects, slug, "memory"),
+	);
+	return dirs.find((d) => existsSync(d)) ?? (dirs[0] as string);
 }
 
 /** git mv with a plain-rename fallback (still zero-loss; noted in output). */
@@ -206,12 +232,6 @@ function fixMisplacedMemory(
 	report: Report,
 ): void {
 	const memDir = deriveMemoryDir(vaultRoot);
-	if (memDir === null) {
-		report.notes.push(
-			"memory dir not derivable on this platform — misplaced-memory scan skipped",
-		);
-		return;
-	}
 	let entries: string[];
 	try {
 		entries = readdirSync(memDir).filter(
