@@ -18,6 +18,7 @@ import { existsSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join, resolve as resolvePath, sep as pathSep } from "node:path";
 import {
+	CLOCK_SKEW_MS,
 	PENDING_GRACE_MS,
 	claimTrailingFlush,
 	composeWorkerInvocations,
@@ -53,8 +54,11 @@ describe("planRefresh — trailing edge", () => {
 		const now = 10_000_000;
 		assert.equal(planRefresh(now - 10_000, now - (W + PENDING_GRACE_MS) - 1, now, W), "trailing");
 	});
-	test("a pending marker from the future is not trusted", () => {
-		assert.equal(planRefresh(1_000_000 - 10_000, 1_000_000 + 5_000, 1_000_000, W), "trailing");
+	test("a marker a hair ahead of now (fs clock skew) is still live", () => {
+		assert.equal(planRefresh(1_000_000 - 10_000, 1_000_000 + 0.5, 1_000_000, W), "skip");
+	});
+	test("a marker well in the future (a wrong clock) is not trusted", () => {
+		assert.equal(planRefresh(1_000_000 - 10_000, 1_000_000 + CLOCK_SKEW_MS + 1, 1_000_000, W), "trailing");
 	});
 });
 

@@ -88,6 +88,14 @@ export function isDebounced(
  */
 export const PENDING_GRACE_MS = 60_000;
 
+/**
+ * How far in the future a marker's mtime may sit and still be trusted. The
+ * filesystem clock and `Date.now()` disagree by fractions of a millisecond,
+ * so a marker written moments ago can read as just ahead of now; beyond this
+ * it is a genuinely wrong clock and is not trusted.
+ */
+export const CLOCK_SKEW_MS = 2_000;
+
 export type RefreshPlan = "now" | "trailing" | "skip";
 
 /**
@@ -112,7 +120,7 @@ export function planRefresh(
 	if (!isDebounced(sentinelMtimeMs, nowMs, debounceMs)) return "now";
 	const pendingLive =
 		pendingMtimeMs !== null &&
-		nowMs >= pendingMtimeMs &&
+		nowMs - pendingMtimeMs > -CLOCK_SKEW_MS &&
 		nowMs - pendingMtimeMs < debounceMs + PENDING_GRACE_MS;
 	return pendingLive ? "skip" : "trailing";
 }
