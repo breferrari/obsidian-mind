@@ -30,6 +30,8 @@ export function formatInjectionSize(
 	opts?: {
 		readonly budgetBytes?: number | undefined;
 		readonly collapsed?: readonly string[] | undefined;
+		/** Sections held between full and pointer, named with their level (#304). */
+		readonly degraded?: readonly { readonly section: string; readonly level: string }[] | undefined;
 		/** The configured budget, when it was clamped to the hook output cap. */
 		readonly clampedFrom?: number | undefined;
 		/** True when the output was truncated to fit its limit. */
@@ -52,6 +54,8 @@ export function formatInjectionSize(
 	let line = `_context injected: ${size} / ${kb(budget)} budget${clamp}`;
 	const collapsed = opts?.collapsed ?? [];
 	if (collapsed.length > 0) line += ` — collapsed: ${collapsed.join(", ")}`;
+	const degraded = opts?.degraded ?? [];
+	if (degraded.length > 0) line += ` — degraded: ${degraded.map((d) => `${d.section} → ${d.level}`).join(", ")}`;
 	if (opts?.cut === true) line += ` — truncated to fit ${opts.cutTo ?? "the hook output cap"}`;
 	return `${line}_`;
 }
@@ -63,6 +67,11 @@ export function formatInjectionSize(
  * `priority` orders SURRENDER, not importance: the highest number is given
  * up first. A section with no `fallback` is load-bearing and never dropped
  * (identity, the date header) regardless of priority.
+ *
+ * A degradable section's ladder runs from `body` (level "full") through its
+ * optional `levels`, richest to leanest, down to `fallback` (level
+ * "pointer"). With no `levels` it is the two-step full/pointer ladder every
+ * section had before (#304).
  */
 export type BudgetSection = {
 	/** Section heading, e.g. "### Vault File Listing". Empty for preamble. */
@@ -70,13 +79,29 @@ export type BudgetSection = {
 	readonly body: string;
 	readonly priority: number;
 	readonly fallback?: string | undefined;
+	readonly levels?: readonly BudgetLevel[] | undefined;
+};
+
+/**
+ * One rung between a section's full body and its pointer. `body` is the
+ * whole rendering at this level. A level whose content depends on the room
+ * left (the first N items that fit) gives `fit` instead: handed the bytes its
+ * body may take, it returns the richest body within them, or null when
+ * nothing useful fits.
+ */
+export type BudgetLevel = {
+	readonly name: string;
+	readonly body?: string | undefined;
+	readonly fit?: ((maxBytes: number) => string | null) | undefined;
 };
 
 export type BudgetResult = {
 	readonly text: string;
 	readonly bytes: number;
-	/** Headers (heading markup stripped) that were degraded, in drop order. */
+	/** Headers (heading markup stripped) left at their pointer, in surrender order. */
 	readonly collapsed: readonly string[];
+	/** Sections held at a level between full and pointer, in section order. */
+	readonly degraded: readonly { readonly section: string; readonly level: string }[];
 };
 
 function renderSections(sections: readonly BudgetSection[]): string {
@@ -86,16 +111,27 @@ function renderSections(sections: readonly BudgetSection[]): string {
 }
 
 /**
- * Hold the eager layer under a byte ceiling by degrading the cheapest-to-lose
- * sections to their pointers, highest `priority` first, until it fits.
+ * Hold the eager layer under a byte ceiling by stepping sections down their
+ * degradation ladders (full → … → pointer).
  *
  * Why bytes and not lines: the pre-existing caps in this file (`take`,
  * `formatActiveWork`, `collectOpenTasks`) are all LINE caps, and a line cap
  * cannot bound an injection — shortening entries just slides the window
  * deeper and refills it. Only a byte budget actually holds.
  *
- * Degradation is never silent truncation: a section is replaced whole by its
- * fallback pointer, so the content is missing but its existence is not.
+ * Allocation, when everything at full does not fit (#304):
+ * 1. every degradable section starts at its pointer;
+ * 2. sections are then raised best-first (lowest `priority` first), each to
+ *    the richest level that keeps the whole render within budget;
+ * 3. a section is never revisited, so a better section is never lowered to
+ *    raise a worse one.
+ * This replaced a worst-first collapse that stopped at the first fit. That
+ * one could give up the listing and brain index and then the oversized
+ * section anyway, leaving 0.4 kB of a 9.1 kB budget with no way back, and it
+ * had no level between whole and pointer.
+ *
+ * Degradation is never silent: a level is a whole rendering chosen by the
+ * section, and the meter names every section not at full.
  *
  * A non-finite or non-positive budget is a no-op — as with the size meter,
  * the budget must never be the thing that breaks the hook.
@@ -104,34 +140,56 @@ export function applyInjectionBudget(
 	sections: readonly BudgetSection[],
 	budgetBytes: number,
 ): BudgetResult {
-	const render = (s: readonly BudgetSection[]): BudgetResult => ({
+	const size = (s: readonly BudgetSection[]): number => Buffer.byteLength(renderSections(s), "utf-8");
+	const whole = (s: readonly BudgetSection[]): BudgetResult => ({
 		text: renderSections(s),
-		bytes: Buffer.byteLength(renderSections(s), "utf-8"),
+		bytes: size(s),
 		collapsed: [],
+		degraded: [],
 	});
 
-	if (!Number.isFinite(budgetBytes) || budgetBytes <= 0) return render(sections);
+	if (!Number.isFinite(budgetBytes) || budgetBytes <= 0) return whole(sections);
+	if (size(sections) <= budgetBytes) return whole(sections);
 
-	let current = [...sections];
-	if (render(current).bytes <= budgetBytes) return render(current);
+	const canDegrade = (s: BudgetSection): boolean => s.fallback !== undefined && s.fallback !== s.body;
+	let current = sections.map((s) => (canDegrade(s) ? { ...s, body: s.fallback ?? s.body } : s));
+	const level = new Map<number, string>();
 
-	// Candidates are only those that can degrade, surrendered worst-first.
-	const order = current
-		.map((s, i) => ({ s, i }))
-		.filter(({ s }) => s.fallback !== undefined && s.fallback !== s.body)
-		.sort((a, b) => b.s.priority - a.s.priority || a.i - b.i);
+	const indices = sections.map((s, i) => ({ s, i })).filter(({ s }) => canDegrade(s));
+	for (const { i } of indices) level.set(i, "pointer");
+	const bestFirst = [...indices].sort((a, b) => a.s.priority - b.s.priority || a.i - b.i);
 
-	const collapsed: string[] = [];
-	for (const { i } of order) {
-		const target = current[i];
-		if (target === undefined) continue;
-		current[i] = { ...target, body: target.fallback ?? target.body };
-		collapsed.push(target.header.replace(/^#+\s*/, ""));
-		if (Buffer.byteLength(renderSections(current), "utf-8") <= budgetBytes) break;
+	for (const { s, i } of bestFirst) {
+		const rungs: readonly BudgetLevel[] = [{ name: "full", body: s.body }, ...(s.levels ?? [])];
+		for (const rung of rungs) {
+			let body: string | null | undefined = rung.body;
+			if (rung.fit !== undefined) {
+				const empty = [...current];
+				empty[i] = { ...s, body: "" };
+				const room = budgetBytes - size(empty);
+				body = room > 0 ? rung.fit(room) : null;
+			}
+			if (body === null || body === undefined || body === "") continue;
+			const probe = [...current];
+			probe[i] = { ...s, body };
+			if (size(probe) <= budgetBytes) {
+				current = probe;
+				level.set(i, rung.name);
+				break;
+			}
+		}
 	}
 
+	const name = (i: number): string => (sections[i]?.header ?? "").replace(/^#+\s*/, "");
+	const collapsed = [...indices]
+		.sort((a, b) => b.s.priority - a.s.priority || a.i - b.i)
+		.filter(({ i }) => level.get(i) === "pointer")
+		.map(({ i }) => name(i));
+	const degraded = indices
+		.filter(({ i }) => level.get(i) !== "pointer" && level.get(i) !== "full")
+		.map(({ i }) => ({ section: name(i), level: level.get(i) as string }));
 	const text = renderSections(current);
-	return { text, bytes: Buffer.byteLength(text, "utf-8"), collapsed };
+	return { text, bytes: Buffer.byteLength(text, "utf-8"), collapsed, degraded };
 }
 
 /**
@@ -816,4 +874,152 @@ export function resolveIndexStorePath(
  */
 export function injectionMode(source: unknown): "full" | "pointer" {
 	return source === "resume" || source === "compact" ? "pointer" : "full";
+}
+
+// ---------------------------------------------------------------------------
+// North Star degradation ladder (#304)
+// ---------------------------------------------------------------------------
+
+/** A headline is at most this long. */
+export const HEADLINE_MAX_CHARS = 200;
+
+/** A first sentence shorter than this is a label; the headline takes more. */
+export const HEADLINE_MIN_CHARS = 40;
+
+export const NORTH_STAR_POINTER = "Read brain/North Star.md before suggesting priorities or deciding what to work on.";
+
+const LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
+
+/** A list item that is finished: struck through, or a checked box. */
+function isDeadItem(text: string): boolean {
+	return text.startsWith("~~") || /^\[[xX]\]/.test(text);
+}
+
+/**
+ * Drop finished items (struck, or `[x]`) together with everything indented
+ * under them — sub-bullets and continuation lines. Returns the kept lines and
+ * how many items were dropped.
+ */
+function dropDeadItems(lines: readonly string[]): { readonly kept: string[]; readonly dropped: number } {
+	const kept: string[] = [];
+	let dropped = 0;
+	let skipDeeperThan = -1;
+	for (const line of lines) {
+		const indent = (/^\s*/.exec(line)?.[0] ?? "").length;
+		if (skipDeeperThan >= 0) {
+			if (line.trim() !== "" && indent > skipDeeperThan) continue;
+			skipDeeperThan = -1;
+		}
+		const item = LIST_ITEM.exec(line);
+		if (item && isDeadItem((item[2] ?? "").trim())) {
+			dropped++;
+			skipDeeperThan = (item[1] ?? "").length;
+			continue;
+		}
+		kept.push(line);
+	}
+	return { kept, dropped };
+}
+
+/** Lines from `start` up to (not including) the next `## ` heading. */
+function untilNextH2(lines: readonly string[], start: number): string[] {
+	const end = lines.findIndex((l, i) => i > start && /^##\s/.test(l));
+	return lines.slice(start, end === -1 ? lines.length : end);
+}
+
+/**
+ * One goal as a line. The bullet's first sentence, with wikilinks shown as
+ * their text and emphasis markers dropped. A first sentence under
+ * HEADLINE_MIN_CHARS is a label ("Atlas."), so sentences are taken until
+ * the headline reaches it or the bullet ends. Never cut at a dash: a
+ * `[[Project]] — clause` bullet would keep only the project name. Capped at
+ * HEADLINE_MAX_CHARS on a word boundary with "…". Null for anything that is
+ * not a live, non-empty list item.
+ */
+export function goalHeadline(line: string): string | null {
+	const item = LIST_ITEM.exec(line);
+	if (!item) return null;
+	let t = (item[2] ?? "").trim();
+	if (t === "" || isDeadItem(t)) return null;
+	t = t.replace(/^\[ \]\s+/, "");
+	t = t.replace(/\[\[([^\]|#]*)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (_m, target: string, alias?: string) => (alias ?? target).trim());
+	t = t.replace(/(\*\*|__)(.+?)\1/g, "$2");
+	const ends = [...t.matchAll(/[.?!](?=\s)/g)].map((e) => (e.index ?? 0) + 1);
+	const stop = ends.find((i) => i >= HEADLINE_MIN_CHARS) ?? t.length;
+	t = t.slice(0, stop).trim();
+	if (t.length > HEADLINE_MAX_CHARS) {
+		const cut = t.slice(0, HEADLINE_MAX_CHARS - 1);
+		const space = cut.lastIndexOf(" ");
+		t = `${(space > HEADLINE_MAX_CHARS * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:—–-]+$/, "")}…`;
+	}
+	return t === "" ? null : t;
+}
+
+export type NorthStarLadder = {
+	/** Current Focus to end of file, cleaned: finished items and the Shifts Log out. */
+	readonly full: string;
+	/** Current Focus only, finished items out. Null when there is no Current Focus. */
+	readonly focus: string | null;
+	/** One headline per live top-level Current Focus bullet. */
+	readonly headlines: readonly string[];
+};
+
+/**
+ * The North Star at each level of its ladder (#304), from the file's text.
+ *
+ * `full` keeps what the eager layer has always shown — `## Current Focus` to
+ * the end of the file, 30 lines — minus what is not a goal: finished items
+ * (struck, or `[x]`) WITH their sub-bullets and continuation lines, which the
+ * old filter left behind, and the `## Shifts Log`, which is history. It is
+ * not byte-cut: the budget bounds it, and a cut `full` would outrank the
+ * level that shows every goal.
+ */
+export function northStarLadder(raw: string): NorthStarLadder {
+	const lines = stripFrontmatter(raw).split(/\r?\n/);
+	const anchor = lines.findIndex((l) => l.trim().startsWith("## Current Focus"));
+	const scoped = anchor >= 0 ? lines.slice(anchor) : lines;
+
+	const log = scoped.findIndex((l) => /^##\s+Shifts Log\b/.test(l));
+	const withoutLog = log === -1 ? scoped : [...scoped.slice(0, log), ...scoped.slice(log).slice(untilNextH2(scoped, log).length)];
+
+	const { kept, dropped } = dropDeadItems(withoutLog);
+	if (dropped > 0) {
+		kept.splice(1, 0, `_(${dropped} completed item${dropped === 1 ? "" : "s"} hidden — full history in brain/North Star.md)_`);
+	}
+	// No byte cut here: a cut `full` would fit where the whole does not and
+	// outrank `headlines`, showing a third of the goals where the next level
+	// shows all of them. The budget already bounds this level.
+	const full = take(kept.join("\n"), 30);
+
+	if (anchor < 0) {
+		const heads = dropDeadItems(lines).kept.filter((l) => LIST_ITEM.exec(l)?.[1] === "").map(goalHeadline);
+		return { full, focus: null, headlines: heads.filter((h): h is string => h !== null) };
+	}
+	const focusLines = dropDeadItems(untilNextH2(scoped, 0));
+	if (focusLines.dropped > 0) {
+		focusLines.kept.splice(1, 0, `_(${focusLines.dropped} completed item${focusLines.dropped === 1 ? "" : "s"} hidden — full history in brain/North Star.md)_`);
+	}
+	const headlines = focusLines.kept
+		.filter((l) => LIST_ITEM.exec(l)?.[1] === "")
+		.map(goalHeadline)
+		.filter((h): h is string => h !== null);
+	return { full, focus: focusLines.kept.join("\n").trimEnd(), headlines };
+}
+
+/** The headlines as a list body. */
+export function renderHeadlines(headlines: readonly string[]): string {
+	return headlines.map((h) => `- ${h}`).join("\n");
+}
+
+/**
+ * The first N headlines that fit in `maxBytes`, with a line saying how many
+ * more there are. Null when not even one fits, or when all of them do (that
+ * is the `headlines` level, not this one).
+ */
+export function topHeadlines(headlines: readonly string[], maxBytes: number): string | null {
+	for (let n = headlines.length - 1; n >= 1; n--) {
+		const body = `${renderHeadlines(headlines.slice(0, n))}\n_(+${headlines.length - n} more goals in brain/North Star.md)_`;
+		if (Buffer.byteLength(body, "utf-8") <= maxBytes) return body;
+	}
+	return null;
 }
