@@ -435,6 +435,37 @@ describe("health", () => {
 		});
 	});
 
+	/**
+	 * A path or folder in mcp_never_expose used to be accepted silently and
+	 * match nothing — the owner believed those notes were withheld.
+	 */
+	test("mcp_never_expose entries that can never match are named, with the fix", () => {
+		withVault((dir) => {
+			mkdirSync(join(dir, "brain"), { recursive: true });
+			put(dir, ".claude/scripts/qmd-mcp.mjs", "//");
+			const h = health(dir, {
+				user_content_roots: ["brain/"],
+				mcp_never_expose: ["SOUL.md", "perf/", "brain/North Star.md", "Secrets"],
+			});
+			const w = h.warnings.filter((x) => x.includes("mcp_never_expose"));
+			assert.equal(w.length, 3, w.join("\n"));
+			assert.match(w.join("\n"), /"perf\/".*mcp_exposed_roots/);
+			assert.match(w.join("\n"), /"brain\/North Star\.md".*bare filename "North Star\.md"/);
+			assert.match(w.join("\n"), /"Secrets".*"Secrets\.md"/);
+			assert.ok(!w.some((x) => x.includes('"SOUL.md"')), "a bare filename is valid");
+			assert.equal(h.ok, false);
+		});
+	});
+
+	test("a valid mcp_never_expose list adds no warning", () => {
+		withVault((dir) => {
+			mkdirSync(join(dir, "brain"), { recursive: true });
+			put(dir, ".claude/scripts/qmd-mcp.mjs", "//");
+			const h = health(dir, { user_content_roots: ["brain/"], mcp_never_expose: ["SOUL.md", "north star.MD"] });
+			assert.deepEqual(h.warnings, []);
+		});
+	});
+
 	test("a missing qmd launcher warns but does not claim the vault is empty", () => {
 		withVault((dir) => {
 			mkdirSync(join(dir, "brain"), { recursive: true });

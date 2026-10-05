@@ -129,6 +129,39 @@ export function isNeverExposed(policy: ExposurePolicy, path: string): boolean {
 }
 
 /**
+ * `mcp_never_expose` entries that can never withhold anything. The check
+ * compares an entry with a served note's BASENAME, and only `.md` files are
+ * served, so an entry holding a separator (`perf/`, `work/1-1/`,
+ * `brain/North Star.md`) or lacking `.md` (`SOUL`) matches nothing. Such an
+ * entry used to be accepted silently — a privacy control failing open, with
+ * the owner believing those notes were withheld. Withholding a folder is what
+ * `mcp_exposed_roots` does; this list stays filename-only, and `health`
+ * names the entries that cannot work.
+ */
+export function inertNeverExposeEntries(
+	manifest: Record<string, unknown> | null | undefined,
+): { readonly entry: string; readonly fix: string }[] {
+	const list = Array.isArray(manifest?.mcp_never_expose) ? manifest.mcp_never_expose : [];
+	const out: { entry: string; fix: string }[] = [];
+	for (const raw of list) {
+		if (typeof raw !== "string") continue;
+		const entry = raw.trim();
+		if (/[\\/]/.test(entry)) {
+			const name = entry.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+			out.push({
+				entry: raw,
+				fix: name.toLowerCase().endsWith(".md")
+					? `use the bare filename "${name}"`
+					: "to withhold a folder, leave it out of mcp_exposed_roots",
+			});
+		} else if (entry && !entry.toLowerCase().endsWith(".md")) {
+			out.push({ entry: raw, fix: `only .md notes are served — did you mean "${entry}.md"?` });
+		}
+	}
+	return out;
+}
+
+/**
  * Memories are never served as ordinary notes, whatever the config says. They
  * carry their own declared scope, evaluated per caller; reaching them through
  * the note surface would bypass it.

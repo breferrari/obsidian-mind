@@ -23,6 +23,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { normalizePath } from "./mcp-caller.ts";
 import { readHead } from "./read-head.ts";
+import { inertNeverExposeEntries } from "./mcp-exposure.ts";
 import { MEMORY_SOURCE } from "./memory-write.ts";
 import { join, relative, sep } from "node:path";
 
@@ -423,6 +424,11 @@ export function health(
 	if (mem.split) {
 		warnings.push(
 			`Captures are split across ${mem.split.map((s) => `${s.root}/ (${s.memories})`).join(" and ")} — retrieval only sees "${mem.root}/". Move the rest.`,
+		);
+	}
+	for (const { entry, fix } of inertNeverExposeEntries(manifest)) {
+		warnings.push(
+			`mcp_never_expose entry "${entry}" withholds nothing: only a note's bare filename is matched. To fix: ${fix}.`,
 		);
 	}
 	// An undeclared `mcp_exposed_roots` is not a warning: it means the server
