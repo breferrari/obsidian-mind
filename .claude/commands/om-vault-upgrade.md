@@ -23,7 +23,7 @@ Two jobs, picked by whether a source vault is given:
 
 ShardMind owns the engine lifecycle: `shardmind update` moves a managed vault to a new release, and `shardmind adopt` brings a vault that was cloned without it under management. This command owns the judgment ShardMind's bulk modes cannot make: whether a file that differs from the template is one **you improved** (keep it, and maybe upstream it) or one **you never updated** (take the new version). A blunt use-all-theirs downgrades every local enhancement. A blunt keep-all-mine is worse: it records stale files as yours, so the vault reports itself up to date while those files stay old and no later update touches them.
 
-**Requires ShardMind 0.2.0 or later** (`shardmind --version`; upgrade with `npm i -g shardmind@latest`). Without ShardMind, use *Workflow* below with this vault's previous copy as the source.
+**Requires ShardMind 0.2.1 or later** (`shardmind --version`; upgrade with `npm i -g shardmind@latest`). Without ShardMind, use *Workflow* below with this vault's previous copy as the source.
 
 ### U1. Plan
 

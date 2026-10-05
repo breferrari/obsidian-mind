@@ -18,7 +18,10 @@ requires:
   # check. 0.1.7 fixes `update` overwriting user-edited files while reporting
   # them kept (shardmind#150), and this shard's updates rewrite settings.json
   # hook lines, so older engines must refuse with SHARDMIND_VERSION_MISMATCH.
-  shardmind: ">=0.1.7"
+  # 0.2.1 fixes a failed or cancelled `adopt` in a clone of this repo deleting
+  # the clone's own `.shardmind/` files (shardmind#326); `/om-vault-upgrade`
+  # runs adopt on exactly such clones.
+  shardmind: ">=0.2.1"
 
 hooks:
   bootstrap:

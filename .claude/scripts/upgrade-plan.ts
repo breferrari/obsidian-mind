@@ -21,7 +21,9 @@
  * really the user's. Without it, keep-all-mine would record the stale files
  * as user-modified, and no later update would ever touch them.
  *
- * Requires ShardMind 0.2.0 or later (`--json`).
+ * Requires ShardMind 0.2.1 or later: `--json` arrived in 0.2.0, and 0.2.0 has
+ * an adopt that deletes a clone's own `.shardmind/` files when it fails or is
+ * cancelled (shardmind#326).
  */
 
 import { spawnSync } from "node:child_process";
@@ -126,7 +128,7 @@ function main(): void {
 	const v = shardmindCommand(["--version"]);
 	const ver = spawnSync(v.cmd, v.args, { shell: v.shell, encoding: "utf8", timeout: 60_000 });
 	if (ver.status !== 0) fail("ShardMind is not installed. Install it (npm i -g shardmind) or use the manual migration in /om-vault-upgrade.");
-	if (!versionAtLeast(ver.stdout, [0, 2, 0])) fail(`ShardMind ${ver.stdout.trim()} is too old; 0.2.0 or later is needed for --json. Run: npm i -g shardmind@latest`);
+	if (!versionAtLeast(ver.stdout, [0, 2, 1])) fail(`ShardMind ${ver.stdout.trim()} is too old; 0.2.1 or later is needed (--json, and an adopt that keeps a clone's .shardmind/ files if it fails). Run: npm i -g shardmind@latest`);
 
 	let mode: "managed" | "unmanaged";
 	let from = "?";

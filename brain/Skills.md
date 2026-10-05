@@ -79,7 +79,7 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 
 **Maintenance:**
 - `/om-vault-audit` should be run at the end of substantial sessions — catches stale indexes and mixed context
-- `/om-vault-upgrade` with no source upgrades this vault through ShardMind 0.2.0+: `upgrade-plan.ts` sorts every differing file into behind (take), ahead (keep; upstream candidate), merged or conflict before anything is applied. With a source, it imports content from an existing vault (older obsidian-mind or any Obsidian vault). Detects version, classifies notes, transforms frontmatter, fixes wikilinks, rebuilds indexes. Use `--dry-run` to preview.
+- `/om-vault-upgrade` with no source upgrades this vault through ShardMind 0.2.1+: `upgrade-plan.ts` sorts every differing file into behind (take), ahead (keep; upstream candidate), merged or conflict before anything is applied. With a source, it imports content from an existing vault (older obsidian-mind or any Obsidian vault). Detects version, classifies notes, transforms frontmatter, fixes wikilinks, rebuilds indexes. Use `--dry-run` to preview.
 - `/om-project-archive` handles the active/ → archive/ move with index updates
 
 ## Subagents
