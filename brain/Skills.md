@@ -53,7 +53,7 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 |---------|---------|
 | `/om-correct` | Sweep a corrected fact through the vault — semantic + literal search, applies at the single source, replaces restatements with links, preserves notes recording what was believed at the time. The acting half of Write-Correctness Law 2 |
 | `/om-vault-audit` | Deep structural audit — indexes, frontmatter, links, Bases, folder placement, stale context |
-| `/om-vault-upgrade` | Import content from an existing vault — detects version, classifies notes, transforms frontmatter, rebuilds indexes |
+| `/om-vault-upgrade` | Upgrade this vault through ShardMind, keeping local improvements and listing them as upstream candidates; or import content from an existing vault — detects version, classifies notes, transforms frontmatter, rebuilds indexes |
 | `/om-project-archive` | Move completed project from `work/active/` to `work/archive/YYYY/`, update all indexes — moves whole `active/<Topic>/` clusters intact |
 | `/om-tidy` | Self-maintenance pass — acts on every hygiene flag: archives completed work, groups clusters, splits oversized notes, reports open loops. Never deletes, never commits |
 
@@ -79,7 +79,7 @@ Custom slash commands, subagents, and reusable workflows. Defined in `.claude/co
 
 **Maintenance:**
 - `/om-vault-audit` should be run at the end of substantial sessions — catches stale indexes and mixed context
-- `/om-vault-upgrade` imports content from an existing vault (older obsidian-mind or any Obsidian vault). Detects version, classifies notes, transforms frontmatter, fixes wikilinks, rebuilds indexes. Use `--dry-run` to preview.
+- `/om-vault-upgrade` with no source upgrades this vault through ShardMind 0.2.0+: `upgrade-plan.ts` sorts every differing file into behind (take), ahead (keep; upstream candidate), merged or conflict before anything is applied. With a source, it imports content from an existing vault (older obsidian-mind or any Obsidian vault). Detects version, classifies notes, transforms frontmatter, fixes wikilinks, rebuilds indexes. Use `--dry-run` to preview.
 - `/om-project-archive` handles the active/ → archive/ move with index updates
 
 ## Subagents
