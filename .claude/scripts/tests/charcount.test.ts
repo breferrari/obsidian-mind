@@ -4,7 +4,15 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { countSection, formatResult } from "../lib/charcount.ts";
+
+const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), "..");
+const VAULT = join(SCRIPTS, "..", "..");
 
 describe("countSection — plain section", () => {
 	const doc = [
@@ -42,8 +50,8 @@ describe("countSection — plain section", () => {
 		assert.equal(countSection(doc, { section: "Outro" }), "Closing.".length);
 	});
 
-	test("returns 0 for missing section", () => {
-		assert.equal(countSection(doc, { section: "Nope" }), 0);
+	test("returns null for a missing section, never 0", () => {
+		assert.equal(countSection(doc, { section: "Nope" }), null);
 	});
 
 	test("empty lines inside a section are skipped", () => {
@@ -81,18 +89,114 @@ describe("countSection — with sub-marker", () => {
 		);
 	});
 
-	test("returns 0 when marker absent", () => {
+	test("returns null when marker absent", () => {
 		assert.equal(
 			countSection(doc, { section: "Project Name", sub: "Missing" }),
-			0,
+			null,
 		);
 	});
 
-	test("returns 0 when section absent (even with sub)", () => {
+	test("returns null when section absent (even with sub)", () => {
 		assert.equal(
 			countSection(doc, { section: "Nope", sub: "Current Level" }),
-			0,
+			null,
 		);
+	});
+});
+
+/**
+ * The review template writes its sections as `##` headings with a suffix
+ * (`## Impact -- "What was delivered?"`). A `###`-only matcher found none of
+ * them, counted 0, and every limit check passed on text it never read.
+ */
+describe("countSection — ## sections and heading names", () => {
+	test("counts a ## section", () => {
+		const d = ["## Summary", "abcdefghij", "## Next"].join("\n");
+		assert.equal(countSection(d, { section: "Summary" }), 10);
+	});
+
+	test("a ## section keeps its ### children and stops at the next ##", () => {
+		const d = ["## Impact", "ab", "### Detail", "cd", "## Growth", "zz"].join("\n");
+		assert.equal(countSection(d, { section: "Impact" }), "ab### Detailcd".length);
+	});
+
+	test("a ### section stops at a heading of any higher level", () => {
+		const d = ["### A", "ab", "# Top", "zz"].join("\n");
+		assert.equal(countSection(d, { section: "A" }), 2);
+	});
+
+	test("name followed by a separator suffix matches", () => {
+		const d = ['## Impact -- "What was delivered?"', "abc", "## Next"].join("\n");
+		assert.equal(countSection(d, { section: "Impact" }), 3);
+	});
+
+	test("a longer word is a different section", () => {
+		const d = ["### Impact Summary", "abc"].join("\n");
+		assert.equal(countSection(d, { section: "Impact" }), null);
+	});
+
+	test("a deeper heading does not open the section", () => {
+		const d = ["#### Impact", "abc"].join("\n");
+		assert.equal(countSection(d, { section: "Impact" }), null);
+	});
+
+	test("an exact heading wins over an earlier suffixed one", () => {
+		const d = ["## Impact -- intro", "aaaa", "## Impact", "bb"].join("\n");
+		assert.equal(countSection(d, { section: "Impact" }), 2);
+	});
+
+	test("CRLF files match and the carriage returns are not counted", () => {
+		const d = ["## Summary", "abc", "## Next"].join("\r\n");
+		assert.equal(countSection(d, { section: "Summary" }), 3);
+	});
+
+	test("every section heading in the shipped review template is found", () => {
+		const tpl = readFileSync(join(VAULT, "templates", "Review Template.md"), "utf-8");
+		for (const s of ["Summary", "Impact", "Competencies", "Principles", "Growth Plan"]) {
+			assert.notEqual(countSection(tpl, { section: s }), null, s);
+		}
+	});
+});
+
+describe("charcount CLI", () => {
+	function run(body: string, ...args: string[]) {
+		const dir = mkdtempSync(join(tmpdir(), "charcount-"));
+		try {
+			const file = join(dir, "review.md");
+			writeFileSync(file, body);
+			return spawnSync(
+				process.execPath,
+				[
+					"--disable-warning=ExperimentalWarning",
+					"--experimental-strip-types",
+					join(SCRIPTS, "charcount.ts"),
+					file,
+					...args,
+				],
+				{ encoding: "utf-8" },
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}
+
+	test("a ## section over its limit fails", () => {
+		const r = run("## Summary\nabcdefghij\n", "Summary", "", "5");
+		assert.equal(r.status, 1);
+		assert.equal(r.stdout.trim(), "10/5 ✗ (over by 5)");
+	});
+
+	test("a missing section exits 2 and prints no count", () => {
+		const r = run("## Summary\nabc\n", "Nope", "", "5");
+		assert.equal(r.status, 2);
+		assert.equal(r.stdout, "");
+		assert.match(r.stderr, /Section not found: "Nope"/);
+	});
+
+	test("a missing sub-marker exits 2", () => {
+		const r = run("### Project\n**Current Level:**\nx\n", "Project", "Next Level", "5");
+		assert.equal(r.status, 2);
+		assert.match(r.stderr, /Marker not found/);
 	});
 });
 
