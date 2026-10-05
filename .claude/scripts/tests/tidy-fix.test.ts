@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { rmTemp } from "./_helpers.ts";
+import { projectSlug } from "../tidy-fix.ts";
 
 const SCRIPT = resolve(
 	dirname(fileURLToPath(import.meta.url)),
@@ -34,6 +35,7 @@ function run(
 	args: string[],
 	root = ROOT,
 	memDir = MEMDIR,
+	extraEnv: NodeJS.ProcessEnv = {},
 ): { stdout: string; code: number } {
 	const r = spawnSync(
 		process.execPath,
@@ -44,6 +46,7 @@ function run(
 				...process.env,
 				CLAUDE_PROJECT_DIR: root,
 				TIDY_FIX_MEMORY_DIR: memDir,
+				...extraEnv,
 			},
 		},
 	);
@@ -225,6 +228,53 @@ describe("tidy-fix — failures are reported as failed, never fixed", () => {
 			assert.deepEqual(section(stdout, /^Failed/), []);
 		} finally {
 			rmTemp(r);
+		}
+	});
+});
+
+/**
+ * The memory folder used to be derived for POSIX paths only: every Windows
+ * vault returned null, so the misplaced-memory migration never ran there,
+ * and a POSIX path containing `.` or a space derived the wrong folder.
+ * Expected names below are folders Claude Code actually created.
+ */
+describe("projectSlug — Claude Code's project folder naming", () => {
+	test("Windows drive path: colon and separators become dashes", () => {
+		assert.equal(projectSlug(String.raw`C:\Dev\obsidian-mind`), "C--Dev-obsidian-mind");
+		assert.equal(projectSlug("C:/Dev/obsidian-mind"), "C--Dev-obsidian-mind");
+	});
+	test("dots and spaces become dashes; case and existing dashes are kept", () => {
+		assert.equal(projectSlug(String.raw`C:\Dev\site.com-next`), "C--Dev-site-com-next");
+		assert.equal(
+			projectSlug(String.raw`D:\Games\Some Dedicated Server`),
+			"D--Games-Some-Dedicated-Server",
+		);
+		assert.equal(projectSlug(String.raw`C:\Dev\MixedCaseApp`), "C--Dev-MixedCaseApp");
+	});
+	test("a drive root keeps its separator, as Claude Code names it", () => {
+		assert.equal(projectSlug("C:\\"), "C--");
+		assert.equal(projectSlug("/home/a/vault"), "-home-a-vault");
+	});
+});
+
+describe("tidy-fix — memory folder derived without the override", () => {
+	test("finds <config>/projects/<slug>/memory and migrates the stray", () => {
+		const root = mkdtempSync(join(tmpdir(), "tidy-fix-slug-"));
+		const config = mkdtempSync(join(tmpdir(), "tidy-fix-config-"));
+		try {
+			mkdirSync(join(root, "brain"), { recursive: true });
+			const mem = join(config, "projects", projectSlug(root), "memory");
+			mkdirSync(mem, { recursive: true });
+			writeFileSync(join(mem, "MEMORY.md"), "old index\n");
+			writeFileSync(join(mem, "found.md"), "# found\n");
+			const { stdout, code } = run(["--apply"], root, "", { CLAUDE_CONFIG_DIR: config });
+			assert.equal(code, 0, stdout);
+			assert.ok(section(stdout, /^Fixed:$/).some((l) => l.startsWith("memory/found.md →")), stdout);
+			assert.equal(readFileSync(join(root, "brain/found.md"), "utf-8"), "# found\n");
+			assert.ok(!existsSync(join(mem, "found.md")));
+		} finally {
+			rmTemp(root);
+			rmTemp(config);
 		}
 	});
 });
