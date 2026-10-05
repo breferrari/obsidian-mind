@@ -202,8 +202,11 @@ export function answers(answer: string, want: Expected): boolean {
 /** The delivered size on a context's meter line (`15.2` from `_context injected: 15.2kB / ...`), or undefined. */
 export const meterSize = (line: string): string | undefined => line.match(/(\d+(?:\.\d+)?)\s*kB/i)?.[1];
 
-/** Whether a meter line says the context collapsed sections to fit its budget. */
-const collapsed = (line: string): boolean => line.includes("collapsed");
+/**
+ * Whether a meter line says the context gave anything up to fit its budget:
+ * a section collapsed to its pointer, or held at a lower level (#304).
+ */
+const collapsed = (line: string): boolean => line.includes("collapsed") || line.includes("degraded");
 
 /**
  * Whether a text carries enough to rebuild what a checkpoint expects: the

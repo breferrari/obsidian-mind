@@ -64,6 +64,12 @@ import {
 	formatCollapsedDir,
 	DEFAULT_LISTING_COLLAPSE_THRESHOLD,
 	type BudgetSection,
+	type BudgetLevel,
+	type NorthStarLadder,
+	northStarLadder,
+	renderHeadlines,
+	topHeadlines,
+	NORTH_STAR_POINTER,
 } from "./lib/session-start.ts";
 import {
 	buildQmdCommand,
@@ -303,39 +309,34 @@ function runCmd(
 }
 
 
-function northStar(): string {
+function northStar(): NorthStarLadder | null {
 	// Filesystem-only: the path is fixed by template convention, so there's no
 	// wikilink-resolution value worth a CLI hop — and `spawnSync("obsidian", …)`
 	// launches the Electron app on macOS when no instance is running (#83).
 	//
-	// The 30-line budget must carry LIVE goals (#107): anchor at
-	// "## Current Focus" (skipping frontmatter + preamble) and drop
-	// struck-through completed bullets, which otherwise consume the slice
-	// and truncate current strategy.
+	// The slice must carry LIVE goals (#107), and degrade by levels rather
+	// than vanish when it does not fit (#304): see `northStarLadder`.
 	try {
-		const raw = readFileSync("brain/North Star.md", { encoding: "utf-8" });
-		const lines = stripFrontmatter(raw).split("\n");
-		const anchor = lines.findIndex((l) =>
-			l.trim().startsWith("## Current Focus"),
-		);
-		const scoped = anchor >= 0 ? lines.slice(anchor) : lines;
-		const struckCount = scoped.filter((l) =>
-			l.trimStart().startsWith("- ~~"),
-		).length;
-		const live = scoped.filter((l) => !l.trimStart().startsWith("- ~~"));
-		if (struckCount > 0) {
-			// Struck bullets can carry live tails — keep a pointer so sessions
-			// know completed context exists in the file.
-			live.splice(
-				1,
-				0,
-				`_(${struckCount} completed item${struckCount === 1 ? "" : "s"} hidden — full history in brain/North Star.md)_`,
-			);
-		}
-		return take(live.join("\n"), 30);
+		return northStarLadder(readFileSync("brain/North Star.md", { encoding: "utf-8" }));
 	} catch {
-		return "(not found)";
+		return null;
 	}
+}
+
+/** The North Star section, with its ladder: full → focus → headlines → top-N → pointer. */
+function northStarSection(priority: number): BudgetSection {
+	const ladder = northStar();
+	const header = "### North Star (current goals)";
+	if (ladder === null) return { header, body: "(not found)", priority, fallback: NORTH_STAR_POINTER };
+	const levels: BudgetLevel[] = [];
+	if (ladder.focus !== null) levels.push({ name: "focus", body: ladder.focus });
+	if (ladder.headlines.length > 0) {
+		levels.push(
+			{ name: "headlines", body: renderHeadlines(ladder.headlines) },
+			{ name: "top-N", fit: (room) => topHeadlines(ladder.headlines, room) },
+		);
+	}
+	return { header, body: ladder.full, priority, fallback: NORTH_STAR_POINTER, levels };
 }
 
 function recentChanges(): string {
@@ -569,12 +570,7 @@ const sections: BudgetSection[] = [
 ];
 if (mode === "full") {
 	sections.push(
-		{
-			header: "### North Star (current goals)",
-			body: northStar(),
-			priority: PRIORITY.NORTH_STAR,
-			fallback: "(Over budget — re-read brain/North Star.md on demand.)",
-		},
+		northStarSection(PRIORITY.NORTH_STAR),
 		{
 			header: "### Brain Topics (read on demand)",
 			body: brainIndex(),
@@ -665,6 +661,7 @@ process.stdout.write(
 			formatInjectionSize(bodyBytes, {
 				budgetBytes: budget.bytes,
 				collapsed: budgeted.collapsed,
+				degraded: budgeted.degraded,
 				clampedFrom: budget.clampedFrom,
 				cut,
 				cutTo: limit.name,
