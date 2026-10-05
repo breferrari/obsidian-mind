@@ -339,15 +339,32 @@ function northStarSection(priority: number): BudgetSection {
 	return { header, body: ladder.full, priority, fallback: NORTH_STAR_POINTER, levels };
 }
 
-function recentChanges(): string {
+/**
+ * A section body with what was cut from its source, so the meter can say so
+ * (no section may present a cut as whole).
+ */
+type Built = { readonly body: string; readonly cut?: string | undefined };
+
+const keptOf = (kept: number, total: number): string | undefined =>
+	total > kept ? `${kept} of ${total}` : undefined;
+
+const RECENT_CHANGES_LIMIT = 15;
+const ACTIVE_WORK_LIMIT = 10;
+const OPEN_TASKS_LIMIT = 10;
+
+function recentChanges(): Built {
 	const r = runCmd("git", [
 		"log",
 		"--oneline",
 		"--since=48 hours ago",
 		"--no-merges",
 	]);
-	if (r.kind !== "ok") return "(no git history)";
-	return formatRecentChanges(r.stdout, 15);
+	if (r.kind !== "ok") return { body: "(no git history)" };
+	const total = r.stdout.split("\n").filter((l) => l.length > 0).length;
+	return {
+		body: formatRecentChanges(r.stdout, RECENT_CHANGES_LIMIT),
+		cut: keptOf(RECENT_CHANGES_LIMIT, total),
+	};
 }
 
 function readMarkdownSource(
@@ -380,7 +397,7 @@ function listMarkdownSources(
 	return sources;
 }
 
-function openTasks(): string {
+function openTasks(): Built {
 	// Filesystem scan, not `obsidian tasks daily todo` (#83 — that CLI flashes
 	// the Electron app on macOS). Order matters: project tasks in work/active/
 	// surface first, then vault-root notes (which is where daily notes live by
@@ -396,7 +413,11 @@ function openTasks(): string {
 			(name) => isInfraFilename(name, infraRootFilenames),
 		),
 	];
-	return collectOpenTasks(sources, 10);
+	const total = sources.reduce(
+		(n, s) => n + s.content.split(/\r?\n/).filter((line) => /^\s*- \[ \]/.test(line)).length,
+		0,
+	);
+	return { body: collectOpenTasks(sources, OPEN_TASKS_LIMIT), cut: keptOf(OPEN_TASKS_LIMIT, total) };
 }
 
 function brainIndex(): string {
@@ -426,15 +447,16 @@ function brainIndex(): string {
 	return formatBrainIndex(parsed);
 }
 
-function activeWork(): string {
+function activeWork(): Built {
 	let entries: Dirent[];
 	try {
 		entries = readdirSync("work/active", { withFileTypes: true });
 	} catch {
-		return "(none)";
+		return { body: "(none)" };
 	}
 	const files = entries.filter((e) => e.isFile()).map((e) => e.name);
-	return formatActiveWork(files, 10);
+	const notes = files.filter((f) => isMarkdownFilename(f)).length;
+	return { body: formatActiveWork(files, ACTIVE_WORK_LIMIT), cut: keptOf(ACTIVE_WORK_LIMIT, notes) };
 }
 
 // Machinery (shared with the oversize scan) plus `thinking/` — scratchpads
@@ -582,12 +604,12 @@ if (mode === "full") {
 sections.push(
 	{
 		header: "### Recent Changes (last 48h)",
-		body: recentChanges(),
+		...recentChanges(),
 		priority: PRIORITY.RECENT_CHANGES,
 		fallback: "(Over budget — run git log on demand.)",
 	},
-	{ header: "### Open Tasks", body: openTasks(), priority: PRIORITY.VOLATILE },
-	{ header: "### Active Work", body: activeWork(), priority: PRIORITY.VOLATILE },
+	{ header: "### Open Tasks", ...openTasks(), priority: PRIORITY.VOLATILE },
+	{ header: "### Active Work", ...activeWork(), priority: PRIORITY.VOLATILE },
 );
 if (mode === "full") {
 	sections.push({
@@ -662,6 +684,7 @@ process.stdout.write(
 				budgetBytes: budget.bytes,
 				collapsed: budgeted.collapsed,
 				degraded: budgeted.degraded,
+				cutSections: budgeted.cut,
 				clampedFrom: budget.clampedFrom,
 				cut,
 				cutTo: limit.name,

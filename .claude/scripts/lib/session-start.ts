@@ -32,6 +32,8 @@ export function formatInjectionSize(
 		readonly collapsed?: readonly string[] | undefined;
 		/** Sections held between full and pointer, named with their level (#304). */
 		readonly degraded?: readonly { readonly section: string; readonly level: string }[] | undefined;
+		/** Sections delivered whole but built from a cut of their source, with what was kept. */
+		readonly cutSections?: readonly { readonly section: string; readonly note: string }[] | undefined;
 		/** The configured budget, when it was clamped to the hook output cap. */
 		readonly clampedFrom?: number | undefined;
 		/** True when the output was truncated to fit its limit. */
@@ -56,6 +58,8 @@ export function formatInjectionSize(
 	if (collapsed.length > 0) line += ` — collapsed: ${collapsed.join(", ")}`;
 	const degraded = opts?.degraded ?? [];
 	if (degraded.length > 0) line += ` — degraded: ${degraded.map((d) => `${d.section} → ${d.level}`).join(", ")}`;
+	const cutSections = opts?.cutSections ?? [];
+	if (cutSections.length > 0) line += ` — cut: ${cutSections.map((c) => `${c.section} (${c.note})`).join(", ")}`;
 	if (opts?.cut === true) line += ` — truncated to fit ${opts.cutTo ?? "the hook output cap"}`;
 	return `${line}_`;
 }
@@ -80,6 +84,12 @@ export type BudgetSection = {
 	readonly priority: number;
 	readonly fallback?: string | undefined;
 	readonly levels?: readonly BudgetLevel[] | undefined;
+	/**
+	 * Set when `body` is itself a cut of its source (the first 10 of 14 open
+	 * tasks): what was kept, e.g. "10 of 14". Reported by the meter whenever
+	 * the section is delivered at full, so no path presents a cut as whole.
+	 */
+	readonly cut?: string | undefined;
 };
 
 /**
@@ -102,6 +112,8 @@ export type BudgetResult = {
 	readonly collapsed: readonly string[];
 	/** Sections held at a level between full and pointer, in section order. */
 	readonly degraded: readonly { readonly section: string; readonly level: string }[];
+	/** Sections delivered at full whose body is a cut of their source, in section order. */
+	readonly cut: readonly { readonly section: string; readonly note: string }[];
 };
 
 function renderSections(sections: readonly BudgetSection[]): string {
@@ -141,11 +153,19 @@ export function applyInjectionBudget(
 	budgetBytes: number,
 ): BudgetResult {
 	const size = (s: readonly BudgetSection[]): number => Buffer.byteLength(renderSections(s), "utf-8");
+	const name = (i: number): string => (sections[i]?.header ?? "").replace(/^#+\s*/, "");
+	// A section delivered at full whose body is itself a cut says so.
+	const cutOf = (delivered: readonly BudgetSection[]) =>
+		sections
+			.map((s, i) => ({ s, i }))
+			.filter(({ s, i }) => s.cut !== undefined && delivered[i]?.body === s.body)
+			.map(({ s, i }) => ({ section: name(i), note: s.cut as string }));
 	const whole = (s: readonly BudgetSection[]): BudgetResult => ({
 		text: renderSections(s),
 		bytes: size(s),
 		collapsed: [],
 		degraded: [],
+		cut: cutOf(s),
 	});
 
 	if (!Number.isFinite(budgetBytes) || budgetBytes <= 0) return whole(sections);
@@ -180,7 +200,6 @@ export function applyInjectionBudget(
 		}
 	}
 
-	const name = (i: number): string => (sections[i]?.header ?? "").replace(/^#+\s*/, "");
 	const collapsed = [...indices]
 		.sort((a, b) => b.s.priority - a.s.priority || a.i - b.i)
 		.filter(({ i }) => level.get(i) === "pointer")
@@ -189,7 +208,7 @@ export function applyInjectionBudget(
 		.filter(({ i }) => level.get(i) !== "pointer" && level.get(i) !== "full")
 		.map(({ i }) => ({ section: name(i), level: level.get(i) as string }));
 	const text = renderSections(current);
-	return { text, bytes: Buffer.byteLength(text, "utf-8"), collapsed, degraded };
+	return { text, bytes: Buffer.byteLength(text, "utf-8"), collapsed, degraded, cut: cutOf(current) };
 }
 
 /**
@@ -974,12 +993,16 @@ export type NorthStarLadder = {
 /**
  * The North Star at each level of its ladder (#304), from the file's text.
  *
- * `full` keeps what the eager layer has always shown — `## Current Focus` to
- * the end of the file, 30 lines — minus what is not a goal: finished items
- * (struck, or `[x]`) WITH their sub-bullets and continuation lines, which the
- * old filter left behind, and the `## Shifts Log`, which is history. It is
- * not byte-cut: the budget bounds it, and a cut `full` would outrank the
- * level that shows every goal.
+ * `full` is everything live from `## Current Focus` to the end of the file,
+ * minus what is not a goal: finished items (struck, or `[x]`) WITH their
+ * sub-bullets and continuation lines, which the old filter left behind, and
+ * the `## Shifts Log`, which is history.
+ *
+ * It is not cut at all — no line cap, no byte cap. The old 30-line cap
+ * silently dropped goals past the 30th line with room to spare and nothing
+ * in the meter (a 30-goal Current Focus delivered 28). A cut `full` would
+ * also outrank the `headlines` level, which shows every goal. The budget and
+ * the ladder bound this level; nothing else may.
  */
 export function northStarLadder(raw: string): NorthStarLadder {
 	const lines = stripFrontmatter(raw).split(/\r?\n/);
@@ -993,10 +1016,7 @@ export function northStarLadder(raw: string): NorthStarLadder {
 	if (dropped > 0) {
 		kept.splice(1, 0, `_(${dropped} completed item${dropped === 1 ? "" : "s"} hidden — full history in brain/North Star.md)_`);
 	}
-	// No byte cut here: a cut `full` would fit where the whole does not and
-	// outrank `headlines`, showing a third of the goals where the next level
-	// shows all of them. The budget already bounds this level.
-	const full = take(kept.join("\n"), 30);
+	const full = kept.join("\n");
 
 	if (anchor < 0) {
 		const heads = dropDeadItems(lines).kept.filter((l) => LIST_ITEM.exec(l)?.[1] === "").map(goalHeadline);

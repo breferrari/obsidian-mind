@@ -264,3 +264,77 @@ describe("session-start — #304's fixture on the hook path", () => {
 		}
 	});
 });
+
+/**
+ * Every live goal is delivered at `full`, and any cut is in the meter.
+ *
+ * `full` kept the old 30-line cap, counted from the `## Current Focus`
+ * heading, so on a 30-goal North Star goals 29 and 30 were dropped with 7.9 kB
+ * of a 20 kB budget unused — no trailer, and the meter said nothing was
+ * degraded. A session not reading the file reported 28 of 30 goals.
+ */
+describe("North Star full level — no silent cut", () => {
+	const goals = Array.from(
+		{ length: 30 },
+		(_, i) => `- [[Area ${i + 1}]] — GOAL-${String(i + 1).padStart(2, "0")} keep the release pipeline building from tags. ${"How it is measured and what counts as done. ".repeat(6)}`,
+	);
+	const northStar = `---\ndescription: d\n---\n# North Star\n\n## Current Focus\n\n${goals.join("\n")}\n`;
+
+	test("full carries every live goal: no line cap", () => {
+		const full = northStarLadder(northStar).full;
+		for (let i = 1; i <= 30; i++) assert.ok(full.includes(`GOAL-${String(i).padStart(2, "0")}`), `goal ${i} missing`);
+	});
+
+	test("on the 20 kB instruction budget all 30 goals are delivered, and the meter reports no cut or degradation", () => {
+		const dir = mkdtempSync(join(tmpdir(), "session-start-thirty-"));
+		try {
+			mkdirSync(join(dir, "brain"));
+			writeFileSync(join(dir, "brain", "North Star.md"), northStar);
+			const { stdout, code } = spawnHook(
+				resolve(dirname(fileURLToPath(import.meta.url)), "../session-start.ts"),
+				{ source: "startup", om_mod: "deliver" },
+				{ CLAUDE_PROJECT_DIR: dir },
+			);
+			assert.equal(code, 0);
+			for (let i = 1; i <= 30; i++) assert.ok(stdout.includes(`GOAL-${String(i).padStart(2, "0")}`), `goal ${i} not delivered`);
+			const meter = stdout.trim().split("\n").pop() ?? "";
+			assert.match(meter, /\/ 20\.0kB budget_$/, `nothing degraded, collapsed, cut or truncated: ${meter}`);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a section delivered from a cut of its source is named in the meter, with what was kept", () => {
+		const dir = mkdtempSync(join(tmpdir(), "session-start-cutmeter-"));
+		try {
+			const tasks = Array.from({ length: 14 }, (_, i) => `- [ ] task ${i + 1}`).join("\n");
+			writeFileSync(join(dir, "Tasks.md"), `# Tasks\n\n${tasks}\n`);
+			const { stdout, code } = spawnHook(
+				resolve(dirname(fileURLToPath(import.meta.url)), "../session-start.ts"),
+				{ source: "startup" },
+				{ CLAUDE_PROJECT_DIR: dir },
+			);
+			assert.equal(code, 0);
+			const meter = stdout.trim().split("\n").pop() ?? "";
+			assert.match(meter, / — cut: Open Tasks \(10 of 14\)/, meter);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("the allocator reports a cut section only while it is delivered at full", () => {
+		const cutSection: BudgetSection = { header: "### Recent", body: "r".repeat(200), priority: 20, fallback: "(r)", cut: "15 of 22" };
+		const whole = applyInjectionBudget([cutSection], 10_000);
+		assert.deepEqual(whole.cut, [{ section: "Recent", note: "15 of 22" }]);
+		const pointer = applyInjectionBudget([cutSection], 50);
+		assert.deepEqual(pointer.cut, [], "at its pointer the section is collapsed, which the meter already says");
+		assert.deepEqual(pointer.collapsed, ["Recent"]);
+	});
+
+	test("the meter prints cuts after degradation", () => {
+		assert.equal(
+			formatInjectionSize(2_000, { budgetBytes: 9_100, cutSections: [{ section: "Open Tasks", note: "10 of 14" }] }),
+			"_context injected: 2.0kB / 9.1kB budget — cut: Open Tasks (10 of 14)_",
+		);
+	});
+});
