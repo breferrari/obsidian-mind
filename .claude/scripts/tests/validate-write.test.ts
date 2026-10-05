@@ -171,7 +171,9 @@ describe("validate-write — valid note produces no warnings", () => {
 	test("fully-formed note", () => {
 		const path = makeMd(
 			"---\ndate: 2026-04-05\ndescription: A valid test note\ntags:\n  - test\n---\n" +
-				"# Note\n\nSome content with [[a wikilink]] and more text.\n" +
+				// Filler is its own paragraph: on the next line it would be a
+				// hard-wrapped one (#247).
+				"# Note\n\nSome content with [[a wikilink]] and more text.\n\n" +
 				"x".repeat(300),
 			"g.md",
 		);

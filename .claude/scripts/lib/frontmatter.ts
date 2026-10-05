@@ -5,6 +5,7 @@
 
 import { basename, posix } from "node:path";
 import { readFileSync } from "node:fs";
+import { hardWrappedParagraphs } from "./prose-width.ts";
 
 const ROOT_FILES: ReadonlySet<string> = new Set([
 	"README.md",
@@ -215,6 +216,14 @@ export function validateContent(
 	if (content.length > 300 && !content.includes("[[")) {
 		warnings.push(
 			"No [[wikilinks]] found — every note must link to at least one other note (vault convention)",
+		);
+	}
+
+	// #247: a wrapped note teaches the wrap to every session that reads it.
+	const wrapped = hardWrappedParagraphs(content);
+	if (wrapped.length > 0) {
+		warnings.push(
+			`${wrapped.length} hard-wrapped paragraph line(s), first at line ${wrapped[0]} — write each paragraph as one line; GitHub renders a single newline as a break (raw captures: \`verbatim: true\` in frontmatter)`,
 		);
 	}
 
