@@ -1208,6 +1208,29 @@ describe("resolveIndexStorePath", () => {
 			join("/home/u", ".cache", "qmd", "my-vault.sqlite"),
 		);
 	});
+
+	/**
+	 * qmd's getDefaultDbPath() checks INDEX_PATH first, for every index name.
+	 * Without it, the store-size check behind bootstrap-vs-update looked at a
+	 * file qmd never opens whenever INDEX_PATH was set.
+	 */
+	test("INDEX_PATH wins over everything, for any index name", () => {
+		const env = { INDEX_PATH: "/pinned/store.sqlite", XDG_CACHE_HOME: "/xdg", HOME: "/h" };
+		assert.equal(resolveIndexStorePath("my-vault", env, "/home/u"), "/pinned/store.sqlite");
+		assert.equal(resolveIndexStorePath("other", env, "/home/u"), "/pinned/store.sqlite");
+	});
+
+	test("empty values count as unset, as qmd's `||` reads them", () => {
+		assert.equal(
+			resolveIndexStorePath("v", { INDEX_PATH: "", XDG_CACHE_HOME: "", HOME: "" }, "/home/u"),
+			join("/home/u", ".cache", "qmd", "v.sqlite"),
+		);
+	});
+
+	test("home is qmd's: HOME, then USERPROFILE, then the OS home", () => {
+		assert.equal(resolveIndexStorePath("v", { HOME: "/h", USERPROFILE: "/u" }, "/os"), join("/h", ".cache", "qmd", "v.sqlite"));
+		assert.equal(resolveIndexStorePath("v", { USERPROFILE: "/u" }, "/os"), join("/u", ".cache", "qmd", "v.sqlite"));
+	});
 });
 
 describe("injectionMode", () => {
