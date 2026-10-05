@@ -179,10 +179,11 @@ describe("the om server on the wire", () => {
 	test("reason refuses an empty question without spawning anything", async () => {
 		// This suite must never hand `reason` a real question — that would start a
 		// second Claude session from a unit test. The empty-question path is the one
-		// refusal reachable without spawning, and it proves the handler is wired.
+		// refusal reachable without spawning. Since #300 the dispatcher refuses it,
+		// from the schema's `required`, before the handler is reached.
 		const out = textOf(await call("tools/call", { name: "reason", arguments: { question: "   " } }));
 		assert.match(out, /Not run:/);
-		assert.match(out, /no question/);
+		assert.match(out, /`question` is required/);
 	});
 
 	test("the resource listing honours the policy — work/ never appears", async () => {

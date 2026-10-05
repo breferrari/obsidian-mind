@@ -66,7 +66,9 @@ describe("a refused call is auditable", () => {
 		const dir = mkdtempSync(join(tmpdir(), "refuse-"));
 		try {
 			const { call, logged } = harness(dir);
-			await call("remember", CORRUPTED);
+			// Every required field present, so the call reaches the markup check
+			// rather than the dispatcher's missing-field refusal.
+			await call("remember", { ...CORRUPTED, confidence: "inferred" });
 
 			const refusals = logged.filter((l) => l.action === "refused");
 			assert.equal(refusals.length, 1, "a refusal that logs nothing is a loop nobody can diagnose");
@@ -87,11 +89,14 @@ describe("a refused call is auditable", () => {
 		const dir = mkdtempSync(join(tmpdir(), "refuse-"));
 		try {
 			const { call, logged } = harness(dir);
-			await call("record_work", { ...CORRUPTED, folder: "brain" });
+			await call("record_work", { ...CORRUPTED, summary: "a summary", folder: "brain" });
 
 			const refusals = logged.filter((l) => l.action === "refused");
 			assert.equal(refusals.length, 1);
 			assert.equal(refusals[0]!.detail["tool"], "record_work");
+			// Pinned: without `summary` this was refused as a missing field and
+			// never reached the markup check it exists to cover.
+			assert.equal(refusals[0]!.detail["reason"], "tool-call markup");
 		} finally {
 			rmTemp(dir);
 		}
