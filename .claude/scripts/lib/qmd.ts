@@ -31,13 +31,68 @@ const require = createRequire(import.meta.url);
  * Locate @tobilu/qmd's real JS entrypoint. Returns an absolute path when
  * resolvable, null when not. A null return signals the caller to fall back
  * to invoking `qmd` directly via the platform shell (last-resort path for
- * non-npm installs).
+ * non-npm installs). A runnable install is preferred over one that merely
+ * exists — see {@link pickQmdEntry}.
  */
 export function resolveQmdEntry(): string | null {
+	return pickQmdEntry([localQmdEntry, globalQmdEntry], isRunnableQmdEntry);
+}
+
+/**
+ * Choose among candidate entrypoints, in order. Each source returns a path
+ * that EXISTS, or null. A present entry can still be broken — missing
+ * dependencies, a half-finished install, a native binding built for another
+ * Node ABI — and a broken first candidate must not shadow a working later one.
+ *
+ * - The first present candidate that passes `runnable` wins.
+ * - When every present candidate fails, the FIRST present one is returned, not
+ *   null: SessionStart's ABI self-heal needs a broken entry to find the
+ *   package it rebuilds.
+ * - A candidate with nothing after it to fall back to, and nothing before it,
+ *   is returned without a probe: probing could not change the answer. That is
+ *   the common single-install case, which therefore costs no extra spawn.
+ *
+ * Sources are thunks so a runnable early candidate never pays for the later
+ * lookups (`npm root -g` is a shell spawn).
+ */
+export function pickQmdEntry(
+	sources: ReadonlyArray<() => string | null>,
+	runnable: (entry: string) => boolean,
+): string | null {
+	let firstPresent: string | null = null;
+	for (let i = 0; i < sources.length; i++) {
+		const entry = (sources[i] as () => string | null)();
+		if (entry === null) continue;
+		if (firstPresent === null && i === sources.length - 1) return entry;
+		if (runnable(entry)) return entry;
+		firstPresent ??= entry;
+	}
+	return firstPresent;
+}
+
+/**
+ * Does this entrypoint actually start? `--version` is the cheapest call that
+ * loads the CLI. Bounded, so a hung install reads as broken rather than
+ * blocking a hook.
+ */
+export function isRunnableQmdEntry(entry: string): boolean {
+	const probe = spawnSync(process.execPath, [entry, "--version"], {
+		encoding: "utf8",
+		timeout: 10_000,
+		windowsHide: true,
+	});
+	return !probe.error && probe.signal === null && probe.status === 0;
+}
+
+function localQmdEntry(): string | null {
 	try {
 		return require.resolve("@tobilu/qmd/dist/cli/qmd.js");
-	} catch {}
+	} catch {
+		return null;
+	}
+}
 
+function globalQmdEntry(): string | null {
 	// Fallback for global npm installs that aren't on this package's resolution
 	// path — ask npm directly where global packages live. Bounded timeout so a
 	// hung npm process can't block a fire-and-forget hook indefinitely.
