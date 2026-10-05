@@ -11,6 +11,18 @@
 export function resolveQmdEntry(): string | null;
 
 /**
+ * Choose among candidate entrypoints: the first runnable present one, else
+ * the first present one, else null. A lone candidate is not probed.
+ */
+export function pickQmdEntry(
+	sources: ReadonlyArray<() => string | null>,
+	runnable: (entry: string) => boolean,
+): string | null;
+
+/** Does this entrypoint start? Bounded `--version` probe. */
+export function isRunnableQmdEntry(entry: string): boolean;
+
+/**
  * Resolve the vault root directory from a `file://` URL and optional env.
  * The env argument is read for `CLAUDE_PROJECT_DIR` (Claude Code's
  * project-dir signal); when absent, the root is computed from the URL.

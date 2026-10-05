@@ -9,15 +9,94 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
 
 import {
 	buildQmdCommand,
+	isRunnableQmdEntry,
 	parseVersionTriple,
+	pickQmdEntry,
 	qmdVersionAtLeast,
 	resolveQmdEntry,
 } from "../lib/qmd.ts";
+import {
+	isRunnableQmdEntry as isRunnableQmdEntryMjs,
+	pickQmdEntry as pickQmdEntryMjs,
+} from "../qmd-mcp.mjs";
+
+/**
+ * A present-but-broken install used to win just by existing: the first
+ * candidate that resolved was returned, so a broken local copy shadowed a
+ * working global one. Both copies of the picker run the same cases.
+ */
+for (const [label, pick, isRunnable] of [
+	["lib/qmd.ts", pickQmdEntry, isRunnableQmdEntry],
+	["qmd-mcp.mjs", pickQmdEntryMjs, isRunnableQmdEntryMjs],
+] as const) {
+	describe(`${label} pickQmdEntry`, () => {
+		const probe = (ok: ReadonlySet<string>) => {
+			const probed: string[] = [];
+			return {
+				probed,
+				runnable: (e: string) => {
+					probed.push(e);
+					return ok.has(e);
+				},
+			};
+		};
+
+		test("a broken first candidate does not shadow a runnable second", () => {
+			const p = probe(new Set(["global"]));
+			assert.equal(pick([() => "local", () => "global"], p.runnable), "global");
+		});
+
+		test("every candidate broken → the first present, so the ABI self-heal still has a package", () => {
+			const p = probe(new Set());
+			assert.equal(pick([() => "local", () => "global"], p.runnable), "local");
+		});
+
+		test("nothing present → null", () => {
+			const p = probe(new Set());
+			assert.equal(pick([() => null, () => null], p.runnable), null);
+			assert.deepEqual(p.probed, []);
+		});
+
+		test("a lone candidate is returned without a probe", () => {
+			const p = probe(new Set());
+			assert.equal(pick([() => null, () => "global"], p.runnable), "global");
+			assert.deepEqual(p.probed, []);
+		});
+
+		test("a runnable first candidate skips the later lookups", () => {
+			const p = probe(new Set(["local"]));
+			let looked = false;
+			const later = () => {
+				looked = true;
+				return "global";
+			};
+			assert.equal(pick([() => "local", later], p.runnable), "local");
+			assert.equal(looked, false);
+		});
+	});
+
+	describe(`${label} isRunnableQmdEntry`, () => {
+		test("an entry that exits 0 is runnable; one that throws on load is not", () => {
+			const dir = mkdtempSync(join(tmpdir(), "qmd-probe-"));
+			try {
+				const good = join(dir, "good.mjs");
+				const bad = join(dir, "bad.mjs");
+				writeFileSync(good, "process.stdout.write('qmd 9.9.9\\n');\n");
+				writeFileSync(bad, "throw new Error('Cannot find module better-sqlite3');\n");
+				assert.equal(isRunnable(good), true);
+				assert.equal(isRunnable(bad), false);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+	});
+}
 
 describe("lib/qmd.resolveQmdEntry", () => {
 	test("returns an absolute path to an existing qmd entrypoint when qmd is installed", () => {

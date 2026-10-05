@@ -75,12 +75,58 @@ const VAULT_ROOT = resolveVaultRoot(import.meta.url);
  * Locate @tobilu/qmd's real JS entrypoint. Returns an absolute path when
  * resolvable, null when not. Exported so the cross-platform test matrix can
  * verify resolution works on Windows, macOS, and Linux without having to
- * spawn the wrapper itself.
+ * spawn the wrapper itself. A runnable install is preferred over one that
+ * merely exists — see `pickQmdEntry`.
  */
 export function resolveQmdEntry() {
+	return pickQmdEntry([localQmdEntry, globalQmdEntry], isRunnableQmdEntry);
+}
+
+/**
+ * Choose among candidate entrypoints, in order. Duplicated from
+ * `lib/qmd.ts:pickQmdEntry` (this file is .mjs and can't import the .ts lib
+ * at strip-types runtime); the test suite drives both copies through the
+ * same cases.
+ *
+ * - The first present candidate that passes `runnable` wins, so a broken
+ *   first install cannot shadow a working later one.
+ * - When every present candidate fails, the FIRST present one is returned,
+ *   not null: SessionStart's ABI self-heal needs a broken entry to find the
+ *   package it rebuilds.
+ * - A lone candidate is returned without a probe, since probing could not
+ *   change the answer.
+ */
+export function pickQmdEntry(sources, runnable) {
+	let firstPresent = null;
+	for (let i = 0; i < sources.length; i++) {
+		const entry = sources[i]();
+		if (entry === null) continue;
+		if (firstPresent === null && i === sources.length - 1) return entry;
+		if (runnable(entry)) return entry;
+		firstPresent ??= entry;
+	}
+	return firstPresent;
+}
+
+/** Does this entrypoint actually start? Bounded `--version` probe. */
+export function isRunnableQmdEntry(entry) {
+	const probe = spawnSync(process.execPath, [entry, "--version"], {
+		encoding: "utf8",
+		timeout: 10_000,
+		windowsHide: true,
+	});
+	return !probe.error && probe.signal === null && probe.status === 0;
+}
+
+function localQmdEntry() {
 	try {
 		return require.resolve("@tobilu/qmd/dist/cli/qmd.js");
-	} catch {}
+	} catch {
+		return null;
+	}
+}
+
+function globalQmdEntry() {
 
 	// Fallback for global npm installs that aren't on this package's resolution
 	// path — ask npm directly where global packages live. Bounded timeout so a
