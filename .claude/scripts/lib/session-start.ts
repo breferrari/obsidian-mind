@@ -792,18 +792,25 @@ export function formatBrainIndex(
 }
 
 /**
- * Resolve the machine-local sqlite store path for a named qmd index,
- * honoring XDG_CACHE_HOME exactly like @tobilu/qmd's own store.js (and the
- * MCP wrapper's resolveIndexSqlitePath in qmd-mcp.mjs — kept in sync by
- * behavior-locking tests on both, since .mjs exports can't be imported into
- * .ts under strip-types). Pure: env and home are injected for testability.
+ * The sqlite store qmd will open for a named index, resolved exactly as
+ * @tobilu/qmd's own `getDefaultDbPath()` (store.js) does:
+ * 1. `INDEX_PATH`, when set, for every index name;
+ * 2. else `$XDG_CACHE_HOME/qmd/<name>.sqlite`, when non-empty;
+ * 3. else `<home>/.cache/qmd/<name>.sqlite`, with home taken as qmd's
+ *    `qmdHomedir()` takes it: `HOME`, then `USERPROFILE`, then `home`.
+ * Empty values count as unset, as qmd's `||` reads them. Without step 1 the
+ * store-size check behind bootstrap-vs-update looked at a file qmd never
+ * opens whenever INDEX_PATH was set. The MCP wrapper's
+ * resolveIndexSqlitePath (qmd-mcp.mjs) mirrors steps 2–3. Pure: env and home
+ * are injected for testability.
  */
 export function resolveIndexStorePath(
 	indexName: string,
 	env: Record<string, string | undefined>,
 	home: string,
 ): string {
-	const base = env["XDG_CACHE_HOME"] ?? join(home, ".cache");
+	if (env["INDEX_PATH"]) return env["INDEX_PATH"];
+	const base = env["XDG_CACHE_HOME"] || join(env["HOME"] || env["USERPROFILE"] || home, ".cache");
 	return join(base, "qmd", `${indexName}.sqlite`);
 }
 

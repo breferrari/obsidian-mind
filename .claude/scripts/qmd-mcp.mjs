@@ -265,7 +265,11 @@ export function resolveQmdIndex(manifestJson, vaultRoot) {
  * per-platform branch.
  */
 export function resolveIndexSqlitePath(indexName, env, home) {
-	const base = env["XDG_CACHE_HOME"] ?? join(home, ".cache");
+	// qmd's getDefaultDbPath() without its INDEX_PATH step: this computes the
+	// value INDEX_PATH is set to, and runAsMcp only calls it when INDEX_PATH is
+	// unset. Empty values count as unset (qmd uses `||`), and home is qmd's
+	// qmdHomedir(): HOME, then USERPROFILE, then the OS home.
+	const base = env["XDG_CACHE_HOME"] || join(env["HOME"] || env["USERPROFILE"] || home, ".cache");
 	return join(base, "qmd", `${indexName}.sqlite`);
 }
 

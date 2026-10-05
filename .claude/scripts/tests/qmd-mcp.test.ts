@@ -268,6 +268,18 @@ describe("resolveIndexSqlitePath", () => {
 		const out = resolveIndexSqlitePath("my-vault", {}, "/home/user");
 		assert.match(out, /[\\/]home[\\/]user[\\/]\.cache[\\/]qmd[\\/]my-vault\.sqlite$/);
 	});
+	test("an empty XDG_CACHE_HOME counts as unset, as qmd's `||` reads it — never a relative path", () => {
+		const out = resolveIndexSqlitePath("v", { XDG_CACHE_HOME: "" }, "/home/user");
+		assert.match(out, /[\\/]home[\\/]user[\\/]\.cache[\\/]qmd[\\/]v\.sqlite$/);
+	});
+	test("home is qmd's: HOME, then USERPROFILE, then the OS home", () => {
+		assert.match(resolveIndexSqlitePath("v", { HOME: "/h", USERPROFILE: "/u" }, "/os"), /[\\/]h[\\/]\.cache[\\/]qmd[\\/]v\.sqlite$/);
+		assert.match(resolveIndexSqlitePath("v", { USERPROFILE: "/u" }, "/os"), /[\\/]u[\\/]\.cache[\\/]qmd[\\/]v\.sqlite$/);
+	});
+	test("INDEX_PATH is not consulted: this computes the value INDEX_PATH is set to", () => {
+		const out = resolveIndexSqlitePath("v", { INDEX_PATH: "/pinned.sqlite" }, "/home/user");
+		assert.match(out, /[\\/]home[\\/]user[\\/]\.cache[\\/]qmd[\\/]v\.sqlite$/);
+	});
 	test("matches qmd's own getDefaultDbPath rule on all platforms (no Library/Caches, no AppData branch)", () => {
 		// This locks the contract: our INDEX_PATH override must point at the same
 		// file qmd's CLI would write to without the override. Regression here
