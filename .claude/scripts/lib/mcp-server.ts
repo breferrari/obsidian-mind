@@ -29,7 +29,7 @@ import {
 import { expandNote } from "./mcp-graph.ts";
 import { qmdProbe, qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
 import { callerProject, callerProjectSource, CALLER_VAR, isVaultItself, PROJECT_MARKER, sumAuditField, sanitize } from "./mcp-caller.ts";
-import { callerPlatforms, digestsFrom, resolvableNames } from "./mcp-memory-bridge.ts";
+import { callerPlatforms, digestsFrom, resolvableNames, resolvableTargets } from "./mcp-memory-bridge.ts";
 import { captureNote, describeToolMarkup, toolMarkupRefusal } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
@@ -580,7 +580,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			return toolMarkupRefusal(corrupted, args);
 		}
 		const who = callerProject(session.roots);
-		const resolvable = resolvableNames(visibleFiles(ctx.vaultRoot, policy));
+		const resolvable = resolvableTargets(visibleFiles(ctx.vaultRoot, policy));
 		let r;
 		try {
 			r = captureNote(ctx.vaultRoot, policy, ctx.manifest, who, args, resolvable, {
