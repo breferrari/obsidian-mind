@@ -25,15 +25,20 @@ import {
 	renderCapture,
 	captureNote,
 	clampDescription,
+	wikilinkTo,
 	yamlQuoted,
 	type Destination,
 } from "../lib/mcp-capture.ts";
 import type { ExposurePolicy } from "../lib/mcp-exposure.ts";
-import { resolvableNames } from "../lib/mcp-memory-bridge.ts";
+import { resolvableNames, resolvableTargets } from "../lib/mcp-memory-bridge.ts";
+import { extractWikilinkTargets } from "../lib/wikilinks.ts";
 
 import { rmTemp } from "./_helpers.ts";
 
 const NOW = new Date("2026-07-26T10:00:00Z");
+
+/** Resolvable names → basenames, as resolvableTargets builds them. */
+const names = (...n: string[]): Map<string, string> => new Map(n.map((x) => [x.toLowerCase(), x]));
 const POLICY: ExposurePolicy = { roots: ["brain", "projects"], neverExpose: new Set(), source: "manifest", memoryRoot: "memories" };
 
 function withVault(fn: (dir: string) => void): void {
@@ -88,7 +93,7 @@ describe("slugifying a title", () => {
 		withVault((dir) => {
 			const { title: _omit, ...noTitle } = BASIC;
 			assert.throws(
-				() => captureNote(dir, POLICY, {}, null, noTitle, new Set(), { now: NOW }),
+				() => captureNote(dir, POLICY, {}, null, noTitle, new Map(), { now: NOW }),
 				/empty filename/,
 			);
 		});
@@ -224,7 +229,7 @@ describe("rendering a capture", () => {
 	const dest: Destination = { dir: "/v/projects/atlas/notes", rel: "projects/atlas/notes", project: "atlas", routed: "caller-identity" };
 
 	test("carries frontmatter the vault's own validator would accept", () => {
-		const md = renderCapture(BASIC, dest, "atlas", new Set(["atlas"]), NOW);
+		const md = renderCapture(BASIC, dest, "atlas", names("atlas"), NOW);
 		assert.match(md, /^---\n/);
 		assert.match(md, /date: 2026-07-26/);
 		assert.match(md, /description: 'Shipped the archive command behind a flag\.'/);
@@ -239,7 +244,7 @@ describe("rendering a capture", () => {
 			{ ...BASIC, informed_by: ["Gotchas", "Note That Does Not Exist"] },
 			dest,
 			"atlas",
-			new Set(["atlas", "gotchas"]),
+			names("atlas", "Gotchas"),
 			NOW,
 		);
 		assert.match(md, /- \[\[Gotchas\]\]/);
@@ -247,19 +252,55 @@ describe("rendering a capture", () => {
 		assert.ok(!md.includes("[[Note That Does Not Exist]]"));
 	});
 
+	/**
+	 * A title carrying `#` resolved as an alias, so it was linked by name —
+	 * and every link reader splits at `#` before looking the target up.
+	 */
+	test("a name holding # or | links by basename and keeps the name as display text", () => {
+		const base = "2026-09-06-wake-on-write-418";
+		const targets = new Map([
+			["wake on write (#418)", base],
+			["a | b choice", "2026-09-07-a-b-choice"],
+			["plain note", "Plain Note"],
+		]);
+		const md = renderCapture(
+			{ ...BASIC, informed_by: ["Wake on write (#418)", "A | B choice", "Plain note"] },
+			dest,
+			"atlas",
+			targets,
+			NOW,
+		);
+		assert.match(md, /- \[\[2026-09-06-wake-on-write-418\|Wake on write \(#418\)\]\]/);
+		assert.match(md, /- \[\[2026-09-07-a-b-choice\|A \| B choice\]\]/);
+		// No terminator: written exactly as before, by name.
+		assert.match(md, /- \[\[Plain note\]\]/);
+		const links = extractWikilinkTargets(md);
+		assert.ok(links.includes(base), links.join(","));
+		assert.ok(links.includes("2026-09-07-a-b-choice"), links.join(","));
+		assert.ok(!links.some((l) => l.startsWith("Wake on write (")), links.join(","));
+	});
+
+	test("brackets in a linked name are dropped from the display text, which no link can hold", () => {
+		assert.equal(wikilinkTo("2026-01-01-x", "Draft [v2] #3"), "[[2026-01-01-x|Draft v2 #3]]");
+	});
+
+	test("a basename that itself holds a terminator is written as plain text, never a broken link", () => {
+		assert.equal(wikilinkTo("Old #7 note", "Old #7 note"), "Old #7 note");
+	});
+
 	test("the project home link is emitted only when the project resolves by name", () => {
-		assert.match(renderCapture(BASIC, dest, "atlas", new Set(["atlas"]), NOW), /- \[\[atlas\]\]/);
-		assert.ok(!renderCapture(BASIC, dest, "atlas", new Set(), NOW).includes("[[atlas]]"));
+		assert.match(renderCapture(BASIC, dest, "atlas", names("atlas"), NOW), /- \[\[atlas\]\]/);
+		assert.ok(!renderCapture(BASIC, dest, "atlas", new Map(), NOW).includes("[[atlas]]"));
 	});
 
 	test("empty sections are omitted rather than left as empty headings", () => {
-		const md = renderCapture({ title: "t", summary: "s", kind: "note" }, dest, "atlas", new Set(), NOW);
+		const md = renderCapture({ title: "t", summary: "s", kind: "note" }, dest, "atlas", new Map(), NOW);
 		assert.ok(!md.includes("## What changed"));
 		assert.ok(!md.includes("## Open"));
 	});
 
 	test("a quote in the summary cannot break the frontmatter", () => {
-		const md = renderCapture({ ...BASIC, summary: 'He said "hello" today' }, dest, "atlas", new Set(), NOW);
+		const md = renderCapture({ ...BASIC, summary: 'He said "hello" today' }, dest, "atlas", new Map(), NOW);
 		const front = md.slice(0, md.indexOf("\n---", 4));
 		const line = front.split("\n").find((l) => l.startsWith("description:")) ?? "";
 		// A double quote is now ordinary content, because the scalar is
@@ -269,7 +310,7 @@ describe("rendering a capture", () => {
 	});
 
 	test("the routing decision is recorded in the note itself", () => {
-		assert.match(renderCapture(BASIC, dest, "atlas", new Set(), NOW), /routing: caller-identity/);
+		assert.match(renderCapture(BASIC, dest, "atlas", new Map(), NOW), /routing: caller-identity/);
 	});
 });
 
@@ -280,7 +321,7 @@ describe("rendering a capture", () => {
 describe("writing a capture", () => {
 	test("a dry run writes nothing and previews", () => {
 		withVault((dir) => {
-			const r = captureNote(dir, POLICY, {}, "atlas", { ...BASIC, dry_run: true }, new Set(), { now: NOW });
+			const r = captureNote(dir, POLICY, {}, "atlas", { ...BASIC, dry_run: true }, new Map(), { now: NOW });
 			assert.equal(r.written, false);
 			assert.ok(r.preview);
 			assert.equal(readdirSync(dir).length, 0, "nothing may touch disk");
@@ -289,9 +330,9 @@ describe("writing a capture", () => {
 
 	test("a note record takes the date prefix; a decision does not", () => {
 		withVault((dir) => {
-			const note = captureNote(dir, POLICY, {}, null, BASIC, new Set(), { now: NOW });
+			const note = captureNote(dir, POLICY, {}, null, BASIC, new Map(), { now: NOW });
 			assert.match(note.path, /2026-07-26-add-the-archive-command\.md$/);
-			const dec = captureNote(dir, POLICY, {}, null, { ...BASIC, kind: "decision" }, new Set(), { now: NOW });
+			const dec = captureNote(dir, POLICY, {}, null, { ...BASIC, kind: "decision" }, new Map(), { now: NOW });
 			// A decision is a living document; a creation-date prefix would invert
 			// its recency signal.
 			assert.match(dec.path, /\/add-the-archive-command\.md$/);
@@ -300,7 +341,7 @@ describe("writing a capture", () => {
 
 	test("the file lands where it was routed, with its content", () => {
 		withVault((dir) => {
-			const r = captureNote(dir, POLICY, {}, null, BASIC, new Set(), { now: NOW });
+			const r = captureNote(dir, POLICY, {}, null, BASIC, new Map(), { now: NOW });
 			const md = readFileSync(join(dir, r.path), "utf8");
 			assert.match(md, /# Add the archive command/);
 			assert.match(md, /- added cmd/);
@@ -310,8 +351,8 @@ describe("writing a capture", () => {
 	test("a colliding title takes the next suffix rather than overwriting", () => {
 		// The obvious check-then-rename loses one capture entirely, with no error.
 		withVault((dir) => {
-			const a = captureNote(dir, POLICY, {}, null, BASIC, new Set(), { now: NOW });
-			const b = captureNote(dir, POLICY, {}, null, BASIC, new Set(), { now: NOW });
+			const a = captureNote(dir, POLICY, {}, null, BASIC, new Map(), { now: NOW });
+			const b = captureNote(dir, POLICY, {}, null, BASIC, new Map(), { now: NOW });
 			assert.notEqual(a.path, b.path);
 			assert.match(b.path, /-2\.md$/);
 			assert.ok(readFileSync(join(dir, a.path), "utf8").length > 0, "the first must survive");
@@ -320,7 +361,7 @@ describe("writing a capture", () => {
 
 	test("no temp file is left behind", () => {
 		withVault((dir) => {
-			const r = captureNote(dir, POLICY, {}, null, BASIC, new Set(), { now: NOW });
+			const r = captureNote(dir, POLICY, {}, null, BASIC, new Map(), { now: NOW });
 			const leftovers = readdirSync(join(dir, "inbox")).filter((f) => f.endsWith(".tmp"));
 			assert.deepEqual(leftovers, [], "a half-written note must never be visible to the indexer");
 			assert.ok(r.written);
@@ -329,7 +370,7 @@ describe("writing a capture", () => {
 
 	test("an empty title is refused before anything is written", () => {
 		withVault((dir) => {
-			assert.throws(() => captureNote(dir, POLICY, {}, null, { ...BASIC, title: "!!!" }, new Set()), /empty filename/);
+			assert.throws(() => captureNote(dir, POLICY, {}, null, { ...BASIC, title: "!!!" }, new Map()), /empty filename/);
 			assert.equal(readdirSync(dir).length, 0);
 		});
 	});
@@ -337,7 +378,7 @@ describe("writing a capture", () => {
 	test("a refused folder writes nothing at all", () => {
 		withVault((dir) => {
 			assert.throws(
-				() => captureNote(dir, POLICY, {}, "atlas", { ...BASIC, folder: "work/secret" }, new Set()),
+				() => captureNote(dir, POLICY, {}, "atlas", { ...BASIC, folder: "work/secret" }, new Map()),
 				/not inside an exposed root/,
 			);
 			assert.equal(readdirSync(dir).length, 0, "a refusal must not create the folder either");
@@ -346,9 +387,9 @@ describe("writing a capture", () => {
 
 	test("the reindex result is reported, so an unfindable note is not called a success", () => {
 		withVault((dir) => {
-			const ok = captureNote(dir, POLICY, {}, null, BASIC, new Set(), { now: NOW, reindex: () => true });
+			const ok = captureNote(dir, POLICY, {}, null, BASIC, new Map(), { now: NOW, reindex: () => true });
 			assert.equal(ok.indexed, true);
-			const bad = captureNote(dir, POLICY, {}, null, BASIC, new Set(), { now: NOW, reindex: () => false });
+			const bad = captureNote(dir, POLICY, {}, null, BASIC, new Map(), { now: NOW, reindex: () => false });
 			assert.equal(bad.indexed, false);
 		});
 	});
@@ -357,7 +398,7 @@ describe("writing a capture", () => {
 		withVault((dir) => {
 			mkdirSync(join(dir, "inbox"), { recursive: true });
 			writeFileSync(join(dir, "inbox", "existing.md"), "keep me", "utf8");
-			captureNote(dir, POLICY, {}, null, BASIC, new Set(), { now: NOW });
+			captureNote(dir, POLICY, {}, null, BASIC, new Map(), { now: NOW });
 			assert.equal(readFileSync(join(dir, "inbox", "existing.md"), "utf8"), "keep me");
 		});
 	});
@@ -372,18 +413,18 @@ describe("a capture is reachable by its own title", () => {
 
 	test("the title is carried as an alias, because the basename never is", () => {
 		const title = "I3 lands: a soak over the whole pipeline";
-		const md = renderCapture({ title, summary: "s", kind: "note" }, dest, "atlas", new Set(), NOW);
+		const md = renderCapture({ title, summary: "s", kind: "note" }, dest, "atlas", new Map(), NOW);
 		assert.match(md, /^aliases:\n {2}- 'I3 lands: a soak over the whole pipeline'$/m);
 	});
 
 	test("a title with a quote cannot break the frontmatter", () => {
-		const md = renderCapture({ title: 'The "obvious" fix', summary: "s", kind: "note" }, dest, "atlas", new Set(), NOW);
+		const md = renderCapture({ title: 'The "obvious" fix', summary: "s", kind: "note" }, dest, "atlas", new Map(), NOW);
 		// A double quote is ordinary content inside a single-quoted scalar.
 		assert.match(md, /^ {2}- 'The "obvious" fix'$/m);
 	});
 
 	test("an empty title emits no alias block rather than an empty one", () => {
-		const md = renderCapture({ title: "", summary: "s", kind: "note" }, dest, "atlas", new Set(), NOW);
+		const md = renderCapture({ title: "", summary: "s", kind: "note" }, dest, "atlas", new Map(), NOW);
 		assert.doesNotMatch(md, /^aliases:/m);
 	});
 
@@ -406,7 +447,7 @@ describe("a capture is reachable by its own title", () => {
 
 	for (const [label, title] of HOSTILE) {
 		test(`${label} in the title cannot break the frontmatter`, () => {
-			const md = renderCapture({ title, summary: title, kind: "note" }, dest, "atlas", new Set(), NOW);
+			const md = renderCapture({ title, summary: title, kind: "note" }, dest, "atlas", new Map(), NOW);
 
 			assert.equal((md.match(/^---$/gm) ?? []).length, 2, "exactly one frontmatter block");
 
@@ -427,7 +468,7 @@ describe("a capture is reachable by its own title", () => {
 	}
 
 	test("a backslash survives literally rather than as an escape", () => {
-		const md = renderCapture({ title: "A path C:\\temp\\x", summary: "s", kind: "note" }, dest, "atlas", new Set(), NOW);
+		const md = renderCapture({ title: "A path C:\\temp\\x", summary: "s", kind: "note" }, dest, "atlas", new Map(), NOW);
 		assert.match(md, /^ {2}- 'A path C:\\temp\\x'$/m);
 	});
 
@@ -437,10 +478,32 @@ describe("a capture is reachable by its own title", () => {
 		assert.equal(yamlQuoted("a\n\nb"), "'a b'");
 	});
 
+	test("round trip: citing a captured note whose title holds # writes a link that resolves to it", () => {
+		withVault((dir) => {
+			const title = "The pane wakes on a store write (#418)";
+			captureNote(dir, POLICY, {}, null, { title, summary: "s", kind: "note" }, new Map(), { now: NOW });
+			const [first] = readdirSync(join(dir, "inbox"));
+			const label = first!.replace(/\.md$/, "");
+			const targets = resolvableTargets([{ label, full: join(dir, "inbox", first!), scope: "inbox" }]);
+			captureNote(
+				dir,
+				POLICY,
+				{},
+				null,
+				{ title: "Follow-up", summary: "s", kind: "note", informed_by: [title] },
+				targets,
+				{ now: NOW },
+			);
+			const second = readdirSync(join(dir, "inbox")).find((f) => f !== first)!;
+			const links = extractWikilinkTargets(readFileSync(join(dir, "inbox", second), "utf-8"));
+			assert.ok(links.includes(label), `expected a link to ${label}, got ${links.join(", ")}`);
+		});
+	});
+
 	test("round trip: a hostile title still resolves through resolvableNames", () => {
 		for (const [, title] of HOSTILE) {
 			withVault((dir) => {
-				captureNote(dir, POLICY, {}, null, { title, summary: "s", kind: "note" }, new Set(), { now: NOW });
+				captureNote(dir, POLICY, {}, null, { title, summary: "s", kind: "note" }, new Map(), { now: NOW });
 				const files = readdirSync(join(dir, "inbox"));
 				const label = files[0]!.replace(/\.md$/, "");
 				const resolvable = resolvableNames([{ label, full: join(dir, "inbox", files[0]!), scope: "inbox" }]);
@@ -463,7 +526,7 @@ describe("a capture is reachable by its own title", () => {
 	test("round trip: a written capture resolves by title through resolvableNames", () => {
 		withVault((dir) => {
 			const title = "The harden audit of I2b found a live I9 breach the suite could not see";
-			captureNote(dir, POLICY, {}, null, { title, summary: "s", kind: "note" }, new Set(), { now: NOW });
+			captureNote(dir, POLICY, {}, null, { title, summary: "s", kind: "note" }, new Map(), { now: NOW });
 
 			const files = readdirSync(join(dir, "inbox"));
 			assert.equal(files.length, 1, "exactly one capture written");

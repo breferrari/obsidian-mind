@@ -74,23 +74,36 @@ export function unquoteScalar(raw: string): string {
 }
 
 export function resolvableNames(files: readonly VisibleFile[]): Set<string> {
-	const names = new Set<string>();
+	return new Set(resolvableTargets(files).keys());
+}
+
+/**
+ * Every name a visible note answers to — its basename and its aliases,
+ * lowercased — mapped to the note's BASENAME. A name is not always usable as
+ * a link target: a title like `Wake on write (#418)` resolves as an alias,
+ * but `[[Wake on write (#418)]]` splits at `#`. The basename is what a link
+ * has to point at in that case.
+ */
+export function resolvableTargets(files: readonly VisibleFile[]): Map<string, string> {
+	const names = new Map<string, string>();
+	const add = (name: string, label: string): void => {
+		if (name && !names.has(name)) names.set(name, label);
+	};
 	for (const f of files) {
-		names.add(f.label.toLowerCase());
+		add(f.label.toLowerCase(), f.label);
 		const head = readHead(f.full, HEAD_CHARS);
 		if (head === null) continue; // an unreadable file still contributes its basename
 		const block = head.match(/^aliases:\s*$([\s\S]*?)^(?=\S|---)/m);
 		if (block?.[1]) {
 			for (const line of block[1].split("\n")) {
 				const m = line.match(/^\s*-\s*(.+?)\s*$/);
-				if (m?.[1]) names.add(unquoteScalar(m[1]).toLowerCase());
+				if (m?.[1]) add(unquoteScalar(m[1]).toLowerCase(), f.label);
 			}
 		}
 		const inline = head.match(/^aliases:\s*\[(.*)\]\s*$/m);
 		if (inline?.[1]) {
 			for (const part of inline[1].split(",")) {
-				const name = unquoteScalar(part).toLowerCase();
-				if (name) names.add(name);
+				add(unquoteScalar(part).toLowerCase(), f.label);
 			}
 		}
 	}
