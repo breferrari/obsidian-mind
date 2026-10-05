@@ -102,8 +102,24 @@ export function translateToGlob(pattern: string): string | null {
 	return pattern;
 }
 
-export function qmdConfigPath(indexName: string): string {
-	return join(homedir(), ".config", "qmd", `${indexName}.yml`);
+/**
+ * Where qmd keeps `<index>.yml`, resolved exactly as qmd's own
+ * `getConfigDir()` does (`collections.js`): `QMD_CONFIG_DIR`, else
+ * `XDG_CONFIG_HOME/qmd`, else `<home>/.config/qmd`, with home taken as qmd's
+ * `qmdHomedir()` takes it (`HOME`, then `USERPROFILE`, then the OS). A
+ * hard-coded `~/.config/qmd` wrote to a file qmd never reads whenever either
+ * override was set — including a test that redirected qmd to a temp folder.
+ */
+export function qmdConfigPath(
+	indexName: string,
+	env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+	const dir = env["QMD_CONFIG_DIR"]
+		? env["QMD_CONFIG_DIR"]
+		: env["XDG_CONFIG_HOME"]
+			? join(env["XDG_CONFIG_HOME"], "qmd")
+			: join(env["HOME"] || env["USERPROFILE"] || homedir(), ".config", "qmd");
+	return join(dir, `${indexName}.yml`);
 }
 
 /**

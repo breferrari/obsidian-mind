@@ -332,14 +332,36 @@ describe("writeQmdIgnore — file IO wrapper", () => {
 	});
 });
 
+/**
+ * Mirrors qmd's own `getConfigDir()`: QMD_CONFIG_DIR, then XDG_CONFIG_HOME/qmd,
+ * then <home>/.config/qmd. A hard-coded ~/.config/qmd wrote where qmd never
+ * reads whenever an override was set.
+ */
 describe("qmdConfigPath", () => {
-	test("composes path from homedir, .config/qmd, and index name", () => {
-		const p = qmdConfigPath("obsidian-mind");
-		// Normalize separators so the assertion works on both POSIX (`/`) and
-		// Windows (`\`). path.join picks the platform-native separator.
-		const normalized = p.replaceAll("\\", "/");
-		assert.ok(normalized.endsWith("/.config/qmd/obsidian-mind.yml"));
-		// Absolute path, not relative.
+	const norm = (p: string) => p.replaceAll("\\", "/");
+
+	test("QMD_CONFIG_DIR wins over everything", () => {
+		const p = qmdConfigPath("v", { QMD_CONFIG_DIR: "/qcfg", XDG_CONFIG_HOME: "/xdg", HOME: "/h" });
+		assert.equal(norm(p), "/qcfg/v.yml");
+	});
+
+	test("XDG_CONFIG_HOME/qmd when QMD_CONFIG_DIR is unset", () => {
+		const p = qmdConfigPath("v", { XDG_CONFIG_HOME: "/xdg", HOME: "/h" });
+		assert.equal(norm(p), "/xdg/qmd/v.yml");
+	});
+
+	test("<home>/.config/qmd otherwise, HOME before USERPROFILE", () => {
+		assert.equal(norm(qmdConfigPath("v", { HOME: "/h", USERPROFILE: "/u" })), "/h/.config/qmd/v.yml");
+		assert.equal(norm(qmdConfigPath("v", { USERPROFILE: "/u" })), "/u/.config/qmd/v.yml");
+	});
+
+	test("an empty override is treated as unset, as qmd's truthiness check does", () => {
+		assert.equal(norm(qmdConfigPath("v", { QMD_CONFIG_DIR: "", XDG_CONFIG_HOME: "", HOME: "/h" })), "/h/.config/qmd/v.yml");
+	});
+
+	test("with no env at all, an absolute path under the OS home", () => {
+		const p = qmdConfigPath("obsidian-mind", {});
+		assert.ok(norm(p).endsWith("/.config/qmd/obsidian-mind.yml"));
 		assert.ok(p.startsWith("/") || /^[A-Za-z]:[/\\]/.test(p));
 	});
 });
