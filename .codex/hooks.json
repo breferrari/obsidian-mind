@@ -7,6 +7,7 @@
           {
             "type": "command",
             "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${CODEX_PROJECT_DIR:-.}/.claude/scripts/session-start.ts\"",
+            "commandWindows": "node --disable-warning=ExperimentalWarning --experimental-strip-types .claude/scripts/session-start.ts",
             "timeout": 30
           }
         ]
@@ -18,6 +19,7 @@
           {
             "type": "command",
             "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${CODEX_PROJECT_DIR:-.}/.claude/scripts/classify-message.ts\"",
+            "commandWindows": "node --disable-warning=ExperimentalWarning --experimental-strip-types .claude/scripts/classify-message.ts",
             "timeout": 15
           }
         ]
@@ -30,6 +32,7 @@
           {
             "type": "command",
             "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${CODEX_PROJECT_DIR:-.}/.claude/scripts/validate-write.ts\"",
+            "commandWindows": "node --disable-warning=ExperimentalWarning --experimental-strip-types .claude/scripts/validate-write.ts",
             "timeout": 15
           }
         ]
@@ -41,6 +44,7 @@
           {
             "type": "command",
             "command": "node --disable-warning=ExperimentalWarning --experimental-strip-types \"${CODEX_PROJECT_DIR:-.}/.claude/scripts/stop-checklist.ts\"",
+            "commandWindows": "node --disable-warning=ExperimentalWarning --experimental-strip-types .claude/scripts/stop-checklist.ts",
             "timeout": 5
           }
         ]
