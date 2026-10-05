@@ -61,7 +61,10 @@ export interface CaptureResult {
 
 /** Filesystem-safe stem from a title. Separators are stripped, not escaped. */
 export function slugifyTitle(title: unknown): string {
-	return String(title)
+	// Not `String(title)`: `String(undefined)` is "undefined", a non-empty
+	// stem that slipped past captureNote's empty-filename guard.
+	if (typeof title !== "string") return "";
+	return title
 		.normalize("NFKD")
 		.replace(/[^\w\s-]/g, "")
 		.trim()

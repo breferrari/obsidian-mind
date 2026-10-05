@@ -554,6 +554,16 @@ export function createHandlers(deps: ServerDeps): Handlers {
 	}
 
 	function callRecordWork(args: Record<string, unknown>): string {
+		// `required` in the tool schema is advisory: a client that does not
+		// validate against it sends the call without the field, and a missing
+		// title used to become a `<date>-undefined.md` note with an empty H1.
+		for (const field of ["title", "summary"] as const) {
+			const v = args[field];
+			if (typeof v !== "string" || v.trim() === "") {
+				audit("refused", { tool: "record_work", reason: `missing ${field}` });
+				return `Not recorded: \`${field}\` is required and must be a non-empty string.`;
+			}
+		}
 		// A field carrying tool-call framing means the call's serialization broke,
 		// not that the author wrote something odd. Refuse: writing it produces a
 		// corrupted note whose damage is invisible until a human reads the rendered
