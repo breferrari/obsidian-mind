@@ -77,6 +77,22 @@ describe("slugifying a title", () => {
 	test("is bounded, so a pathological title cannot make an unusable filename", () => {
 		assert.ok(slugifyTitle("x".repeat(500)).length <= 60);
 	});
+
+	test("a non-string title is an empty stem, never the word 'undefined'", () => {
+		assert.equal(slugifyTitle(undefined), "");
+		assert.equal(slugifyTitle(null), "");
+		assert.equal(slugifyTitle(42), "");
+	});
+
+	test("captureNote with no title throws the empty-filename refusal and writes nothing", () => {
+		withVault((dir) => {
+			const { title: _omit, ...noTitle } = BASIC;
+			assert.throws(
+				() => captureNote(dir, POLICY, {}, null, noTitle, new Set(), { now: NOW }),
+				/empty filename/,
+			);
+		});
+	});
 });
 
 // ---------------------------------------------------------------------------
