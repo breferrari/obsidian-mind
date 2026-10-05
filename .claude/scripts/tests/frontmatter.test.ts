@@ -242,9 +242,19 @@ describe("validateContent — frontmatter + wikilinks", () => {
 	test("valid long note with wikilink produces no warnings", () => {
 		const c =
 			"---\ndate: 2026-04-05\ndescription: A valid test note\ntags:\n  - test\n---\n" +
-			"# Note\n\nSome content with [[a wikilink]] and more text.\n" +
+			// Filler is its own paragraph: on the next line it would be a
+			// hard-wrapped one (#247).
+			"# Note\n\nSome content with [[a wikilink]] and more text.\n\n" +
 			"x".repeat(300);
 		assert.deepEqual(validateContent(c), []);
+	});
+
+	test("a hard-wrapped paragraph is warned about, naming its first line", () => {
+		const c = "---\ndate: 2026-04-05\ndescription: d\ntags: [x]\n---\n# Note\n\nA paragraph that was\nwrapped at a narrow width.\n";
+		const w = validateContent(c).filter((x) => x.includes("hard-wrapped"));
+		assert.equal(w.length, 1);
+		// Line 9 is the continuation: frontmatter is lines 1–5, the heading 6.
+		assert.match(w[0]!, /^1 hard-wrapped paragraph line\(s\), first at line 9 /);
 	});
 
 	test("tolerates 'tags :' with space (alternate YAML style)", () => {
