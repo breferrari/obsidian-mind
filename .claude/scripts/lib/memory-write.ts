@@ -145,7 +145,14 @@ export function slugify(title: unknown): string {
 		// Replaced with a space rather than deleted, so `Flag #7 set` becomes
 		// `Flag 7 set` and not `Flag7 set`. The whitespace collapse below tidies
 		// the double space that leaves.
-		.replace(/[[\]#]/g, " ")
+		//
+		// The backtick is not a terminator, but it breaks a link the same way
+		// from the other side: the link reader strips inline code before it
+		// reads links (so a `[[x]]` inside code is not counted), and a code span
+		// INSIDE `[[...]]` is stripped out of the target, leaving a name that
+		// does not exist. Keeping code spans would bring that miscount back, so
+		// the filename gives the backtick up instead.
+		.replace(/[[\]#`]/g, " ")
 		.replace(/\.{2,}/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();

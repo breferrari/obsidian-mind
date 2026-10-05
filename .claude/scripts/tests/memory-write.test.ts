@@ -10,7 +10,7 @@
  */
 
 import { test, describe } from "node:test";
-import { extractAliases, buildResolver } from "../lib/wikilinks.ts";
+import { extractAliases, buildResolver, extractWikilinkTargets } from "../lib/wikilinks.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -388,6 +388,22 @@ describe("slug and path safety", () => {
 		// A space, not nothing: `Flag #7 set` must not collapse to `Flag7 set`.
 		assert.match(s, /flag 7 changes/i, `word boundary lost: ${s}`);
 		assert.ok(!/\s{2,}/.test(s), `double space left behind: ${s}`);
+	});
+
+	/**
+	 * A backtick in the filename made the note unaddressable: the link reader
+	 * strips inline code first, and a code span inside `[[...]]` took part of
+	 * the target with it.
+	 */
+	test("a code span in the title leaves no backtick, and its words survive", () => {
+		// A space, not nothing, and the collapse tidies the double space.
+		assert.equal(slugify("Porting a bash `jq '.'` gate"), "Porting a bash jq '.' gate");
+	});
+
+	test("a wikilink to a slug made from a code-span title resolves to that slug", () => {
+		const stem = `2026-09-01 ${slugify("Porting a bash `jq '.'` gate")}`;
+		const targets = extractWikilinkTargets(`see [[${stem}|Capture]]`);
+		assert.deepEqual(targets, [stem]);
 	});
 
 	test("widening the class does not start eating ordinary titles", () => {
