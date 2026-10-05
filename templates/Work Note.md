@@ -2,6 +2,7 @@
 date: "{{date}}"
 description:
 project:
+quarter:
 status: active
 tags:
   - work-note

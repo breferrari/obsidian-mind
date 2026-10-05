@@ -20,6 +20,7 @@ import {
 import {
 	countTicketIdWikilinks,
 	isBlockedMemoryPath,
+	parseFrontmatterRequired,
 	shouldSkipFile,
 	validateContent,
 } from "./lib/frontmatter.ts";
@@ -154,14 +155,26 @@ try {
 	debug(`validate: could not read ${filePath}`);
 	process.exit(0);
 }
-const warnings = validateContent(content);
+const relPath = filePathFwd.startsWith(vaultRoot + "/")
+	? filePathFwd.slice(vaultRoot.length + 1)
+	: filePathFwd;
+// The required fields come from the manifest's frontmatter_required, the
+// same declaration the docs point at; an unreadable manifest falls back to
+// the three global fields.
+let manifest: unknown = null;
+try {
+	manifest = JSON.parse(readFileSync(join(vaultRoot, "vault-manifest.json"), "utf-8"));
+} catch {
+	/* defaults */
+}
+const warnings = validateContent(content, {
+	required: parseFrontmatterRequired(manifest),
+	relPath,
+});
 debug(`validate: ${filePath} — ${warnings.length} warning(s)`);
 
 const blocks: string[] = [];
 const policyResults: PolicyResult[] = [];
-const relPath = filePathFwd.startsWith(vaultRoot + "/")
-	? filePathFwd.slice(vaultRoot.length + 1)
-	: filePathFwd;
 
 if (warnings.length > 0) {
 	const hintList = warnings.map((w) => `  - ${w}`).join("\n");

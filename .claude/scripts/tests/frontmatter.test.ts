@@ -5,11 +5,132 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	isBlockedMemoryPath,
+	noteTypeForPath,
+	parseFrontmatterRequired,
+	readFrontmatterKeys,
 	shouldSkipFile,
 	validateContent,
 } from "../lib/frontmatter.ts";
+
+const VAULT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
+/**
+ * `frontmatter_required` was declared in the manifest and documented as the
+ * place to add a note type, but no hook read it: the validator hardcoded
+ * three fields. These drive it from the declaration.
+ */
+describe("validateContent — frontmatter_required drives the check", () => {
+	const REQUIRED = parseFrontmatterRequired({
+		frontmatter_required: {
+			global: ["date", "description", "tags"],
+			"work-note": ["date", "status", "quarter"],
+			incident: ["date", "status", "quarter", "ticket", "severity", "role"],
+			person: ["date", "title"],
+			"1-1": ["date", "quarter"],
+		},
+	});
+	const note = (fm: string) => `---\n${fm}\n---\nShort.`;
+	const base = "date: 2026-01-01\ndescription: d\ntags:\n  - x";
+	const missing = (w: string[]) =>
+		w.map((x) => /Missing `([^`]+)`/.exec(x)?.[1]).filter(Boolean).sort();
+
+	test("a work note must carry the work-note set", () => {
+		const w = validateContent(note(base), { required: REQUIRED, relPath: "work/active/A.md" });
+		assert.deepEqual(missing(w), ["quarter", "status"]);
+	});
+
+	test("an archived work note too", () => {
+		const w = validateContent(note(`${base}\nstatus: completed\nquarter: Q1-2026`), {
+			required: REQUIRED,
+			relPath: "work/archive/2026/A.md",
+		});
+		assert.deepEqual(w, []);
+	});
+
+	test("a 1:1 note needs quarter but not a work note's status, though it is tagged work-note", () => {
+		const w = validateContent(note("date: 2026-01-01\ndescription: d\ntags:\n  - work-note"), {
+			required: REQUIRED,
+			relPath: "work/1-1/Alex 2026-01-01.md",
+		});
+		assert.deepEqual(missing(w), ["quarter"]);
+	});
+
+	test("a main incident note (tagged incident) needs the incident set", () => {
+		const w = validateContent(note("date: 2026-01-01\ndescription: d\ntags: [work-note, incident]\nstatus: open\nquarter: Q1-2026"), {
+			required: REQUIRED,
+			relPath: "work/incidents/INC-1.md",
+		});
+		assert.deepEqual(missing(w), ["role", "severity", "ticket"]);
+	});
+
+	test("an incident satellite (not tagged incident) carries the global set alone", () => {
+		const w = validateContent(note(`${base}`), {
+			required: REQUIRED,
+			relPath: "work/incidents/INC-1 RCA.md",
+		});
+		assert.deepEqual(w, []);
+	});
+
+	test("a person note needs title", () => {
+		const w = validateContent(note(base), { required: REQUIRED, relPath: "org/people/Alex Doe.md" });
+		assert.deepEqual(missing(w), ["title"]);
+	});
+
+	test("a note outside the typed folders gets the global set only", () => {
+		assert.deepEqual(validateContent(note(base), { required: REQUIRED, relPath: "brain/Patterns.md" }), []);
+	});
+
+	test("a custom global set replaces the built-in three", () => {
+		const w = validateContent(note("date: 2026-01-01"), {
+			required: parseFrontmatterRequired({ frontmatter_required: { global: ["date", "owner"] } }),
+			relPath: "brain/X.md",
+		});
+		assert.deepEqual(missing(w), ["owner"]);
+	});
+
+	test("no frontmatter_required → the built-in three, as before", () => {
+		const w = validateContent(note("date: 2026-01-01"), { required: {}, relPath: "work/active/A.md" });
+		assert.deepEqual(missing(w), ["description", "tags"]);
+	});
+
+	test("`update:` does not satisfy `date`", () => {
+		const w = validateContent(note("update: 2026-01-01\ndescription: d\ntags: [x]"));
+		assert.deepEqual(missing(w), ["date"]);
+	});
+
+	test("a key nested under another does not count", () => {
+		const w = validateContent(note("description: d\ntags: [x]\nmeta:\n  date: 2026-01-01"));
+		assert.deepEqual(missing(w), ["date"]);
+	});
+
+	test("the shipped Work Note template declares every field the shipped manifest requires of a work note", () => {
+		const manifest = JSON.parse(readFileSync(join(VAULT, "vault-manifest.json"), "utf-8"));
+		const tpl = readFileSync(join(VAULT, "templates", "Work Note.md"), "utf-8");
+		const w = validateContent(tpl, { required: parseFrontmatterRequired(manifest), relPath: "work/active/New.md" });
+		assert.deepEqual(missing(w), [], w.join("\n"));
+	});
+});
+
+describe("readFrontmatterKeys and noteTypeForPath", () => {
+	test("tags as a block list, an inline list, or a scalar", () => {
+		assert.deepEqual(readFrontmatterKeys("tags:\n  - a\n  - \"b\"\ndate: x").tags, ["a", "b"]);
+		assert.deepEqual(readFrontmatterKeys("tags: [a, 'b']").tags, ["a", "b"]);
+		assert.deepEqual(readFrontmatterKeys("tags: a").tags, ["a"]);
+	});
+	test("a list item after another key is not a tag", () => {
+		assert.deepEqual(readFrontmatterKeys("tags:\n  - a\naliases:\n  - b").tags, ["a"]);
+	});
+	test("folder → type, with Windows separators", () => {
+		assert.equal(noteTypeForPath("work\\incidents\\X.md"), "incident");
+		assert.equal(noteTypeForPath("org/teams/Core.md"), "team");
+		assert.equal(noteTypeForPath("thinking/x.md"), null);
+	});
+});
 
 describe("shouldSkipFile — skip rules", () => {
 	test("skips non-markdown", () => {
