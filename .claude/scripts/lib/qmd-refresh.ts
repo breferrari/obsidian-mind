@@ -15,7 +15,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { statSync, writeFileSync } from "node:fs";
+import { rmSync, statSync, writeFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { buildQmdCommand, resolveQmdEntry } from "./qmd.ts";
 import { debug } from "./hook-io.ts";
@@ -79,6 +79,106 @@ export function isDebounced(
 	const elapsed = nowMs - sentinelMtimeMs;
 	if (elapsed < 0) return false;
 	return elapsed < debounceMs;
+}
+
+/**
+ * How long a `.pending` marker is trusted past the end of the window it was
+ * written for. A marker older than that belongs to a trailing worker that
+ * never ran (killed, machine slept) and must not suppress flushes forever.
+ */
+export const PENDING_GRACE_MS = 60_000;
+
+/**
+ * How far in the future a marker's mtime may sit and still be trusted. The
+ * filesystem clock and `Date.now()` disagree by fractions of a millisecond,
+ * so a marker written moments ago can read as just ahead of now; beyond this
+ * it is a genuinely wrong clock and is not trusted.
+ */
+export const CLOCK_SKEW_MS = 2_000;
+
+export type RefreshPlan = "now" | "trailing" | "skip";
+
+/**
+ * Decide what one trigger does. The debounce bounds machine drag from a
+ * burst of writes, but on its own it only fires on the LEADING edge: a note
+ * written inside the window after a refresh was never indexed until some
+ * unrelated trigger landed outside it, and the last write of a session
+ * stayed unsearchable until the next SessionStart.
+ *
+ * - `now`      — outside the window: refresh immediately.
+ * - `trailing` — inside the window, and no flush owed yet: schedule one for
+ *                the window's end.
+ * - `skip`     — inside the window, and a flush is already owed (a live
+ *                pending marker): that flush will cover this write too.
+ */
+export function planRefresh(
+	sentinelMtimeMs: number | null,
+	pendingMtimeMs: number | null,
+	nowMs: number,
+	debounceMs: number,
+): RefreshPlan {
+	if (!isDebounced(sentinelMtimeMs, nowMs, debounceMs)) return "now";
+	const pendingLive =
+		pendingMtimeMs !== null &&
+		nowMs - pendingMtimeMs > -CLOCK_SKEW_MS &&
+		nowMs - pendingMtimeMs < debounceMs + PENDING_GRACE_MS;
+	return pendingLive ? "skip" : "trailing";
+}
+
+/** The marker that records a trailing flush is owed. */
+export function pendingPathFor(sentinelPath: string): string {
+	return `${sentinelPath}.pending`;
+}
+
+/**
+ * The trailing worker's gate, run once it has slept out the window. Clears
+ * the pending marker FIRST, so a write landing during this flush schedules
+ * the next one rather than being skipped. Then runs only if no refresh has
+ * started since the flush was scheduled (`scheduledAfterMs` is the sentinel
+ * mtime the scheduler saw): a newer refresh already covers these writes.
+ * When it runs, it stamps the sentinel like any other refresh.
+ */
+export function claimTrailingFlush(
+	sentinelPath: string,
+	scheduledAfterMs: number | null,
+): boolean {
+	try {
+		rmSync(pendingPathFor(sentinelPath), { force: true });
+	} catch {
+		/* a marker we cannot remove ages out via PENDING_GRACE_MS */
+	}
+	const current = readSentinelMtime(sentinelPath);
+	if (current !== null && scheduledAfterMs !== null && current > scheduledAfterMs) {
+		return false;
+	}
+	touchSentinel(sentinelPath);
+	return true;
+}
+
+/**
+ * Parse the worker's trailing-flush arguments. Absent or malformed → an
+ * immediate run, exactly as before trailing flushes existed. The delay is
+ * capped so a bad value cannot park a detached process for long.
+ */
+export function parseWorkerArgs(argv: readonly string[]): {
+	readonly trailing: { readonly delayMs: number; readonly sentinelPath: string; readonly afterMs: number | null } | null;
+} {
+	const get = (name: string): string | null => {
+		const hit = argv.find((a) => a.startsWith(`--${name}=`));
+		return hit === undefined ? null : hit.slice(name.length + 3);
+	};
+	const sentinelPath = get("trailing");
+	const delay = Number(get("delay-ms"));
+	if (!sentinelPath || !Number.isFinite(delay) || delay < 0) return { trailing: null };
+	const afterRaw = get("after");
+	const after = afterRaw === null || afterRaw === "" ? Number.NaN : Number(afterRaw);
+	return {
+		trailing: {
+			delayMs: Math.min(delay, 120_000),
+			sentinelPath,
+			afterMs: Number.isFinite(after) ? after : null,
+		},
+	};
 }
 
 /**
@@ -183,13 +283,18 @@ function touchSentinel(sentinelPath: string): void {
  * naked `spawn` creates on Windows. Errors are logged under HOOK_DEBUG
  * only — production is silent per the hook protocol.
  */
-function spawnDetachedWorker(workerPath: string, logPrefix: string): void {
+function spawnDetachedWorker(
+	workerPath: string,
+	logPrefix: string,
+	workerArgs: readonly string[] = [],
+): void {
 	const child = spawn(
 		process.execPath,
 		[
 			"--disable-warning=ExperimentalWarning",
 			"--experimental-strip-types",
 			workerPath,
+			...workerArgs,
 		],
 		{
 			detached: true,
@@ -221,16 +326,52 @@ export function triggerDebouncedRefresh(opts: {
 	readonly workerPath: string;
 	readonly debounceMs: number;
 	readonly logPrefix: string;
+	/** Test seams; production uses the real resolver and spawn. */
+	readonly qmdAvailable?: () => boolean;
+	readonly spawnWorker?: (workerPath: string, args: readonly string[]) => void;
 }): void {
+	const now = Date.now();
 	const mtime = readSentinelMtime(opts.sentinelPath);
-	if (isDebounced(mtime, Date.now(), opts.debounceMs)) {
-		debug(`${opts.logPrefix}: debounced`);
+	const pendingPath = pendingPathFor(opts.sentinelPath);
+	const plan = planRefresh(mtime, readSentinelMtime(pendingPath), now, opts.debounceMs);
+	if (plan === "skip") {
+		debug(`${opts.logPrefix}: debounced; trailing flush already pending`);
 		return;
 	}
-	if (resolveQmdEntry() === null) {
+	const available = opts.qmdAvailable ?? (() => resolveQmdEntry() !== null);
+	if (!available()) {
 		debug(`${opts.logPrefix}: qmd not resolvable; skipping`);
 		return;
 	}
-	touchSentinel(opts.sentinelPath);
-	spawnDetachedWorker(opts.workerPath, opts.logPrefix);
+	const spawnWorker =
+		opts.spawnWorker ??
+		((path: string, args: readonly string[]) => spawnDetachedWorker(path, opts.logPrefix, args));
+
+	if (plan === "now") {
+		touchSentinel(opts.sentinelPath);
+		spawnWorker(opts.workerPath, []);
+		return;
+	}
+
+	// Trailing: owe exactly one flush for this window. `wx` makes the claim
+	// exclusive, so two hooks racing inside the window spawn one worker.
+	try {
+		writeFileSync(pendingPath, "", { flag: "wx" });
+	} catch {
+		// The marker exists. A live one means another hook won the race and
+		// its worker covers this write; a stale one is reclaimed.
+		if (planRefresh(mtime, readSentinelMtime(pendingPath), now, opts.debounceMs) === "skip") return;
+		try {
+			writeFileSync(pendingPath, "");
+		} catch {
+			return;
+		}
+	}
+	const remaining = Math.max(0, (mtime ?? now) + opts.debounceMs - now);
+	debug(`${opts.logPrefix}: debounced; trailing flush in ${remaining}ms`);
+	spawnWorker(opts.workerPath, [
+		`--trailing=${opts.sentinelPath}`,
+		`--delay-ms=${remaining}`,
+		`--after=${mtime ?? ""}`,
+	]);
 }

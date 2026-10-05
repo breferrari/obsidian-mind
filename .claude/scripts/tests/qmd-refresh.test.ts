@@ -14,13 +14,161 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { resolve as resolvePath, sep as pathSep } from "node:path";
+import { existsSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve as resolvePath, sep as pathSep } from "node:path";
 import {
+	CLOCK_SKEW_MS,
+	PENDING_GRACE_MS,
+	claimTrailingFlush,
 	composeWorkerInvocations,
 	isDebounced,
+	parseWorkerArgs,
+	pendingPathFor,
+	planRefresh,
 	resolveVaultRoot,
 	shouldRefreshForPath,
+	triggerDebouncedRefresh,
 } from "../lib/qmd-refresh.ts";
+import { rmTemp } from "./_helpers.ts";
+
+/**
+ * The debounce used to fire on the leading edge only: a note written inside
+ * the window after a refresh stayed unindexed until an unrelated trigger
+ * landed outside it — for the last write of a session, until the next
+ * SessionStart.
+ */
+describe("planRefresh — trailing edge", () => {
+	const W = 30_000;
+	test("outside the window → now", () => {
+		assert.equal(planRefresh(null, null, 1_000_000, W), "now");
+		assert.equal(planRefresh(1_000_000 - W, null, 1_000_000, W), "now");
+	});
+	test("inside the window, nothing owed → trailing", () => {
+		assert.equal(planRefresh(1_000_000 - 10_000, null, 1_000_000, W), "trailing");
+	});
+	test("inside the window, a live flush owed → skip", () => {
+		assert.equal(planRefresh(1_000_000 - 10_000, 1_000_000 - 5_000, 1_000_000, W), "skip");
+	});
+	test("a stale pending marker does not suppress the flush", () => {
+		const now = 10_000_000;
+		assert.equal(planRefresh(now - 10_000, now - (W + PENDING_GRACE_MS) - 1, now, W), "trailing");
+	});
+	test("a marker a hair ahead of now (fs clock skew) is still live", () => {
+		assert.equal(planRefresh(1_000_000 - 10_000, 1_000_000 + 0.5, 1_000_000, W), "skip");
+	});
+	test("a marker well in the future (a wrong clock) is not trusted", () => {
+		assert.equal(planRefresh(1_000_000 - 10_000, 1_000_000 + CLOCK_SKEW_MS + 1, 1_000_000, W), "trailing");
+	});
+});
+
+describe("triggerDebouncedRefresh — schedules one trailing flush per window", () => {
+	function fixture() {
+		const dir = mkdtempSync(join(tmpdir(), "qmd-trailing-"));
+		const sentinel = join(dir, ".qmd-refresh-sentinel");
+		const spawned: (readonly string[])[] = [];
+		const fire = () =>
+			triggerDebouncedRefresh({
+				sentinelPath: sentinel,
+				workerPath: "worker.ts",
+				debounceMs: 30_000,
+				logPrefix: "test",
+				qmdAvailable: () => true,
+				spawnWorker: (_p, args) => spawned.push(args),
+			});
+		return { dir, sentinel, spawned, fire };
+	}
+
+	test("leading write runs now; a write inside the window schedules a trailing flush; a third is covered", () => {
+		const f = fixture();
+		try {
+			f.fire();
+			assert.deepEqual(f.spawned, [[]], "leading edge runs immediately");
+			// Age the leading refresh to 10 s ago: two calls in the same
+			// millisecond can see the sentinel's mtime a hair AHEAD of
+			// Date.now(), which isDebounced deliberately reads as "not
+			// debounced" (clock skew). Real hooks are separate processes.
+			const t = (Date.now() - 10_000) / 1000;
+			utimesSync(f.sentinel, t, t);
+			f.fire();
+			assert.equal(f.spawned.length, 2, "the in-window write must not be dropped");
+			const args = f.spawned[1] as readonly string[];
+			assert.ok(args.includes(`--trailing=${f.sentinel}`));
+			const delay = Number(args.find((a) => a.startsWith("--delay-ms="))?.slice(11));
+			assert.ok(delay > 0 && delay <= 30_000, `delay ${delay}`);
+			assert.ok(existsSync(pendingPathFor(f.sentinel)));
+			f.fire();
+			assert.equal(f.spawned.length, 2, "one trailing worker per window, not one per write");
+		} finally {
+			rmTemp(f.dir);
+		}
+	});
+
+	test("a stale pending marker is reclaimed", () => {
+		const f = fixture();
+		try {
+			f.fire();
+			const t = (Date.now() - 10_000) / 1000;
+			utimesSync(f.sentinel, t, t);
+			writeFileSync(pendingPathFor(f.sentinel), "");
+			const old = (Date.now() - 30_000 - PENDING_GRACE_MS - 5_000) / 1000;
+			utimesSync(pendingPathFor(f.sentinel), old, old);
+			f.fire();
+			assert.equal(f.spawned.length, 2);
+		} finally {
+			rmTemp(f.dir);
+		}
+	});
+});
+
+describe("claimTrailingFlush — the worker's gate after sleeping", () => {
+	test("runs when no newer refresh started, clears the marker, stamps the sentinel", () => {
+		const dir = mkdtempSync(join(tmpdir(), "qmd-claim-"));
+		try {
+			const s = join(dir, "s");
+			writeFileSync(s, "");
+			const t = (Date.now() - 40_000) / 1000;
+			utimesSync(s, t, t);
+			const after = statSync(s).mtimeMs;
+			writeFileSync(pendingPathFor(s), "");
+			assert.equal(claimTrailingFlush(s, after), true);
+			assert.equal(existsSync(pendingPathFor(s)), false);
+			assert.ok(statSync(s).mtimeMs > after);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("skips when a newer refresh already stamped the sentinel, still clearing the marker", () => {
+		const dir = mkdtempSync(join(tmpdir(), "qmd-claim-"));
+		try {
+			const s = join(dir, "s");
+			writeFileSync(s, "");
+			writeFileSync(pendingPathFor(s), "");
+			const after = statSync(s).mtimeMs - 10_000;
+			assert.equal(claimTrailingFlush(s, after), false);
+			assert.equal(existsSync(pendingPathFor(s)), false);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+});
+
+describe("parseWorkerArgs", () => {
+	test("no trailing args → an immediate run", () => {
+		assert.deepEqual(parseWorkerArgs([]), { trailing: null });
+	});
+	test("trailing args parse, and the delay is capped", () => {
+		const p = parseWorkerArgs(["--trailing=/v/s", "--delay-ms=999999", "--after=123"]);
+		assert.deepEqual(p.trailing, { delayMs: 120_000, sentinelPath: "/v/s", afterMs: 123 });
+	});
+	test("an empty --after means no prior sentinel", () => {
+		assert.equal(parseWorkerArgs(["--trailing=/v/s", "--delay-ms=5", "--after="]).trailing?.afterMs, null);
+	});
+	test("a malformed delay falls back to an immediate run", () => {
+		assert.deepEqual(parseWorkerArgs(["--trailing=/v/s", "--delay-ms=abc"]), { trailing: null });
+	});
+});
 
 describe("shouldRefreshForPath — accepts vault markdown", () => {
 	test("accepts a relative vault note", () => {

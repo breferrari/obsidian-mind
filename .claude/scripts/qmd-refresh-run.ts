@@ -38,7 +38,9 @@ import { debug } from "./lib/hook-io.ts";
 import { resolveQmdIndex } from "./lib/session-start.ts";
 import { resolveQmdEntry } from "./lib/qmd.ts";
 import {
+	claimTrailingFlush,
 	composeWorkerInvocations,
+	parseWorkerArgs,
 	resolveVaultRoot,
 } from "./lib/qmd-refresh.ts";
 
@@ -58,6 +60,18 @@ function readManifestRaw(): string | null {
 // bootstrap script do. This worker WRITES to the store; if it resolved
 // differently it would index one store while search reads another, and the
 // symptom is stale results rather than an error.
+// Trailing flush: a trigger landed inside the debounce window, so this
+// worker sleeps out the rest of it, then runs unless a newer refresh has
+// already started (that refresh covers the same writes).
+const { trailing } = parseWorkerArgs(process.argv.slice(2));
+if (trailing !== null) {
+	await new Promise((r) => setTimeout(r, trailing.delayMs));
+	if (!claimTrailingFlush(trailing.sentinelPath, trailing.afterMs)) {
+		debug("qmd-refresh-run: trailing flush superseded by a newer refresh");
+		process.exit(0);
+	}
+}
+
 const qmdIndex = resolveQmdIndex(readManifestRaw(), VAULT_ROOT);
 const invocations = composeWorkerInvocations(qmdIndex, resolveQmdEntry());
 
