@@ -1,5 +1,10 @@
 # Changelog
 
+## v9.0.1 — 2026-10-05
+
+### Fixed
+- require shardmind 0.1.7 so an older engine cannot overwrite edits on update
+
 ## v9.0.0 — 2026-10-03
 
 ### Added
