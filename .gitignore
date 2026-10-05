@@ -45,6 +45,7 @@ node_modules/
 .claude/scripts/.checklist-state.json
 .claude/scripts/.stop-handoff/
 .claude/scripts/.qmd-refresh-sentinel
+.claude/scripts/.qmd-refresh-sentinel.pending
 
 # MCP server audit log — every vault read, with the calling repo and the query
 # text. Local forensics, never history: it churns on every session, and the
