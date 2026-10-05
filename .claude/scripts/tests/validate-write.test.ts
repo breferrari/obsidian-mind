@@ -7,7 +7,7 @@ import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
 
@@ -257,5 +257,26 @@ describe("phantom-edge policy result (#117)", () => {
 					r.classification === "ticket-id-wikilink",
 			),
 		);
+	});
+});
+
+describe("validate-write — required fields come from the manifest", () => {
+	test("a work note missing `quarter` is flagged when the manifest requires it", () => {
+		const vault = mkdtempSync(join(tmpdir(), "validate-write-manifest-"));
+		try {
+			mkdirSync(join(vault, "work", "active"), { recursive: true });
+			writeFileSync(
+				join(vault, "vault-manifest.json"),
+				JSON.stringify({ frontmatter_required: { "work-note": ["status", "quarter"] } }),
+			);
+			const note = join(vault, "work", "active", "A.md");
+			writeFileSync(note, "---\ndate: 2026-01-01\ndescription: d\ntags: [work-note]\nstatus: active\n---\nShort.");
+			const { stdout, code } = spawnHook(SCRIPT, { tool_input: { file_path: note } }, { CLAUDE_PROJECT_DIR: vault });
+			assert.equal(code, 0);
+			assert.match(stdout, /Missing `quarter`/);
+			assert.doesNotMatch(stdout, /Missing `status`/);
+		} finally {
+			rmTemp(vault);
+		}
 	});
 });
