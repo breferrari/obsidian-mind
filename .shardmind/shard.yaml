@@ -14,12 +14,11 @@ requires:
   # `--experimental-strip-types` + ESM; required by `.claude/scripts/*.ts`
   # which are executed natively by Node without a build step.
   node: ">=22.6.0"
-  # Split hook lifecycle (bootstrap/personalize/post-update slots) + the
-  # `requires.shardmind` check itself land in shardmind 0.1.3. Older engines
-  # don't understand these slots; this floor makes them refuse with
-  # SHARDMIND_VERSION_MISMATCH (on engines that enforce it) rather than
-  # silently skipping the hooks.
-  shardmind: ">=0.1.3"
+  # 0.1.3 introduced the split hook lifecycle and the `requires.shardmind`
+  # check. 0.1.7 fixes `update` overwriting user-edited files while reporting
+  # them kept (shardmind#150), and this shard's updates rewrite settings.json
+  # hook lines, so older engines must refuse with SHARDMIND_VERSION_MISMATCH.
+  shardmind: ">=0.1.7"
 
 hooks:
   bootstrap:

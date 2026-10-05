@@ -30,8 +30,10 @@ const shardYaml = readFileSync(resolve(repoRoot, ".shardmind/shard.yaml"), {
 	encoding: "utf-8",
 });
 
-/** Lowest shardmind engine that understands the split hook lifecycle. */
-const MIN_SHARDMIND: readonly [number, number, number] = [0, 1, 3];
+/** Lowest shardmind engine this shard supports (the hook lifecycle needs 0.1.3; safe updates need 0.1.7). */
+// 0.1.7: older engines overwrite user-edited files on update (shardmind#150),
+// and this shard's updates rewrite settings.json hook lines.
+const MIN_SHARDMIND: readonly [number, number, number] = [0, 1, 7];
 
 function gte(
 	a: readonly [number, number, number],
