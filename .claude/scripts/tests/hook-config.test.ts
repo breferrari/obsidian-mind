@@ -37,6 +37,7 @@ type HookConfig = {
 			readonly hooks?: ReadonlyArray<{
 				readonly type?: string;
 				readonly command?: string;
+				readonly commandWindows?: string;
 			}>;
 		}>
 	>;
@@ -108,6 +109,20 @@ describe("hook config — CWD-independent script resolution (issue #45)", () => 
 			});
 
 			for (const { event, command } of commands) {
+				if (envVar === "GEMINI_PROJECT_DIR") {
+					// #268: Gemini runs every hook as `powershell.exe -NoProfile -Command`
+					// on Windows (bash -c elsewhere), with the SESSION cwd as working
+					// directory and GEMINI_PROJECT_DIR set to that same cwd. So the
+					// relative path is exactly what `${GEMINI_PROJECT_DIR:-.}/` meant on
+					// POSIX — and the braced form never expanded under PowerShell. The
+					// #45 drift (a tool shell's `cd` leaking into the next hook) is a
+					// Claude Code shape: Gemini never runs hooks in a tool shell.
+					test(`${event} is a plain relative path, with no shell expansion`, () => {
+						assert.match(command, / \.claude\/scripts\/[a-z-]+\.ts$/, `${path} ${event}: ${command}`);
+						assert.ok(!command.includes("$"), `${path} ${event} must not depend on any shell's expansion: ${command}`);
+					});
+					continue;
+				}
 				if (envVar === "CLAUDE_PROJECT_DIR") {
 					// Claude Code does not update CLAUDE_PROJECT_DIR on `/cd`, so it can
 					// name a vault subfolder (#263). Its commands start from the variable
@@ -130,7 +145,9 @@ describe("hook config — CWD-independent script resolution (issue #45)", () => 
 				test(`${event} does not use a bare relative .claude/scripts/ path`, () => {
 					// A bare relative path only survives if the invoking shell's
 					// CWD is the project root — which is exactly the assumption
-					// that broke in #45. Enforce the env-var-prefixed form.
+					// that broke in #45 for Claude Code, whose hooks inherit a tool
+					// shell's `cd`. Codex's POSIX `command` keeps the prefix too; its
+					// Windows form and Gemini's are relative by design (#268).
 					const bareRelative = / \.claude\/scripts\//.test(command);
 					const envPrefixed = command.includes(
 						`\${${envVar}:-.}/.claude/scripts/`,
@@ -187,7 +204,7 @@ describe("hook config — the checklist runs where its message is shown", () => 
 		test(`${label} passes the checklist hook no arguments`, () => {
 			assert.match(
 				checklistHooks[0]?.command ?? "",
-				/stop-checklist\.ts"$/,
+				/stop-checklist\.ts"?$/,
 				`${path} must invoke stop-checklist.ts with no trailing arguments — its output contract is the same for every agent`,
 			);
 		});
@@ -290,5 +307,116 @@ describe("hook config — Claude commands find the vault root from a subfolder (
 				}
 			});
 		}
+	}
+});
+
+/** Codex's Windows-only override for each TS hook: `commandWindows` (#268). */
+function eachCodexWindowsCommand(): Array<{ readonly event: string; readonly command: string; readonly windows: string | undefined }> {
+	const out: Array<{ event: string; command: string; windows: string | undefined }> = [];
+	for (const [event, entries] of Object.entries(loadConfig(".codex/hooks.json").hooks ?? {})) {
+		for (const entry of entries) {
+			for (const hook of entry.hooks ?? []) {
+				if (hook.type !== "command" || typeof hook.command !== "string") continue;
+				if (!hook.command.includes(".claude/scripts/")) continue;
+				out.push({ event, command: hook.command, windows: hook.commandWindows });
+			}
+		}
+	}
+	return out;
+}
+
+/**
+ * #268: on Windows neither Codex nor Gemini runs hook commands through a
+ * POSIX shell, so `${X_PROJECT_DIR:-.}` reached Node unexpanded (cmd) or
+ * collapsed to a drive-root path (PowerShell), and no hook ever ran.
+ *
+ * Codex documents `commandWindows` as a Windows-only override and runs every
+ * hook in the session cwd, so its Windows form is relative and its POSIX
+ * `command` is untouched. Gemini has no per-OS field: one command must work
+ * under PowerShell (Windows) and bash (elsewhere), so it is relative on every
+ * OS — identical to what `${GEMINI_PROJECT_DIR:-.}` meant, since Gemini sets
+ * that variable to the same session cwd.
+ */
+describe("hook config — Codex has a Windows command for every TS hook (#268)", () => {
+	for (const { event, command, windows } of eachCodexWindowsCommand()) {
+		test(`${event}: commandWindows runs the same script by a relative path`, () => {
+			const script = /\.claude\/scripts\/([a-z-]+\.ts)/.exec(command)?.[1];
+			assert.ok(windows, `.codex/hooks.json ${event} has no commandWindows`);
+			assert.equal(
+				windows,
+				`node --disable-warning=ExperimentalWarning --experimental-strip-types .claude/scripts/${script}`,
+			);
+		});
+	}
+});
+
+/**
+ * Run each command under the shell its agent really uses, from a vault root
+ * whose scripts are stubs that print their name, and check the stub ran.
+ *
+ * - Gemini on Windows: exactly its runner's shape — `powershell.exe
+ *   -NoProfile -Command "<cmd>; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"`.
+ * - Codex on Windows: its hooks docs do not name the shell, so
+ *   `commandWindows` must work under both cmd.exe and PowerShell.
+ * - POSIX (and Git Bash): Gemini's command and Codex's `command` under bash.
+ */
+describe("hook config — Codex and Gemini commands run under their agents' shells (#268)", () => {
+	const isWin = process.platform === "win32";
+	const gemini = eachNodeHookCommand(loadConfig(".gemini/settings.json"));
+	const codex = eachCodexWindowsCommand();
+	const scripts = [...new Set([...gemini, ...codex].map(({ command }) => /\.claude\/scripts\/([a-z-]+\.ts)/.exec(command)?.[1] ?? ""))];
+
+	let vault = "";
+	before(() => {
+		vault = mkdtempSync(join(tmpdir(), "hook-config-agents-"));
+		mkdirSync(join(vault, ".claude", "scripts"), { recursive: true });
+		writeFileSync(join(vault, "vault-manifest.json"), "{}");
+		for (const s of scripts) writeFileSync(join(vault, ".claude", "scripts", s), `console.log("RAN ${s}");\n`);
+	});
+	after(() => rmSync(vault, { recursive: true, force: true }));
+
+	const ran = (r: ReturnType<typeof spawnSync>, script: string) => {
+		const out = `${r.stdout ?? ""}`;
+		assert.equal(r.status, 0, `exit ${r.status}: ${r.stderr ?? ""}${r.error?.message ?? ""}`);
+		assert.ok(out.includes(`RAN ${script}`), `the stub did not run; stdout: ${out}`);
+	};
+	const scriptIn = (command: string) => /\.claude\/scripts\/([a-z-]+\.ts)/.exec(command)?.[1] ?? "";
+	const powershell = (command: string) =>
+		spawnSync("powershell.exe", ["-NoProfile", "-Command", `${command}; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`], {
+			cwd: vault,
+			encoding: "utf-8",
+			env: { ...process.env, GEMINI_PROJECT_DIR: vault },
+		});
+	const cmdExe = (command: string) =>
+		spawnSync(process.env["ComSpec"] ?? "cmd.exe", ["/d", "/s", "/c", command], { cwd: vault, encoding: "utf-8", windowsVerbatimArguments: true });
+	const bash = (command: string, env: NodeJS.ProcessEnv) => spawnSync("bash", ["-c", command], { cwd: vault, encoding: "utf-8", env });
+	const notWin = isWin ? false : "Windows only";
+	// Neither agent uses bash on Windows, where a bare `bash` can also be WSL's.
+	const noBash = isWin
+		? "POSIX only: on Windows these agents run PowerShell or cmd"
+		: spawnSync("bash", ["-c", "true"]).status === 0
+			? false
+			: "no bash on this machine";
+
+	for (const { event, command } of gemini) {
+		test(`Gemini ${event} under PowerShell, as Gemini runs it on Windows`, { skip: notWin }, () => {
+			ran(powershell(command), scriptIn(command));
+		});
+		test(`Gemini ${event} under bash, as Gemini runs it elsewhere`, { skip: noBash }, () => {
+			ran(bash(command, { ...process.env, GEMINI_PROJECT_DIR: vault }), scriptIn(command));
+		});
+	}
+	for (const { event, command, windows } of codex) {
+		test(`Codex ${event} commandWindows under cmd.exe`, { skip: notWin }, () => {
+			ran(cmdExe(windows ?? ""), scriptIn(command));
+		});
+		test(`Codex ${event} commandWindows under PowerShell`, { skip: notWin }, () => {
+			ran(powershell(windows ?? ""), scriptIn(command));
+		});
+		test(`Codex ${event} command under bash (POSIX, unchanged)`, { skip: noBash }, () => {
+			const env = { ...process.env };
+			delete env["CODEX_PROJECT_DIR"];
+			ran(bash(command, env), scriptIn(command));
+		});
 	}
 });
