@@ -93,7 +93,7 @@ describe("slugifying a title", () => {
 		withVault((dir) => {
 			const { title: _omit, ...noTitle } = BASIC;
 			assert.throws(
-				() => captureNote(dir, POLICY, {}, null, noTitle, new Set(), { now: NOW }),
+				() => captureNote(dir, POLICY, {}, null, noTitle, new Map(), { now: NOW }),
 				/empty filename/,
 			);
 		});
