@@ -257,6 +257,32 @@ describe("validateContent — frontmatter + wikilinks", () => {
 		assert.match(w[0]!, /^1 hard-wrapped paragraph line\(s\), first at line 9 /);
 	});
 
+	/**
+	 * #319: the block was found with `content.split("---")`, so a value holding
+	 * `---` ended it there and every later key was reported missing.
+	 */
+	test("a value containing --- does not end the frontmatter", () => {
+		const c = "---\ndate: 2026-01-01\ndescription: before --- after\ntags: [x]\n---\nShort.";
+		assert.deepEqual(validateContent(c), []);
+	});
+
+	test("the same with CRLF line endings", () => {
+		const c = "---\r\ndate: 2026-01-01\r\ndescription: before --- after\r\ntags: [x]\r\n---\r\nShort.";
+		assert.deepEqual(validateContent(c), []);
+	});
+
+	test("a CRLF block is really read, not skipped: a missing key is still reported", () => {
+		// "No warnings" alone would also pass if the CRLF block were never found
+		// and no field was checked; a key that IS missing proves it was read.
+		const c = "---\r\ndate: 2026-01-01\r\ndescription: before --- after\r\n---\r\nShort.";
+		assert.deepEqual(validateContent(c), ["Missing `tags` in frontmatter"]);
+	});
+
+	test("an unclosed frontmatter still gets no field checks", () => {
+		const w = validateContent("---\ndate: 2026-01-01\nShort, and no closing line.");
+		assert.ok(!w.some((x) => x.startsWith("Missing `")), w.join("\n"));
+	});
+
 	test("tolerates 'tags :' with space (alternate YAML style)", () => {
 		const c =
 			"---\ndate : 2026-04-05\ndescription : test\ntags :\n  - test\n---\n# Note\n" +
