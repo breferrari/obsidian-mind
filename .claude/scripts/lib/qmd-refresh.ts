@@ -330,6 +330,11 @@ export function triggerDebouncedRefresh(opts: {
 	readonly qmdAvailable?: () => boolean;
 	readonly spawnWorker?: (workerPath: string, args: readonly string[]) => void;
 }): void {
+	// First, before any branch: "was a refresh requested?" must be answerable
+	// whatever happens next. A test that read it off a later line ("debounced")
+	// passed only where qmd was installed, since without qmd the trigger stops
+	// at the resolvability check first — the release job, with no qmd, failed.
+	debug(`${opts.logPrefix}: refresh requested`);
 	const now = Date.now();
 	const mtime = readSentinelMtime(opts.sentinelPath);
 	const pendingPath = pendingPathFor(opts.sentinelPath);

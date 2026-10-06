@@ -502,11 +502,14 @@ describe("stop-checklist", () => {
  */
 describe("stop-checklist — om_mod (a Claude Code mod)", () => {
 	const flagged = (session_id: string, om_mod: string) => ({ ...stop(session_id), om_mod });
-	// The shared sentinel is fresh, so every refresh this file triggers is
-	// debounced: nothing is spawned, and with HOOK_DEBUG=1 the call still
-	// shows on stderr. That makes "was the refresh triggered?" observable.
+	// The shared sentinel is fresh, so no refresh this file triggers spawns
+	// an immediate worker, and with HOOK_DEBUG=1 the trigger logs
+	// "refresh requested" before it branches. That makes "was the refresh
+	// triggered?" observable on any machine. Reading it off "debounced"
+	// instead held only where qmd is installed: without qmd the trigger
+	// stops at its resolvability check, and the release job (no qmd) failed.
 	const DEBUG = { HOOK_DEBUG: "1" };
-	const refreshed = (stderr: string) => stderr.includes("stop-checklist: debounced");
+	const refreshed = (stderr: string) => stderr.includes("stop-checklist: refresh requested");
 	// Re-touch the shared sentinel before each test: it was written once in
 	// before(), and on a slow runner the tests above can outlast the 30s
 	// debounce window, which would turn "debounced" into a real spawn.
