@@ -15,8 +15,9 @@
  * `.shardmind/shard.yaml` is a file we own, so a line-oriented scan is robust
  * enough and keeps the test dependency-free (matching the JSON-reading
  * `hook-config.test.ts`). Path resolution is CWD-independent (via
- * `import.meta.url`) so the test passes both under `npm test` (cwd
- * `.claude/scripts`) and under release.yml's repo-root invocation.
+ * `import.meta.url`) so the test passes under `npm test` (cwd
+ * `.claude/scripts`, as both CI and release.yml run it) and under a direct
+ * `node --test` from the repo root.
  */
 
 import { test, describe } from "node:test";

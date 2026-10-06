@@ -90,8 +90,16 @@ jobs:
           # pushed last time.
           git tag -f "$VERSION"
 
+      # Tests run exactly as test.yml runs them, so a release can never test
+      # something CI did not: the same qmd install, and `npm test` (the
+      # wrapper that keeps qmd out of the runner's folders, #307). A bare
+      # `node --test` with no qmd once failed a release that CI had passed.
+      - name: Install qmd globally (as CI does)
+        run: npm install -g @tobilu/qmd@2.1.0
+
       - name: Run tests
-        run: node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts
+        working-directory: .claude/scripts
+        run: npm test
 
       - name: Generate changelog
         run: |
