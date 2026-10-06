@@ -200,9 +200,14 @@ export function validateContent(
 	if (!content.startsWith("---")) {
 		warnings.push("Missing YAML frontmatter");
 	} else {
-		const parts = content.split("---");
-		if (parts.length >= 3) {
-			const { keys, tags } = readFrontmatterKeys(parts[1] ?? "");
+		// The block ends at the next line that is exactly `---`, not at the next
+		// `---` anywhere: a value holding one (`before --- after`) used to end the
+		// block there and report every later key missing. The same rule as
+		// prose-width.ts, so both readers agree on where frontmatter ends.
+		const lines = content.split(/\r?\n/);
+		const close = lines.indexOf("---", 1);
+		if (close > 0) {
+			const { keys, tags } = readFrontmatterKeys(lines.slice(1, close).join("\n"));
 			for (const field of requiredFieldsFor(opts.required ?? {}, opts.relPath ?? null, tags)) {
 				if (keys.has(field)) continue;
 				warnings.push(
