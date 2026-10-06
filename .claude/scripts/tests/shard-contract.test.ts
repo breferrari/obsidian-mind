@@ -30,10 +30,12 @@ const shardYaml = readFileSync(resolve(repoRoot, ".shardmind/shard.yaml"), {
 	encoding: "utf-8",
 });
 
-/** Lowest shardmind engine this shard supports (the hook lifecycle needs 0.1.3; safe updates need 0.1.7). */
+/** Lowest shardmind engine this shard supports (the hook lifecycle needs 0.1.3; safe updates 0.1.7; safe adopts 0.2.1). */
 // 0.1.7: older engines overwrite user-edited files on update (shardmind#150),
 // and this shard's updates rewrite settings.json hook lines.
-const MIN_SHARDMIND: readonly [number, number, number] = [0, 1, 7];
+// 0.2.1: a failed or cancelled adopt in a clone of this repo deletes the
+// clone's .shardmind/ files (shardmind#326), and /om-vault-upgrade adopts clones.
+const MIN_SHARDMIND: readonly [number, number, number] = [0, 2, 1];
 
 function gte(
 	a: readonly [number, number, number],
