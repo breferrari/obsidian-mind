@@ -1,5 +1,32 @@
 # Changelog
 
+## v9.1.0 — 2026-10-06
+
+### Added
+- make /om-vault-upgrade ShardMind-aware, keeping local improvements through an upgrade
+- add a prose-width rule so vaults stop teaching sessions to hard wrap
+- gate every anchored promoted marker on resolving, and retarget markers on a split
+
+### Fixed
+- run the release job's tests as CI does, and stop two Stop tests depending on qmd
+- require shardmind 0.2.1 so a failed adopt cannot delete a clone's .shardmind files
+- run Codex and Gemini hooks on Windows by a relative script path
+- deliver every live goal at North Star's full level, and report any cut in the meter
+- degrade eager-layer sections by levels instead of collapsing them whole
+- resolve the QMD store path the way qmd does, honouring INDEX_PATH
+- keep the test suite from writing QMD stores and configs into the user's folders
+- enforce every tool's schema required fields in the MCP dispatcher
+- link an informed_by title holding # or | by basename so the link resolves
+- drive the frontmatter write check from frontmatter_required in the manifest
+- drop backticks from memory filenames so a wikilink to them resolves
+- refuse a record_work call with no title instead of writing an undefined note
+- flag mcp_never_expose entries that are paths or folders instead of ignoring them
+- derive the auto-memory directory on Windows so tidy-fix migrates strays there
+- add a trailing flush so edits inside the QMD refresh debounce window get indexed
+- report tidy-fix moves as fixed only when they succeed
+- prefer a runnable qmd install over the first one that merely exists
+- fail charcount when the section is not found, and match ## headings
+
 ## v9.0.1 — 2026-10-05
 
 ### Fixed
