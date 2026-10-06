@@ -30,6 +30,29 @@ on:
       - '.github/workflows/test.yml'
 
 jobs:
+  # qmd is optional for a vault, so the suite must pass on a machine without
+  # it. Every leg below installs qmd, so nothing caught a pair of tests that
+  # held only where qmd resolved, until the release job (which had no qmd)
+  # failed on them. This leg runs the bare `node --test` that job used, with
+  # no qmd installed.
+  test-without-qmd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Confirm qmd is absent
+        shell: bash
+        run: |
+          if [ -d "$(npm root -g)/@tobilu/qmd" ] || command -v qmd >/dev/null; then
+            echo "::error::qmd is installed on this runner; the leg would not test its absence"
+            exit 1
+          fi
+      - name: Run hook tests without qmd
+        shell: bash
+        run: node --experimental-strip-types --test '.claude/scripts/tests/'*.test.ts
+
   test:
     strategy:
       fail-fast: false
