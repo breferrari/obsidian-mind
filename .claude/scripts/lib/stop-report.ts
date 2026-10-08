@@ -13,12 +13,17 @@ const DECIDE = `then decide what the report calls for: act on what bears on the 
 export const AGENT_PREFACE = `Stop hook report, handed over with this message: when your previous response ended, these findings were new or changed since the last report this session. The user saw only a one-line summary of each section. Deal with the user's message first, ${DECIDE}`;
 
 /**
- * Framing for the agent under the obsidian-mind mod (`om_mod: "report"`), whose
+ * Framing for the agent under a vault's mod (`om_mod: "report"`), whose
  * delivery differs: the user saw one line under an earlier answer, the report
  * rides a later prompt (not always the next one), and that prompt may be the
- * mod's own notice rather than the user's.
+ * mod's own notice rather than the user's. `modName` is the mod's plugin name.
  */
-export const MOD_PREFACE = `Stop hook report, handed over with this message: when one of your earlier responses this session ended, these findings were new or changed since the last report. The user saw one line naming them under that response. Deal with this message first (it may be the user's, or a vault notice from the obsidian-mind plugin), ${DECIDE}`;
+export function modPreface(modName: string): string {
+	return `Stop hook report, handed over with this message: when one of your earlier responses this session ended, these findings were new or changed since the last report. The user saw one line naming them under that response. Deal with this message first (it may be the user's, or a vault notice from the ${modName} plugin), ${DECIDE}`;
+}
+
+/** The framing under obsidian-mind's own mod. */
+export const MOD_PREFACE = modPreface("obsidian-mind");
 
 /** The closing line of the summary: where the detail went. */
 export const SUMMARY_TRAILER = "The full report reaches the agent with your next message.";
