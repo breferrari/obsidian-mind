@@ -92,6 +92,7 @@ type HookInput = {
 	readonly hook_event_name?: unknown;
 	readonly session_id?: unknown;
 	readonly stop_hook_active?: unknown;
+	readonly stopHookActive?: unknown;
 };
 
 const input = await readStdinJson<HookInput>();
@@ -108,7 +109,7 @@ if (omMod === "standdown") {
 // writeSilentHookOutput for why "sometimes silent, sometimes JSON" is the
 // weaker contract.
 // The mod's `report` run is not a re-entry: the mod decides when to ask.
-if (input?.stop_hook_active === true && omMod !== "report") {
+if ((input?.stop_hook_active === true || input?.stopHookActive === true) && omMod !== "report") {
 	writeSilentHookOutput();
 	process.exit(0);
 }
