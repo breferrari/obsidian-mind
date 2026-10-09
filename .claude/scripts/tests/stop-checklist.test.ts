@@ -379,6 +379,26 @@ describe("stop-checklist", () => {
 		assert.match(shownOf(stdout), /Wrap-up checklist:/);
 	});
 
+	for (const payload of [
+		{ stopHookActive: true },
+		{ stop_hook_active: false, stopHookActive: true },
+		{ stop_hook_active: true, stopHookActive: false },
+	]) {
+		test(`either boolean re-entry flag suppresses reporting: ${JSON.stringify(payload)}`, () => {
+			const root = vault("camel-reentry", "Done.md");
+			const result = run({ ...stop("s-camel-reentry"), ...payload }, { vault: root });
+			assert.deepEqual(envelopeOf(result.stdout), {});
+			assert.equal(result.handed, null);
+		});
+	}
+
+	for (const stopHookActive of [false, "true"]) {
+		test(`camelCase flag must be boolean true: ${JSON.stringify(stopHookActive)}`, () => {
+			const result = run({ ...stop("s-camel-normal"), stopHookActive });
+			assert.match(shownOf(result.stdout), /Wrap-up checklist:/);
+		});
+	}
+
 	test("string stop_hook_active is not re-entry", () => {
 		const { stdout } = run({ ...stop("s-string"), stop_hook_active: "true" });
 		assert.match(shownOf(stdout), /Wrap-up checklist:/);
