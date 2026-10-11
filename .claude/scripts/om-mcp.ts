@@ -12,7 +12,7 @@
  * launcher, which adds the type-stripping flags this file needs.
  *
  * The server is only HALF the install. The other half is a short section in the
- * consuming repo's own CLAUDE.md, and that is not documentation garnish: a
+ * consuming repo's own AGENTS.md, and that is not documentation garnish: a
  * prohibition in the MCP `instructions` field propagates into a calling session
  * reliably, while a positive instruction to go and consult the vault is
  * advisory and gets skipped whenever a nearer source exists. This server can

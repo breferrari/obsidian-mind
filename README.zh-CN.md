@@ -186,7 +186,7 @@ QMD **在本地运行三个小模型**，因此不需要配置 API 密钥，没�
 
 **仓库优先的记忆** 使上下文能跨会话和设备持续存在。所有持久知识存储在 `brain/` 主题笔记中（git 跟踪、Obsidian 可浏览、相互链接）。Claude Code 的 `MEMORY.md`（`~/.claude/`）是一个自动加载的索引，指向仓库中的位置——本身不存储内容。这意味着记忆可以在更换设备后保留，并且是知识图谱的一部分。
 
-**会话有设计好的生命周期。** `SessionStart` 钩子自动注入你的北极星目标、活跃项目、最近变更、待办任务、完整的仓库文件列表和仓库卫生标志——Claude 每次会话都带着上下文启动，而不是从空白开始。结束时，说 "wrap up"，Claude 就会运行 `/om-wrap-up`——验证笔记、更新索引、发现未记录的成就。`CLAUDE.md` 规范了中间的一切：文件归档位置、链接方式、何时拆分笔记、如何处理决策和事件。
+**会话有设计好的生命周期。** `SessionStart` 钩子自动注入你的北极星目标、活跃项目、最近变更、待办任务、完整的仓库文件列表和仓库卫生标志——Claude 每次会话都带着上下文启动，而不是从空白开始。结束时，说 "wrap up"，Claude 就会运行 `/om-wrap-up`——验证笔记、更新索引、发现未记录的成就。`AGENTS.md` 规范了中间的一切：文件归档位置、链接方式、何时拆分笔记、如何处理决策和事件。
 
 ### 🔗 钩子
 
@@ -207,7 +207,7 @@ QMD **在本地运行三个小模型**，因此不需要配置 API 密钥，没�
 
 在 Claude Code 2.1.287 及以上版本中，仓库还附带一个 mod：`.claude/skills/obsidian-mind/`，一个在 Claude Code 内部运行的插件。它运行仓库自身的钩子脚本，只改变其输出到达会话的方式：
 
-- **会话上下文像 `CLAUDE.md` 一样以 instruction 文件的形式送达。** 压缩和 `/clear` 之后会被完整地重新读取（作为钩子输出时会缩减为一个指针），能送达通用子代理（钩子输出送达不了），也不会被 Claude Code 钩子输出的 10,000 字符上限截断。其预算是 `vault-manifest.json` 中的 `eager_layer_instruction_budget_bytes`；像未完成任务这样不会缩减的部分仍可能超出它。`/memory` 中显示为 `.claude/session-context.md`。
+- **会话上下文像 `AGENTS.md` 一样以 instruction 文件的形式送达。** 压缩和 `/clear` 之后会被完整地重新读取（作为钩子输出时会缩减为一个指针），能送达通用子代理（钩子输出送达不了），也不会被 Claude Code 钩子输出的 10,000 字符上限截断。其预算是 `vault-manifest.json` 中的 `eager_layer_instruction_budget_bytes`；像未完成任务这样不会缩减的部分仍可能超出它。`/memory` 中显示为 `.claude/session-context.md`。
 - **Stop 报告变成回答下方的一行。** 发现项变化时，你会在 Claude 的回复下方看到 `obsidian-mind: vault check: …`，而 Claude 会随你的下一条消息收到完整报告，对你不可见。标记为紧急的发现项则会立即送达 Claude（你每发送一条消息最多一次，第二个会在报告中等待）；模板自身的报告中没有这类发现项。
 
 对于它处理的每个事件，mod 会通知对应的钩子让出。在 mod 未加载的地方，钩子与以前完全一样地运行：Codex 和 Gemini、旧版 Claude Code、在仓库子文件夹中启动的会话（请在仓库根目录启动，或 `/cd` 到根目录后执行 `/clear`）、以及未信任的文件夹。只有在你接受了 Claude Code 对该仓库的信任提示之后，mod 才会加载。
@@ -229,7 +229,7 @@ obsidian-mind **不会**将整个 vault 加载到上下文中。它使用分层�
 
 | 层级 | 内容 | 时机 | 成本 |
 |------|------|------|------|
-| **始终** | `CLAUDE.md` + SessionStart 上下文（北极星摘要、git 摘要、任务、vault 文件列表） | 会话启动时 | 以清单中的预算为上限（预算本身限制在 Claude Code 10,000 字符的钩子输出上限之内）；每次会话末尾的计量器报告实际大小 |
+| **始终** | `AGENTS.md` + SessionStart 上下文（北极星摘要、git 摘要、任务、vault 文件列表） | 会话启动时 | 以清单中的预算为上限（预算本身限制在 Claude Code 10,000 字符的钩子输出上限之内）；每次会话末尾的计量器报告实际大小 |
 | **按需** | QMD 语义搜索结果 | Agent 需要特定上下文时 | 精准定向 |
 | **触发** | 分类路由提示 | 每条消息 | ~100 tokens |
 | **触发** | PostToolUse 验证 | `.md` 写入后 | ~200 tokens |
@@ -239,13 +239,13 @@ SessionStart 加载**轻量级上下文** — 关键文件的简短摘要、文�
 
 ### 🌐 与其他 Agent 配合使用
 
-obsidian-mind 支持 Claude Code、Codex CLI 和 Gemini CLI。`CLAUDE.md` 中的 vault 规约、`.claude/scripts/` 中的钩子脚本、`.claude/commands/` 中的命令都是 Agent 无关的 — 纯 Markdown、TypeScript 和 Shell，无 SDK 依赖。
+obsidian-mind 支持 Claude Code、Codex CLI 和 Gemini CLI。`AGENTS.md` 中的 vault 规约、`.claude/scripts/` 中的钩子脚本、`.claude/commands/` 中的命令都是 Agent 无关的 — 纯 Markdown、TypeScript 和 Shell，无 SDK 依赖。
 
 **Claude Code** — 完整支持。钩子、命令、子代理和记忆系统全部开箱即用。
 
 **Codex CLI** — 原生读取 `AGENTS.md`。`.codex/hooks.json` 中的钩子配置连接了与 Claude Code 相同的钩子脚本 — 会话上下文、消息分类和写入验证自动工作。
 
-**Gemini CLI** — 原生读取 `GEMINI.md`。`.gemini/settings.json` 中的钩子配置将 Gemini 的事件名称映射到共享钩子脚本。
+**Gemini CLI** — 原生读取 `AGENTS.md`。`.gemini/settings.json` 中的钩子配置将 Gemini 的事件名称映射到共享钩子脚本。
 
 **其他 Agent**（Cursor、Windsurf、GitHub Copilot、JetBrains AI）— 通过 `AGENTS.md` 读取 vault 规约。钩子支持因 Agent 而异。
 
@@ -269,7 +269,7 @@ vault 通常只在你身处其中时才有用。**`om` MCP 服务器**改变了�
 }
 ```
 
-这段配置放在**使用方项目**的 `.mcp.json` 中。然后在该项目自己的 `CLAUDE.md` 里加上一小节，指向这个 vault。
+这段配置放在**使用方项目**的 `.mcp.json` 中。然后在该项目自己的 `AGENTS.md` 里加上一小节，指向这个 vault。
 
 > [!IMPORTANT]
 > **两步缺一不可，第二步不是走过场。** 实测：服务器已接好但没有仓库侧说明时，会话**一次**都没有调用 vault，并径直实现了一个 vault 明确记录为已否决的设计。有说明时，它拒绝实现并引用了那条笔记。
@@ -394,9 +394,9 @@ vault 通常只在你身处其中时才有用。**`om` MCP 服务器**改变了�
 
 ```
 Home.md                 仓库入口——嵌入的 Base 视图、快捷链接
-CLAUDE.md               操作手册——Agent 每次会话都会读取
+AGENTS.md               操作手册——Agent 每次会话都会读取
 AGENTS.md               多 Agent 指南——Codex、Cursor、Windsurf 等
-GEMINI.md               多 Agent 指南——Gemini CLI
+AGENTS.md               多 Agent 指南——Gemini CLI
 vault-manifest.json     模板元数据——版本、结构、schema
 .shardmindignore        从 `shardmind install` 中排除的文件（CONTRIBUTING、翻译、营销素材）
 CHANGELOG.md            版本历史
@@ -498,11 +498,11 @@ templates/              带有 YAML frontmatter 的 Obsidian 模板
 | 你的组织 | `org/` — 添加你的经理、团队、重要协作者 |
 | 你的能力框架 | `perf/competencies/` — 匹配你所在组织的能力框架 |
 | 你的工具 | `.claude/commands/` — 根据你的 GitHub 组织、Slack 工作区进行编辑 |
-| 你的规范 | `CLAUDE.md` — 操作手册，随着使用不断完善 |
+| 你的规范 | `AGENTS.md` — 操作手册，随着使用不断完善 |
 | 你的领域 | 添加文件夹、在 `.claude/agents/` 中添加子代理，或在 `.claude/scripts/` 中添加分类规则 |
 
 > [!IMPORTANT]
-> `CLAUDE.md` 是操作手册。当你改变规范时，请同步更新它——Agent 每次会话都会读取它。
+> `AGENTS.md` 是操作手册。当你改变规范时，请同步更新它——Agent 每次会话都会读取它。
 
 ---
 
@@ -527,7 +527,7 @@ cd your-vault
 git pull origin main
 ```
 
-新文件（`AGENTS.md`、`GEMINI.md`、`.codex/`、`.gemini/`）会自动出现，钩子脚本也会就地更新。
+新文件（`AGENTS.md`、`AGENTS.md`、`.codex/`、`.gemini/`）会自动出现，钩子脚本也会就地更新。
 
 ### 更新 Fork
 
@@ -539,7 +539,7 @@ git fetch upstream
 git merge upstream/main
 ```
 
-解决你自定义过的文件的冲突（通常是 `CLAUDE.md`、`brain/` 笔记）。基础设施文件（`.claude/scripts/`、`.codex/`、`.gemini/`）应该可以干净合并。
+解决你自定义过的文件的冲突（通常是 `AGENTS.md`、`brain/` 笔记）。基础设施文件（`.claude/scripts/`、`.codex/`、`.gemini/`）应该可以干净合并。
 
 ### 将已有克隆收编到 ShardMind（v5.x → v6）
 

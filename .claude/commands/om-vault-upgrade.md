@@ -177,7 +177,7 @@ Transformations:
 **Conflict section** (if any):
 ```
 ⚠ Conflicts requiring your input:
-  - source has customized CLAUDE.md (will NOT copy — differences logged)
+  - source has customized CLAUDE.md (will NOT copy — additions are reported for migration into `.claude/rules/local.md` or `AGENTS.md`)
   - source has .claude/commands/my-custom.md (will MERGE as user addition)
 ```
 
@@ -224,14 +224,14 @@ Migration complete.
 Offer next steps:
 - "Run `/om-vault-audit` for a full structural check"
 - "Review `thinking/migrate-review/` for uncategorized files"
-- "Check `brain/Migration Log.md` for the full receipt and CLAUDE.md diff"
+- "Check `brain/Migration Log.md` for the full receipt and legacy CLAUDE.md migration notes"
 
 ## Important
 
 - **The source vault is NEVER modified.** All operations are read-only on the source, write-only on the target.
 - **Plan-first, always.** Never skip the plan presentation step, even if the migration looks simple.
 - **Preserve user curation.** When rebuilding indexes, start from the source's version (which has the user's ordering and groupings), then append missing entries. Don't regenerate from scratch.
-- **CLAUDE.md is special.** Never copy it from the source. The template's CLAUDE.md is always authoritative. If the source has customizations, diff them and log the differences so the user can re-apply manually.
+- **Legacy `CLAUDE.md` is special.** Never copy it from the source. If it has customizations, report them for manual movement: Claude-only additions go to `.claude/rules/local.md`; shared additions go to `AGENTS.md`. Never merge or delete it automatically.
 - **Binary files matter.** Images, PDFs, and attachments embedded in notes must be copied or the embeds break.
 - **Wikilinks resolve by filename.** Most folder moves don't break links. Only renames and full-path links need fixing.
 - **Markdown links get converted.** Standard markdown links to local files (`[text](path.md)`) are converted to wikilinks (`[[name|text]]`). External URLs are left as-is.

@@ -8,7 +8,7 @@
  * original name because it is quoted verbatim in `om-wrap-up.md` and pinned in
  * `vault-manifest.json`, and a rename there would break a documented command.
  *
- * CLAUDE.md doctrine: `~/.claude/.../memory/MEMORY.md` is an auto-loaded
+ * .claude/rules/memory.md doctrine: `~/.claude/.../memory/MEMORY.md` is an auto-loaded
  * index ONLY — pointers to brain/ topic notes, never content. The doctrine
  * only holds if the index is derivable: the moment authored knowledge
  * accumulates there, it forks the source of truth and silently desyncs
@@ -25,7 +25,7 @@ export type BrainNote = {
 };
 
 export const MEMORY_INDEX_HEADER =
-	"All durable memory lives in the vault under `brain/` per CLAUDE.md. " +
+	"All durable memory lives in the vault under `brain/` per .claude/rules/memory.md. " +
 	"This index points to vault topic notes — never write content here. " +
 	"Regenerated from brain/ frontmatter (see `generate-memory-index.ts`); " +
 	"hand edits will be overwritten.";

@@ -72,8 +72,8 @@ groups:
 #   * 4 removable content modules: org, perf, incidents, one_on_ones.
 #     Deselected modules drop their paths AND their per-name commands /
 #     agents under `.claude/{commands,agents}/`.
-#   * 2 removable agent modules: codex, gemini. Deselect to omit
-#     AGENTS.md / GEMINI.md and the matching dotfolder contents.
+#   * 2 removable agent modules: codex, gemini. AGENTS.md is core and
+#     always installed; deselecting a module omits only its dotfolder.
 #     `.claude/scripts/` (shared hook implementations) stays always-on
 #     by virtue of being claimed by no module.
 #
@@ -146,9 +146,10 @@ modules:
     removable: true
 
   claude:
-    label: "Claude (Anthropic) agent — CLAUDE.md, .claude/agents, .claude/skills, .claude/commands, .claude-plugin"
+    label: "Claude (Anthropic) agent — .claude/rules, agents, skills, commands, and plugin"
     paths:
-      - "CLAUDE.md"
+      - "AGENTS.md"
+      - ".claude/rules/"
       - ".claude/agents/"
       - ".claude/skills/"
       - ".claude/commands/"
@@ -168,15 +169,13 @@ modules:
   codex:
     label: "Codex (OpenAI) agent — AGENTS.md, .codex/"
     paths:
-      - "AGENTS.md"
       - ".codex/"
     agents: ["codex"]
     removable: true
 
   gemini:
-    label: "Gemini (Google) agent — GEMINI.md, .gemini/"
+    label: "Gemini (Google) agent — AGENTS.md through .gemini/"
     paths:
-      - "GEMINI.md"
       - ".gemini/"
     agents: ["gemini"]
     removable: true

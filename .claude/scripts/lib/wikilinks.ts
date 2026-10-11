@@ -11,7 +11,7 @@
  *
  * Rules:
  *  - Fenced code blocks AND inline code spans are stripped before
- *    extraction — CLAUDE.md and the skills carry literal `[[...]]`
+ *    extraction — AGENTS.md and the skills carry literal `[[...]]`
  *    syntax examples that are documentation, not edges.
  *  - `!` embed prefix, `|alias` tails (including the table-escaped `\|`
  *    form), `#heading` and `#^block` fragments are stripped from targets.

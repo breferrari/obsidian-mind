@@ -158,7 +158,7 @@ export function createContext(vaultRoot: string, derivedFrom?: string): VaultCon
  * reliably: measured, a session refused a direct request and an authority
  * override rather than break it. The "when to use it" section is ADVISORY and
  * gets skipped whenever a nearer source exists — which is why the install also
- * requires a pointer in the consuming repo's own CLAUDE.md. A server can stop a
+ * requires a pointer in the consuming repo's own AGENTS.md. A server can stop a
  * session doing something; it cannot make one go looking.
  */
 export const INSTRUCTIONS: string = [

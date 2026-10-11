@@ -23,6 +23,7 @@ import {
 	appendFileSync,
 	readdirSync,
 	statSync,
+	existsSync,
 	type Dirent,
 } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
@@ -51,6 +52,7 @@ import {
 	parseInfraRootFilenames,
 	isInfraFilename,
 	isMarkdownFilename,
+	hasLegacyClaudeMaskingAgents,
 	collectOpenTasks,
 	applyInjectionBudget,
 	effectiveInjectionBudget,
@@ -656,6 +658,17 @@ if (hygieneLines.length > 0) {
 	sections.push({
 		header: "### Vault Hygiene (drift detected)",
 		body: hygieneLines.join("\n"),
+		priority: PRIORITY.HYGIENE,
+	});
+}
+
+if (hasLegacyClaudeMaskingAgents(
+	existsSync(join(cwd, "AGENTS.md")),
+	existsSync(join(cwd, "CLAUDE.md")),
+)) {
+	sections.push({
+		header: "### Vault Hygiene (legacy instruction file)",
+		body: "`CLAUDE.md` is present beside `AGENTS.md`. Claude Code reads CLAUDE.md and skips AGENTS.md; move Claude-only additions to `.claude/rules/local.md` (or shared additions to AGENTS.md), then delete CLAUDE.md.",
 		priority: PRIORITY.HYGIENE,
 	});
 }

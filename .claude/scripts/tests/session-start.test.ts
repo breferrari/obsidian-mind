@@ -46,6 +46,7 @@ import {
 	qmdArgsWithIndex,
 	isValidQmdIndex,
 	parseInfraRootFilenames,
+	hasLegacyClaudeMaskingAgents,
 	isInfraFilename,
 	isMarkdownFilename,
 	collectOpenTasks,
@@ -721,6 +722,14 @@ describe("isMarkdownFilename", () => {
 	test("rejects names where .md appears mid-string", () => {
 		assert.equal(isMarkdownFilename("note.md.bak"), false);
 		assert.equal(isMarkdownFilename(".mdrc"), false);
+	});
+});
+
+describe("legacy CLAUDE.md hygiene", () => {
+	test("flags a legacy CLAUDE.md only when AGENTS.md is also present", () => {
+		assert.equal(hasLegacyClaudeMaskingAgents(true, true), true);
+		assert.equal(hasLegacyClaudeMaskingAgents(true, false), false);
+		assert.equal(hasLegacyClaudeMaskingAgents(false, true), false);
 	});
 });
 

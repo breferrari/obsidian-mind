@@ -798,6 +798,17 @@ export function isInfraFilename(
 }
 
 /**
+ * Claude Code silently gives a legacy CLAUDE.md precedence over AGENTS.md.
+ * Keep this pure so the SessionStart warning has an explicit two-way test.
+ */
+export function hasLegacyClaudeMaskingAgents(
+	hasAgents: boolean,
+	hasClaude: boolean,
+): boolean {
+	return hasAgents && hasClaude;
+}
+
+/**
  * Aggregate unchecked Markdown tasks (`- [ ] …`) across multiple files and
  * format them as one string grouped by source. Tasks are taken in input
  * order — the caller decides which sources matter most (e.g. work/active

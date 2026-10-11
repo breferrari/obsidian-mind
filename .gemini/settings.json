@@ -1,4 +1,7 @@
 {
+  "context": {
+    "fileName": ["AGENTS.md"]
+  },
   "hooks": {
     "SessionStart": [
       {

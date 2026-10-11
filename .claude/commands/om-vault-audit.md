@@ -33,7 +33,7 @@ Verify the vault matches the expected layout:
 - `org/teams/` contains only notes tagged `team`
 - `templates/` contains only template files (with `{{placeholders}}`)
 - `thinking/` is clean (no leftover drafts that should have been promoted)
-- Nothing unexpected at vault root (allowed: `Home.md`, `CLAUDE.md`, `vault-manifest.json`, `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, `LICENSE`, `.gitignore` — no user notes)
+- Nothing unexpected at vault root (allowed: `Home.md`, `AGENTS.md`, `vault-manifest.json`, `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, `LICENSE`, `.gitignore` — no user notes)
 
 ### 2. Check Indexes
 
@@ -120,7 +120,7 @@ Per vault rules, each note should cover ONE concept. Flag notes that:
 
 - `.claude/settings.json` — are hooks well-formed and referencing correct paths?
 - `.claude/commands/` — do all commands reference correct folder structure?
-- `CLAUDE.md` — any stale instructions that contradict current vault state?
+- `AGENTS.md` — any stale instructions that contradict current vault state?
 
 ### 12. Fix and Report
 

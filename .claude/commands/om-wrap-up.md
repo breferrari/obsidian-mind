@@ -63,7 +63,7 @@ Invoke `/om-tidy` while the conversation and tools are still live. It runs the s
 - A new pattern that should be in `brain/Patterns.md`?
 - A new gotcha that should be in `brain/Gotchas.md`?
 - A workflow improvement for `brain/Skills.md`?
-- A CLAUDE.md update needed (new convention, stale reference)?
+- An AGENTS.md update needed (new convention, stale reference)?
 - A new or improved slash command?
 - A hook that should be added or modified?
 

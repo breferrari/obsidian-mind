@@ -104,10 +104,8 @@ const WATCHED: ReadonlyArray<{
 const WATCHED_ROOT_FILES: readonly string[] = [
 	"AGENTS.md",
 	"ARCHITECTURE.md",
-	"CLAUDE.md",
 	"CHANGELOG.md",
 	"CONTRIBUTING.md",
-	"GEMINI.md",
 	"Home.md",
 	"LICENSE",
 	"README.md",

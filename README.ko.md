@@ -186,7 +186,7 @@ QMD는 **세 개의 작은 모델을 로컬에서** 실행하므로, 설정할 A
 
 **볼트 우선 메모리**는 세션과 기기 간에 컨텍스트를 유지합니다. 모든 지속 지식은 `brain/` 토픽 노트에 있습니다(git 추적, Obsidian 브라우저 가능, 링크됨). Claude Code의 `MEMORY.md`(`~/.claude/`)는 볼트 위치를 가리키는 자동 로드 인덱스일 뿐 — 저장소 자체가 아닙니다. 즉, 메모리가 기기 변경에도 유지되며 그래프의 일부가 됩니다.
 
-**세션은 설계된 생명주기를 따릅니다.** `SessionStart` 훅이 North Star 목표, 활성 프로젝트, 최근 변경사항, 미완료 작업, 전체 볼트 파일 목록, 볼트 위생 플래그를 자동 주입합니다 — Claude는 빈 상태가 아니라 컨텍스트가 있는 상태로 모든 세션을 시작합니다. 마무리할 때 "wrap up"이라고 말하면 Claude가 `/om-wrap-up`을 실행합니다 — 노트 검증, 인덱스 업데이트, 누락된 성과 발견. `CLAUDE.md`가 그 사이의 모든 것을 관리합니다: 파일 배치 위치, 링크 방법, 노트를 분할해야 할 때, 의사결정과 인시던트 처리 방법.
+**세션은 설계된 생명주기를 따릅니다.** `SessionStart` 훅이 North Star 목표, 활성 프로젝트, 최근 변경사항, 미완료 작업, 전체 볼트 파일 목록, 볼트 위생 플래그를 자동 주입합니다 — Claude는 빈 상태가 아니라 컨텍스트가 있는 상태로 모든 세션을 시작합니다. 마무리할 때 "wrap up"이라고 말하면 Claude가 `/om-wrap-up`을 실행합니다 — 노트 검증, 인덱스 업데이트, 누락된 성과 발견. `AGENTS.md`가 그 사이의 모든 것을 관리합니다: 파일 배치 위치, 링크 방법, 노트를 분할해야 할 때, 의사결정과 인시던트 처리 방법.
 
 ### 🔗 훅
 
@@ -207,7 +207,7 @@ QMD는 **세 개의 작은 모델을 로컬에서** 실행하므로, 설정할 A
 
 Claude Code 2.1.287 이상에서는 볼트가 mod도 함께 제공합니다. `.claude/skills/obsidian-mind/`에 있는, Claude Code 안에서 실행되는 플러그인입니다. 볼트 자체의 훅 스크립트를 실행하고, 그 출력이 세션에 전달되는 경로만 바꿉니다.
 
-- **세션 컨텍스트가 `CLAUDE.md`처럼 instruction 파일로 전달됩니다.** 컴팩션과 `/clear` 후에도 전체가 다시 읽히고(훅 출력은 포인터로 줄어듭니다), 범용 서브에이전트에도 전달되며(훅 출력은 전달되지 않습니다), Claude Code 훅 출력의 10,000자 제한에 잘리지 않습니다. 예산은 `vault-manifest.json`의 `eager_layer_instruction_budget_bytes`이며, 열린 작업처럼 줄어들지 않는 섹션은 이를 넘을 수 있습니다. `/memory`에는 `.claude/session-context.md`로 표시됩니다.
+- **세션 컨텍스트가 `AGENTS.md`처럼 instruction 파일로 전달됩니다.** 컴팩션과 `/clear` 후에도 전체가 다시 읽히고(훅 출력은 포인터로 줄어듭니다), 범용 서브에이전트에도 전달되며(훅 출력은 전달되지 않습니다), Claude Code 훅 출력의 10,000자 제한에 잘리지 않습니다. 예산은 `vault-manifest.json`의 `eager_layer_instruction_budget_bytes`이며, 열린 작업처럼 줄어들지 않는 섹션은 이를 넘을 수 있습니다. `/memory`에는 `.claude/session-context.md`로 표시됩니다.
 - **Stop 보고서가 답변 아래의 한 줄이 됩니다.** 발견 사항이 바뀌면 Claude의 답변 아래에 `obsidian-mind: vault check: …`가 표시되고, Claude는 전체 보고서를 다음 메시지와 함께 보이지 않게 받습니다. 긴급으로 표시된 발견 사항은 대신 즉시 Claude에게 전달됩니다(보내는 메시지 하나당 한 번까지이며, 두 번째는 보고서 안에서 기다립니다). 템플릿 자체의 보고서에는 그런 항목이 없습니다.
 
 mod는 처리하는 이벤트마다 해당 훅에 대기하라고 알립니다. mod가 로드되지 않는 곳에서는 훅이 이전과 똑같이 동작합니다. Codex와 Gemini, 이전 버전의 Claude Code, 볼트 하위 폴더에서 시작한 세션(볼트 루트에서 실행하거나, 그곳으로 `/cd`한 뒤 `/clear`), 신뢰하지 않은 폴더입니다. mod는 볼트에 대한 Claude Code의 신뢰 확인을 수락한 뒤에만 로드됩니다.
@@ -229,7 +229,7 @@ obsidian-mind는 전체 볼트를 컨텍스트에 로드하지 **않습니다**.
 
 | 계층 | 내용 | 시점 | 비용 |
 |------|------|------|------|
-| **항상** | `CLAUDE.md` + SessionStart 컨텍스트 (North Star 발췌, git 요약, 작업, 볼트 파일 목록) | 세션 시작 시 | 매니페스트 예산이 상한 (예산 자체도 Claude Code의 10,000자 훅 출력 상한 안으로 제한됨). 실제 크기는 매 세션 마지막 줄의 미터가 보고 |
+| **항상** | `AGENTS.md` + SessionStart 컨텍스트 (North Star 발췌, git 요약, 작업, 볼트 파일 목록) | 세션 시작 시 | 매니페스트 예산이 상한 (예산 자체도 Claude Code의 10,000자 훅 출력 상한 안으로 제한됨). 실제 크기는 매 세션 마지막 줄의 미터가 보고 |
 | **온디맨드** | QMD 시맨틱 검색 결과 | 에이전트가 특정 컨텍스트 필요 시 | 대상만 |
 | **트리거** | 분류 라우팅 힌트 | 매 메시지 | ~100 토큰 |
 | **트리거** | PostToolUse 검증 | `.md` 작성 후 | ~200 토큰 |
@@ -239,13 +239,13 @@ SessionStart는 **가벼운 컨텍스트**를 로드합니다 — 주요 파일�
 
 ### 🌐 다른 에이전트와 사용하기
 
-obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAUDE.md`의 볼트 규약, `.claude/scripts/`의 훅 스크립트, `.claude/commands/`의 커맨드는 모두 에이전트 비의존적입니다 — 순수 Markdown, TypeScript, 셸이며 SDK 의존성이 없습니다.
+obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `AGENTS.md`의 볼트 규약, `.claude/scripts/`의 훅 스크립트, `.claude/commands/`의 커맨드는 모두 에이전트 비의존적입니다 — 순수 Markdown, TypeScript, 셸이며 SDK 의존성이 없습니다.
 
 **Claude Code** — 완전 지원. 훅, 커맨드, 서브에이전트, 메모리 시스템이 모두 기본으로 작동합니다.
 
 **Codex CLI** — `AGENTS.md`를 네이티브로 읽습니다. `.codex/hooks.json`의 훅 설정이 Claude Code와 동일한 훅 스크립트를 연결합니다 — 세션 컨텍스트, 메시지 분류, 쓰기 검증이 자동으로 작동합니다.
 
-**Gemini CLI** — `GEMINI.md`를 네이티브로 읽습니다. `.gemini/settings.json`의 훅 설정이 Gemini의 이벤트 이름을 공유 훅 스크립트에 매핑합니다.
+**Gemini CLI** — `AGENTS.md`를 네이티브로 읽습니다. `.gemini/settings.json`의 훅 설정이 Gemini의 이벤트 이름을 공유 훅 스크립트에 매핑합니다.
 
 **기타 에이전트** (Cursor, Windsurf, GitHub Copilot, JetBrains AI) — `AGENTS.md`로 볼트 규약을 읽습니다. 훅 지원은 에이전트마다 다릅니다.
 
@@ -269,7 +269,7 @@ obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAU
 }
 ```
 
-이것은 **사용하는 프로젝트**의 `.mcp.json`에 들어갑니다. 그런 다음 해당 프로젝트 자체의 `CLAUDE.md`에 볼트를 가리키는 짧은 섹션을 추가하세요.
+이것은 **사용하는 프로젝트**의 `.mcp.json`에 들어갑니다. 그런 다음 해당 프로젝트 자체의 `AGENTS.md`에 볼트를 가리키는 짧은 섹션을 추가하세요.
 
 > [!IMPORTANT]
 > **두 단계 모두 필수이며, 두 번째는 형식적인 절차가 아닙니다.** 측정 결과: 서버가 연결되어 있어도 저장소 측 지침이 없으면 세션은 볼트를 **한 번도** 호출하지 않았고, 볼트가 명시적으로 거부했다고 기록한 설계를 그대로 구현했습니다. 지침이 있을 때는 구현을 거부하고 해당 노트를 인용했습니다.
@@ -394,9 +394,9 @@ obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAU
 
 ```
 Home.md                 볼트 진입점 — 임베드된 Base 뷰, 바로가기 링크
-CLAUDE.md               운영 매뉴얼 — 에이전트가 매 세션마다 읽음
+AGENTS.md               운영 매뉴얼 — 에이전트가 매 세션마다 읽음
 AGENTS.md               멀티에이전트 가이드 — Codex, Cursor, Windsurf 등
-GEMINI.md               멀티에이전트 가이드 — Gemini CLI
+AGENTS.md               멀티에이전트 가이드 — Gemini CLI
 vault-manifest.json     템플릿 메타데이터 — 버전, 구조, 스키마
 .shardmindignore        `shardmind install`에서 제외되는 파일 (CONTRIBUTING, 번역, 마케팅 미디어)
 CHANGELOG.md            버전 히스토리
@@ -498,11 +498,11 @@ YAML 프론트매터가 포함된 템플릿으로, 각각 점진적 공개를 �
 | 조직 | `org/` — 매니저, 팀, 핵심 협력자 추가 |
 | 역량 | `perf/competencies/` — 조직의 프레임워크에 맞추기 |
 | 도구 | `.claude/commands/` — GitHub 조직, Slack 워크스페이스에 맞게 편집 |
-| 규칙 | `CLAUDE.md` — 운영 매뉴얼, 진행하면서 발전시키기 |
+| 규칙 | `AGENTS.md` — 운영 매뉴얼, 진행하면서 발전시키기 |
 | 도메인 | 폴더 추가, `.claude/agents/`에 서브에이전트 추가, `.claude/scripts/`에 분류 규칙 추가 |
 
 > [!IMPORTANT]
-> `CLAUDE.md`는 운영 매뉴얼입니다. 규칙을 변경하면 이 파일을 업데이트하세요 — 에이전트가 매 세션마다 읽습니다.
+> `AGENTS.md`는 운영 매뉴얼입니다. 규칙을 변경하면 이 파일을 업데이트하세요 — 에이전트가 매 세션마다 읽습니다.
 
 ---
 
@@ -527,7 +527,7 @@ cd your-vault
 git pull origin main
 ```
 
-새 파일(`AGENTS.md`, `GEMINI.md`, `.codex/`, `.gemini/`)이 자동으로 추가되고 훅 스크립트도 업데이트됩니다.
+새 파일(`AGENTS.md`, `AGENTS.md`, `.codex/`, `.gemini/`)이 자동으로 추가되고 훅 스크립트도 업데이트됩니다.
 
 ### 포크 업데이트
 
@@ -539,7 +539,7 @@ git fetch upstream
 git merge upstream/main
 ```
 
-커스터마이징한 파일(일반적으로 `CLAUDE.md`, `brain/` 노트)의 충돌을 해결하세요. 인프라 파일(`.claude/scripts/`, `.codex/`, `.gemini/`)은 깔끔하게 병합됩니다.
+커스터마이징한 파일(일반적으로 `AGENTS.md`, `brain/` 노트)의 충돌을 해결하세요. 인프라 파일(`.claude/scripts/`, `.codex/`, `.gemini/`)은 깔끔하게 병합됩니다.
 
 ### 기존 클론을 ShardMind로 채택 (v5.x → v6)
 

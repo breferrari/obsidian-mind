@@ -35,7 +35,7 @@ The route:
 - **Code is separate.** If the ruling is "build it", the build is a new issue that the ruling unblocks. A ruling must not wait behind an implementation.
 - **A ruling that cannot be made yet is a finding, not a failure.** If it needs a measurement or usage data nobody has, say so on the issue and record what would settle it. That is a complete answer, not a deferral.
 
-This is not a rule about when a decision earns a durable record. That gate lives in [CLAUDE.md](CLAUDE.md) under Decision Records and decides whether to write one at all. This is only about giving question-shaped issues a way through, so they stop masquerading as tasks.
+This is not a rule about when a decision earns a durable record. That gate lives in [AGENTS.md](AGENTS.md) under Decision Records and decides whether to write one at all. This is only about giving question-shaped issues a way through, so they stop masquerading as tasks.
 
 ## PR Title Format
 
@@ -49,7 +49,7 @@ type: short description
 |--------|-------------|-----------|
 | `feat` | New command, agent, hook, or capability | Added |
 | `fix` | Bug fix | Fixed |
-| `docs` | Documentation only (README, translations, CLAUDE.md) | Changed |
+| `docs` | Documentation only (README, translations, AGENTS.md) | Changed |
 | `refactor` | Code restructuring without behavior change | Changed |
 | `chore` | Maintenance, cleanup | Changed |
 | `build` | Build system or packaging changes | Changed |
@@ -75,7 +75,7 @@ When adding or modifying commands, agents, hooks, or vault structure, **all of t
 
 | File | What to update |
 |------|---------------|
-| `CLAUDE.md` | Command table, agent table, vault structure table, counts |
+| `AGENTS.md` | Command table, agent table, vault structure table, counts |
 | `README.md` | Command table, agent table, vault structure diagram, counts |
 | `README.ja.md`, `README.ko.md`, `README.zh-CN.md` | Same as README, in the respective language |
 | `brain/Skills.md` | Command tables (by category), subagents table, workflows |
@@ -93,7 +93,7 @@ The release pipeline handles these automatically — **do not include in your PR
 
 - [ ] PR title follows `type: description` format
 - [ ] Counts match everywhere (commands, agents) if you added/removed any
-- [ ] New command/agent appears in ALL doc tables (CLAUDE.md + README + Skills.md)
+- [ ] New command/agent appears in ALL doc tables (AGENTS.md + README + Skills.md)
 - [ ] Translations flagged if you changed README.md (maintainer can handle these)
 - [ ] Tests pass: `cd .claude/scripts && npm test`
 - [ ] Any NEW guard, check, or config constraint has [demonstrated a red](#new-guards-must-demonstrate-a-red), recorded in the PR

@@ -1,70 +1,122 @@
 # Obsidian Mind
 
-This vault is built for [Claude Code](https://claude.ai/code) with a full operating manual in `CLAUDE.md`.
+Personal Obsidian vault for work notes, decisions, performance tracking, and persistent agent context. This is the vault's single shared instruction file. It is read natively by Codex, Claude Code, Antigravity, and trusted Grok; Gemini reads it through `.gemini/settings.json`.
 
-**Read `CLAUDE.md` for all vault conventions** — structure, note types, linking rules, frontmatter schemas, indexes, and workflows. Most of the content is agent-agnostic.
+## Search Before Reading
 
-## Hooks
+Use QMD proactively before reading files. Pick the highest available surface and stop:
 
-The hook scripts in `.claude/scripts/` are agent-agnostic TypeScript and shell, executed natively by Node via `--experimental-strip-types` — no build step, no runtime dependencies, no Claude SDK. Hook configs are provided for three agents:
+1. Registered `mcp__qmd__query`, `get`, `multi_get`, or `status` tools.
+2. `qmd --index <name> query|search|vsearch|get|multi-get`, where `<name>` is `qmd_index` in `vault-manifest.json` or the vault folder name slugified.
+3. Grep, Glob, or Read only when QMD is unavailable.
 
-| Agent | Config | Status |
-|-------|--------|--------|
-| Claude Code | `.claude/settings.json` | Full support |
-| Codex CLI | `.codex/hooks.json` | Shared hook scripts |
-| Gemini CLI | `.gemini/settings.json` | Shared hook scripts |
+On a fresh clone, run `node --experimental-strip-types .scripts/qmd-bootstrap.ts` once. `brain/Skills.md` is the command catalog for agents that do not auto-surface `.claude/commands/`.
 
-| Script | Purpose | Claude event | Codex event | Gemini event |
-|--------|---------|--------------|-------------|--------------|
-| `session-start.ts` | Inject vault context at startup | SessionStart | SessionStart | SessionStart |
-| `classify-message.ts` | Classify messages, inject routing hints, hand over the last Stop report (Claude Code and Codex: Gemini's checklist runs on SessionEnd and saves none) | UserPromptSubmit | UserPromptSubmit | BeforeAgent |
-| `validate-write.ts` | Validate frontmatter and wikilinks | PostToolUse | PostToolUse | AfterTool |
-| `pre-compact.ts` | Back up transcript before compaction | PreCompact | — | PreCompress |
+## Vault Structure
 
-## Commands
+| Location | Purpose |
+| --- | --- |
+| `Home.md` | Vault entry point and dashboards. |
+| `vault-manifest.json` | Template metadata, boundaries, schemas, and upgrade fingerprints. |
+| `work/active/` | Current projects only; archive completed work under `work/archive/YYYY/`. |
+| `work/incidents/`, `work/1-1/`, `work/meetings/` | Incidents, 1:1s, and unprocessed meeting exports. |
+| `perf/` | Brag documentation, evidence, competencies, and review artifacts. |
+| `org/people/`, `org/teams/` | Atomic people and team notes. |
+| `brain/` | Durable vault knowledge: Memories, Key Decisions, Patterns, Gotchas, Skills, North Star. |
+| `memories/YYYY/MM/` | Cross-repo memories written through the `om` MCP server; never hand-edit. |
+| `reference/` | Codebase and architecture knowledge. |
+| `thinking/` | Temporary reasoning drafts; promote findings, then delete the scratchpad. |
+| `templates/`, `bases/` | Templates and Obsidian Base views. |
 
-Commands live in `.claude/commands/` — agent-agnostic markdown with YAML frontmatter. `brain/Skills.md` is the catalog.
+No user notes belong at the vault root. Root infrastructure is listed in `vault-manifest.json`.
 
-- **Claude Code / Gemini CLI**: invoke as `/om-standup`, `/om-dump`, etc.
-- **Codex CLI**: type the command name as a regular prompt without the `/` prefix (e.g. `om-standup`). Codex will find and execute the command file.
+## Working In The Vault
+
+### Start and finish
+
+For a substantial session, run `om-standup` (Claude Code and Gemini may use `/om-standup`). It reads current goals, active work, recent changes, open tasks, and hygiene flags. If working manually, read `Home.md`, `brain/North Star.md`, `work/Index.md`, and relevant `brain/` topics.
+
+When the user says “wrap up” or equivalent, invoke `om-wrap-up`. If it is unavailable, archive completed projects, update relevant indexes and brain notes, record meaningful wins, check links, and offer to update North Star goals.
+
+Use `thinking/YYYY-MM-DD-topic.md` for temporary analysis. Promote durable findings to proper notes and remove the scratchpad unless the reasoning itself is worth preserving.
+
+### Creating notes
+
+1. Use YAML frontmatter with `date`, a roughly 150-character `description`, `tags`, and the note type's required fields. Work notes and incidents also need `quarter`; incidents need `ticket`, `severity`, and `role`.
+2. Use templates. Preserve existing frontmatter when editing.
+3. Write fully and split structurally. A note around 25 KB needs organization, never trimming. Move content verbatim into domain notes, event-log satellites, or an archive note; leave a one-line index and retarget inbound links.
+4. File living/entity notes with bare titles. Prefix point-in-time notes with `YYYY-MM-DD`. Use real modified time in `bases/Recently Touched.base` for recency, never filename dates.
+5. Give multi-note workstreams a folder under `work/active/<Topic>/`; links remain the primary organization.
+
+### Note types
+
+| Type | Location | Required shape |
+| --- | --- | --- |
+| Work note | `work/active/`, then `work/archive/YYYY/` | Context, What/Why, Links, Related. |
+| Incident | `work/incidents/` | Context, Root Cause, Timeline, Impact, Analysis, Related. |
+| 1:1 | `work/1-1/` | Key Takeaways, Action Items, Quotes, What to Watch, Related. |
+| PR evidence | `perf/evidence/` | Person, period, projects, quality, growth, full table. |
+| Person or team | `org/people/` or `org/teams/` | Atomic node linked to work and context. |
+| Brain note | `brain/` | Topic-specific durable knowledge. |
+| Decision | `work/` | Use the Decision Record template and link it to affected work. |
+
+### Links and indexes
+
+Graph-first, not folder-first: every new note must link to at least one existing note. Prefer `[[wikilinks]]`; use folders for browsing and links for meaning. Split a note when it contains three or more independently useful concepts.
+
+Update `work/Index.md` for work, `brain/Memories.md` for a new brain topic, `brain/Skills.md` for workflows, `org/People & Context.md` for organization knowledge, and `perf/Brag Doc.md` for meaningful wins.
+
+### Decision records
+
+Create a decision record when any one is true: the decision is hard to reverse, surprising without context, or represents a real trade-off. Otherwise the issue and commit are sufficient. Once it qualifies, create the record, link it to the work, add it to `work/Index.md`, and add a significant one to `brain/Key Decisions.md`.
+
+## North Star, Tags, And Properties
+
+Read `brain/North Star.md` before substantial work, ground suggestions in it, and update it when goals change.
+
+Use frontmatter tags, not inline tags. Common values are `work-note`, `decision`, `perf`, `thinking`, `north-star`, `competency`, `person`, `team`, `brain`, `index`, and `moc`. Use properties such as `cycle`, `person`, `team`, `status`, `quarter`, `ticket`, `severity`, and `role` so Bases and searches remain useful.
 
 ## Memory
 
-The vault's memory lives in `brain/` — `Memories.md`, `Patterns.md`, `Key Decisions.md`, `Gotchas.md`. These are plain markdown files that any agent can read and write. When you learn something worth remembering, write it to the relevant `brain/` topic note with a wikilink to context.
+All durable knowledge created inside this vault belongs in relevant `brain/` topic notes, linked to its context. When asked to remember something, find or create the topic note, write the lesson, and update `brain/Memories.md` when a new topic is created.
 
-The `~/.claude/` auto-loaded memory index is Claude Code-specific — skip that section in `CLAUDE.md`. The vault-side `brain/` notes are the source of truth.
+The `memories/` tree is for the `om` MCP server to write on behalf of other repositories. Do not hand-edit it. When a conversation touches a Brain Topic, query QMD for that topic before answering; read only the relevant note if QMD is unavailable.
 
-## Reaching this vault from another repo
+## Other Repositories
 
-The `om` MCP server (`.claude/scripts/om-mcp.mjs`) exposes this vault over MCP, so a session running in a **different repository** can search it, read notes, follow the graph, and record durable lessons back into it. It speaks plain MCP over stdio, so any MCP-capable agent can register it — nothing about it is Claude Code-specific.
+The `om` MCP server exposes this vault to a session in another repository. Register `.claude/scripts/om-mcp.mjs` in that repository's MCP configuration, then add a short instruction in that repository's own agent file telling it when to consult the vault. Do not register raw QMD in a consuming repository: it bypasses memory scope checks. For the exact configuration and exposure model, read `ARCHITECTURE.md` → *Reaching the Vault From Another Repo*.
 
-Register it in the *consuming* project's MCP config, pointing at this vault's absolute path, then add a short section to that project's own agent doc telling it the vault exists. **Both steps are required**: measured, a session with the server wired but no repo-side instruction made zero vault calls, because a prohibition propagates into a session reliably while a positive "go look" does not.
+## Agent Guidelines
 
-Do not register the raw `qmd` server in a consuming repo — it searches every note directly, so the repo matches against memories written for unrelated projects. Applying each memory's declared scope on top of the index is what `om` adds. Full details in `CLAUDE.md`.
+- Folders group by purpose; links group by meaning. Add links first, and prefer bidirectional links when both notes are evidence or context nodes.
+- Put people in `org/people/`, teams in `org/teams/`, codebase knowledge in `reference/`, durable operational lessons in `brain/`, active work in `work/active/`, and review material in `perf/`.
+- Keep project evidence, review strategy, people dynamics, and personal conversation context separate.
+- Never modify `.obsidian/` configuration unless explicitly asked. Never configure git hooks or auto-commit.
+- Prefer Obsidian CLI only when Obsidian is already running. Background automation should use the filesystem; the first macOS CLI call can visibly launch Obsidian.
+- Always suggest useful links between notes. Every note needs a `description` field.
+- Reorganize with `git mv`; do not delete data without explicit user approval.
 
-## Subagents
+## Write-Correctness Laws
 
-9 subagents in `.claude/agents/` handle isolated tasks (brag spotting, vault auditing, cross-linking, etc.). The prompt content is agent-agnostic markdown.
+1. A project's volatile status lives in exactly one place: its frontmatter and top status line. Other notes link to it rather than restating it.
+2. When a fact changes, sweep and correct every restatement. Use `om-correct` for paraphrases; preserve historical notes that correctly describe what was believed at the time.
+3. Mark unverified claims as `(TBC)`, `(unverified)`, or `(inferred)`.
+4. Date-stamp volatile facts such as versions, counts, and organization structure.
+5. Attribution and creation dates can legitimately differ.
+6. Do not hardcode counts in instruction files or documentation tables.
 
-- **Codex CLI**: as of the [Skills launch (Dec 2025)](https://developers.openai.com/codex/changelog), Codex discovers skills at `.agents/skills/<name>/SKILL.md` (directory-per-skill; frontmatter requires `name` and `description`). Mirror each `.claude/agents/*.md` into a `SKILL.md`, keeping the prompt body intact. See the [Codex Skills docs](https://developers.openai.com/codex/skills) for the full schema.
-- **Gemini CLI**: agents live in `.gemini/agents/`. Copy the files and adapt the YAML frontmatter fields to Gemini's schema.
+## Agent Support
 
-## What's Claude Code-specific
+| Agent | Instruction loading | Known gap |
+| --- | --- | --- |
+| Claude Code | `AGENTS.md` plus `.claude/rules/*.md` | A root or parent `CLAUDE.md` makes Claude skip `AGENTS.md`; remove or migrate it. |
+| Codex CLI | `AGENTS.md` natively, including from subfolders | Instruction content above its silent size limit can be truncated. |
+| Gemini CLI | `.gemini/settings.json` loads `AGENTS.md` | A session started in a subfolder does not apply root settings; start at vault root. |
+| Antigravity | `AGENTS.md` natively | Deeper hooks, skills, commands, and MCP support are tracked separately. |
+| Grok | Trusted vaults load `AGENTS.md` | Trust once with `--trust` or `/hooks-trust`; deeper integration is tracked separately. |
 
-Two things are Claude Code-specific: the `~/.claude/` auto-memory loader, and the `obsidian-mind` mod in `.claude/skills/obsidian-mind/`, which on Claude Code 2.1.287+ delivers the session context as an instruction file and presents the Stop report. Neither is needed elsewhere: the mod only changes how the settings hooks' output reaches a Claude Code session, and every other agent runs those same hooks directly. Everything else (hooks, commands, subagent prompts, vault memory) is portable.
+The shared hook scripts live in `.claude/scripts/`; command prompts live in `.claude/commands/`. Their support varies by agent. Read `ARCHITECTURE.md` → *Multi-Agent Portability* when wiring an agent or debugging lifecycle behavior.
 
-## Setup
+## Rules For This Repository
 
-**Codex CLI**: Reads `AGENTS.md` natively. For direct access to `CLAUDE.md`, add to `~/.codex/config.toml`:
-```toml
-project_doc_fallback_filenames = ["CLAUDE.md"]
-```
-
-**Gemini CLI**: Reads `GEMINI.md` natively. For direct access to `CLAUDE.md`, add to `~/.gemini/settings.json`:
-```json
-{ "context": { "fileName": ["GEMINI.md", "CLAUDE.md"] } }
-```
-
-**Other agents** (Cursor, Windsurf, Copilot): Read `AGENTS.md` for vault conventions. Hook support varies by agent.
-
-For more information, see the [README](README.md).
+Follow `CONTRIBUTING.md`. Keep changes focused, do not update release metadata or `CHANGELOG.md`, and run `cd .claude/scripts && npm test` before proposing a change.

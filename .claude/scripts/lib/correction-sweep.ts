@@ -3,7 +3,7 @@
  *
  * WHY THIS EXISTS
  *
- * `CLAUDE.md` Law 2 instructs a sweep: when a fact is corrected, find every
+ * `AGENTS.md` Law 2 instructs a sweep: when a fact is corrected, find every
  * restatement and fix them all in the same pass. Nothing in the vault helped do
  * it. Every existing check is about a note's SHAPE — frontmatter present,
  * wikilinks resolve, size under the split threshold, orphans, stale actives —
@@ -45,7 +45,7 @@
  * TWO RULES DECIDED DELIBERATELY, NOT INHERITED
  *
  * 1. Historical is keyed on BOTH the naming convention AND explicit signals.
- *    The convention alone (`CLAUDE.md` § Creating Notes: point-in-time notes
+ *    The convention alone (`AGENTS.md` § Creating Notes: point-in-time notes
  *    carry a date, living notes do not) is the right instinct but too fragile to
  *    be the only signal — it silently misclassifies the moment someone names a
  *    file differently. Frontmatter `status` and the archive/log directories say

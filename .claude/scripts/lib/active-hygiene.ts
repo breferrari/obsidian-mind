@@ -407,7 +407,7 @@ function findOversizedNotes(
 			} else if (e.isFile() && isMarkdownFilename(e.name)) {
 				if (isMonolithExempt(e.name)) continue;
 				// Root-level infrastructure docs (README + translations,
-				// CLAUDE.md, …) are repo files, not vault notes — their bulk
+				// AGENTS.md, …) are repo files, not vault notes — their bulk
 				// is not a split candidate.
 				if (relDir === "" && isInfraFilename(e.name, infraRootFilenames))
 					continue;

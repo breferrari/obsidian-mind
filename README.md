@@ -127,7 +127,7 @@ Or use it as a **GitHub template**. Skip the wizard, get the bare template. Then
 QMD is where most of the agent's retrieval intelligence comes from. Optional in the strict sense — the vault falls back to grep + the Obsidian CLI — but the experience is meaningfully better with it:
 
 - **Semantic recall.** Find "what did we decide about caching" even when the note is titled "Redis Migration ADR."
-- **Brain topics available on demand.** Claude is instructed (via `CLAUDE.md`) to consult `brain/` guidance through QMD when the conversation touches a listed topic.
+- **Brain topics available on demand.** Every supported agent is instructed through `AGENTS.md` to consult `brain/` guidance through QMD when the conversation touches a listed topic.
 - **Subagents get sharper context.** `context-loader`, `review-prep`, `brag-spotter`, and friends consult QMD first, then fall back to grep.
 - **Native agent tools via MCP.** Registered as a [Model Context Protocol](https://modelcontextprotocol.io) server in `.mcp.json` — when QMD is installed, `mcp__qmd__query`, `mcp__qmd__get`, and `mcp__qmd__multi_get` appear in the agent's tool menu alongside Read and Edit. Subagents, slash commands, and the main conversation all call the same typed contract. Add another MCP-aware tool later (a database, a ticketing system, a calendar) and it plugs in the same way.
 
@@ -193,7 +193,7 @@ The `om` server sends a lexical *and* a vector sub-query, so retrieval finds the
 
 **Vault-first memory** keeps context across sessions and machines. All durable knowledge lives in `brain/` topic notes (git-tracked, Obsidian-browsable, linked). Claude Code's `MEMORY.md` (`~/.claude/`) is an auto-loaded index that points to vault locations — never the storage itself. This means memories survive machine changes and are part of the graph.
 
-**Sessions have a designed lifecycle.** The `SessionStart` hook auto-injects your North Star goals, active projects, recent changes, open tasks, and the full vault file listing — your agent starts every session with context, not a blank slate. At the end, say "wrap up" and the agent runs `/om-wrap-up` — verifying notes, updating indexes, and spotting uncaptured wins. The `CLAUDE.md` operating manual governs everything in between: where to file things, how to link, when to split a note, what to do with decisions and incidents.
+**Sessions have a designed lifecycle.** The `SessionStart` hook auto-injects your North Star goals, active projects, recent changes, open tasks, and the full vault file listing — your agent starts every session with context, not a blank slate. At the end, say "wrap up" and the agent runs `/om-wrap-up` — verifying notes, updating indexes, and spotting uncaptured wins. `AGENTS.md` governs everything in between: where to file things, how to link, when to split a note, what to do with decisions and incidents.
 
 ### 🔗 Hooks
 
@@ -214,7 +214,7 @@ Five lifecycle hooks handle routing automatically:
 
 On Claude Code 2.1.287 or later, the vault also ships a mod: `.claude/skills/obsidian-mind/`, a plugin whose code runs inside Claude Code. It runs the vault's own hook scripts and changes only how their output reaches the session:
 
-- **Session context arrives as an instruction file**, the way `CLAUDE.md` does. It is re-read whole after compaction and `/clear` (as hook output it shrinks to a pointer), it reaches general-purpose subagents (hook output never does), and it is not cut at Claude Code's 10,000-character hook limit. Its budget is `eager_layer_instruction_budget_bytes` in `vault-manifest.json`; sections that never shrink, such as open tasks, can still take it past that. `/memory` lists it as `.claude/session-context.md`.
+- **Session context arrives as an instruction file**, the way `AGENTS.md` does. It is re-read whole after compaction and `/clear` (as hook output it shrinks to a pointer), it reaches general-purpose subagents (hook output never does), and it is not cut at Claude Code's 10,000-character hook limit. Its budget is `eager_layer_instruction_budget_bytes` in `vault-manifest.json`; sections that never shrink, such as open tasks, can still take it past that. `/memory` lists it as `.claude/session-context.md`.
 - **The Stop report becomes one line under the answer.** When the findings change you see `obsidian-mind: vault check: …` beneath Claude's reply, and Claude gets the full report with your next message, unseen. A finding marked urgent gets Claude's attention at once instead, once per message you send (a second one waits inside the report); the template's own report has none.
 
 For each event it handles, the mod tells the matching hook to stand down. Wherever the mod does not load, the hooks run exactly as before: Codex and Gemini, older Claude Code, a session started in a vault subfolder (launch from the vault root, or `/cd` there and `/clear`), or a folder you have not trusted. It loads only after you accept Claude Code's trust prompt for the vault.
@@ -236,7 +236,7 @@ obsidian-mind does **not** dump your entire vault into context. It uses tiered l
 
 | Tier | What | When | Cost |
 |------|------|------|------|
-| **Always** | `CLAUDE.md` + SessionStart context (North Star excerpt, git summary, tasks, vault file listing) | Session start | capped by the manifest budget, itself held under Claude Code's 10,000-character hook output cap; the meter reports the real size every session |
+| **Always** | `AGENTS.md` + SessionStart context (North Star excerpt, git summary, tasks, vault file listing) | Session start | capped by the manifest budget, itself held under Claude Code's 10,000-character hook output cap; the meter reports the real size every session |
 | **On-demand** | QMD semantic search results | When the agent needs specific context | Targeted |
 | **Triggered** | Classification routing hints | Every message | ~100 tokens |
 | **Triggered** | PostToolUse validation | After `.md` writes | ~200 tokens |
@@ -246,15 +246,15 @@ SessionStart loads **lightweight context** — small excerpts from key files, fi
 
 ### 🌐 Using with Other Agents
 
-obsidian-mind works with Claude Code, Codex CLI, and Gemini CLI. The vault conventions in `CLAUDE.md`, the hook scripts in `.claude/scripts/`, and the commands in `.claude/commands/` are all agent-agnostic — pure Markdown, TypeScript, and shell with no SDK dependencies.
+obsidian-mind works with Claude Code, Codex CLI, Gemini CLI, Antigravity, and Grok. The vault conventions in `AGENTS.md`, the hook scripts in `.claude/scripts/`, and the commands in `.claude/commands/` are agent-agnostic — pure Markdown, TypeScript, and shell with no SDK dependencies.
 
 **Claude Code** — full support. Hooks, commands, subagents, and the memory system all work out of the box.
 
 **Codex CLI** — reads `AGENTS.md` natively. Hook config at `.codex/hooks.json` wires the same hook scripts Claude Code uses — session context, message classification, and write validation work automatically. Commands work as regular prompts (e.g. type `om-standup` without the `/` prefix).
 
-**Gemini CLI** — reads `GEMINI.md` natively. Hook config at `.gemini/settings.json` maps Gemini's event names to the shared hook scripts.
+**Gemini CLI** — `.gemini/settings.json` loads `AGENTS.md` and maps Gemini's event names to the shared hook scripts. Start sessions at the vault root; its root settings are not applied from a subfolder.
 
-**Other agents** (Cursor, Windsurf, GitHub Copilot, JetBrains AI) — read `AGENTS.md` for vault conventions. Hook support varies by agent.
+**Antigravity** reads `AGENTS.md` natively; deeper hook, skill, command, and MCP support is tracked separately. **Grok** reads it after the vault is trusted (`--trust` or `/hooks-trust`); its deeper support is tracked separately. Other agents may read `AGENTS.md`; hook support varies by agent.
 
 > [!NOTE]
 > Hooks, commands, subagent prompts, and vault memory (`brain/`) are all agent-agnostic. Only the `~/.claude/` auto-memory loader is Claude Code-specific. See `AGENTS.md` for the full portability guide.
@@ -296,7 +296,7 @@ Note the cost: that path is **absolute and machine-specific**, so committing it 
 
 ### Step 2 — point the consuming project at the vault
 
-Add this to that project's own `CLAUDE.md`, filling in the triggers:
+Add this to that project's own `AGENTS.md`, filling in the triggers:
 
 ```markdown
 ## Where design decisions live
@@ -491,9 +491,9 @@ The `bases/` folder contains database views that query your notes' frontmatter p
 
 ```
 Home.md                 Vault entry point — embedded Base views, quick links
-CLAUDE.md               Operating manual — read by your agent every session
+AGENTS.md               Operating manual — read by your agent every session
 AGENTS.md               Multi-agent guide — Codex, Cursor, Windsurf, etc.
-GEMINI.md               Multi-agent guide — Gemini CLI
+AGENTS.md               Multi-agent guide — Gemini CLI
 vault-manifest.json     Template metadata — version, structure, schemas
 .shardmindignore        Files excluded from `shardmind install` (CONTRIBUTING, translations, marketing media)
 CHANGELOG.md            Version history
@@ -595,11 +595,11 @@ This is a starting point. Adapt it to how you work:
 | Your org | `org/` — add your manager, team, key collaborators |
 | Your competencies | `perf/competencies/` — match your org's framework |
 | Your tools | `.claude/commands/` — edit for your GitHub org, Slack workspace |
-| Your conventions | `CLAUDE.md` — the operating manual, evolve it as you go |
+| Your conventions | `AGENTS.md` — the operating manual, evolve it as you go |
 | Your domain | Add folders, subagents in `.claude/agents/`, or classification rules in `.claude/scripts/` |
 
 > [!IMPORTANT]
-> `CLAUDE.md` is the operating manual. When you change conventions, update it — your agent reads it every session.
+> `AGENTS.md` is the operating manual. When you change conventions, update it — your agent reads it every session.
 
 ---
 
@@ -624,7 +624,7 @@ cd your-vault
 git pull origin main
 ```
 
-New files (`AGENTS.md`, `GEMINI.md`, `.codex/`, `.gemini/`) appear automatically and hook scripts are updated in place.
+New files (`AGENTS.md`, `AGENTS.md`, `.codex/`, `.gemini/`) appear automatically and hook scripts are updated in place.
 
 ### Updating a fork
 
@@ -636,7 +636,7 @@ git fetch upstream
 git merge upstream/main
 ```
 
-Resolve any conflicts in files you customized (typically `CLAUDE.md`, `brain/` notes). Infrastructure files (`.claude/scripts/`, `.codex/`, `.gemini/`) should merge cleanly.
+Resolve any conflicts in files you customized (typically `AGENTS.md`, `brain/` notes). Infrastructure files (`.claude/scripts/`, `.codex/`, `.gemini/`) should merge cleanly.
 
 ### Adopting an existing clone into ShardMind (v5.x → v6)
 
