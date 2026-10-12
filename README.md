@@ -698,6 +698,8 @@ Your old vault is **never modified**. Use `--dry-run` to preview the plan withou
 
 **Gemini CLI loads no instructions when started in a vault subfolder.** Gemini's context search walks up the folders, but its settings lookup does not, so a session started in a subfolder never reads the vault's `.gemini/settings.json` and never learns to look for `AGENTS.md`. Start Gemini from the vault root.
 
+**Gemini ignores what you added to `GEMINI.md`.** Gemini now reads `AGENTS.md` (through `.gemini/settings.json`), so a leftover `GEMINI.md` is never loaded. The hygiene flags say `GEMINI.md present beside AGENTS.md`, and `/om-vault-upgrade` lists it under **Move out**. Move your additions to `AGENTS.md`, then delete it.
+
 **Grok reads nothing from the vault.** Grok loads project instructions only from a trusted folder. Trust the vault once: run `/hooks-trust` in a Grok session, or launch with `--trust`. One grant covers MCP, LSP, hooks, project instructions and project skills.
 
 ---

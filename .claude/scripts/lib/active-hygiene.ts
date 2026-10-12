@@ -44,7 +44,14 @@
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync, type Dirent } from "node:fs";
 import { join } from "node:path";
-import { AGENTS_MD_FLAG_BYTES, INSTRUCTION_FILE, isRetiredInstructionFile, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
+import {
+	AGENTS_MD_FLAG_BYTES,
+	CLAUDE_MD,
+	GEMINI_MD,
+	INSTRUCTION_FILE,
+	isRetiredInstructionFile,
+	RETIRED_INSTRUCTION_FILES,
+} from "./instruction-files.ts";
 import { escapeRegex } from "./regex.ts";
 import { parsePromotedMarker, type PromotedRef } from "./memory-promoted.ts";
 import {
@@ -137,6 +144,8 @@ export type ActiveHygieneReport = {
 	readonly memoryInbox: MemoryInboxPressure | null;
 	/** A CLAUDE.md at the vault root beside AGENTS.md, which Claude Code reads in its place. */
 	readonly leftoverClaudeMd: boolean;
+	/** A GEMINI.md at the vault root beside AGENTS.md: Gemini reads AGENTS.md now, so it is never loaded. */
+	readonly leftoverGeminiMd: boolean;
 	/** AGENTS.md's size once it reaches AGENTS_MD_FLAG_BYTES, else null. `sizeKb`, so a report's identity ignores it (#252). */
 	readonly agentsMd: { readonly sizeKb: number } | null;
 };
@@ -670,7 +679,8 @@ export function scanActiveHygiene(
 		openLoops: findOpenLoops(root, nowMs, openLoopConfig),
 		inboxPressure: findInboxPressure(root, nowMs),
 		memoryInbox: findMemoryInbox(root, memoryRoot, nowMs),
-		leftoverClaudeMd: hasLeftoverClaudeMd(root),
+		leftoverClaudeMd: besideAgentsMd(root, CLAUDE_MD),
+		leftoverGeminiMd: besideAgentsMd(root, GEMINI_MD),
 		agentsMd: agentsMdPastFlag(root),
 	};
 }
@@ -719,8 +729,8 @@ function agentsMdPastFlag(root: string): { sizeKb: number } | null {
  * Both instruction files at the root. CLAUDE.md alone is a vault that has not
  * upgraded yet, and its CLAUDE.md is still the file that carries everything.
  */
-function hasLeftoverClaudeMd(root: string): boolean {
-	return existsSync(join(root, INSTRUCTION_FILE)) && RETIRED_INSTRUCTION_FILES.some((f) => existsSync(join(root, f)));
+function besideAgentsMd(root: string, retired: string): boolean {
+	return existsSync(join(root, INSTRUCTION_FILE)) && existsSync(join(root, retired));
 }
 
 /**
@@ -760,14 +770,16 @@ const claims = {
 	inbox: (n: number) => `${n} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days`,
 	memoryInbox: (n: number) => `${n} cross-repo memory capture(s) awaiting review`,
 	leftoverClaudeMd: () => "CLAUDE.md present beside AGENTS.md",
+	leftoverGeminiMd: () => "GEMINI.md present beside AGENTS.md",
 	agentsMd: (sizeKb: number) => `AGENTS.md is ${sizeKb}KB`,
 };
 
 /** The claim of every finding in `report`, in the order the formatter lists them. */
 export function hygieneClaims(report: ActiveHygieneReport): string[] {
-	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox, leftoverClaudeMd, agentsMd } = report;
+	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox, leftoverClaudeMd, leftoverGeminiMd, agentsMd } = report;
 	const out: string[] = [];
 	if (leftoverClaudeMd) out.push(claims.leftoverClaudeMd());
+	if (leftoverGeminiMd) out.push(claims.leftoverGeminiMd());
 	if (agentsMd !== null) out.push(claims.agentsMd(agentsMd.sizeKb));
 	if (completedInActive.length > 0) out.push(claims.completed(completedInActive.length));
 	if (ungroupedClusters.length > 0) out.push(claims.clusters());
@@ -791,6 +803,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		inboxPressure,
 		memoryInbox,
 		leftoverClaudeMd,
+		leftoverGeminiMd,
 		agentsMd,
 	} = report;
 	if (
@@ -801,6 +814,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		inboxPressure === null &&
 		memoryInbox === null &&
 		!leftoverClaudeMd &&
+		!leftoverGeminiMd &&
 		agentsMd === null
 	) {
 		return [];
@@ -812,6 +826,13 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (leftoverClaudeMd) {
 		lines.push(
 			`⚠️  ${claims.leftoverClaudeMd()} — Claude Code reads CLAUDE.md and skips AGENTS.md; move your additions to .claude/rules/ and delete it.`,
+		);
+	}
+
+	if (leftoverGeminiMd) {
+		if (lines.length > 0) lines.push("");
+		lines.push(
+			`⚠️  ${claims.leftoverGeminiMd()} — Gemini no longer reads GEMINI.md: .gemini/settings.json points it at AGENTS.md. Move anything you added there to AGENTS.md and delete it.`,
 		);
 	}
 

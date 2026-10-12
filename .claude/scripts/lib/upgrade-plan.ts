@@ -16,7 +16,7 @@
  * supplies the hash of each file at the release the vault was cloned from.
  */
 
-import { INSTRUCTION_FILE, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
+import { CLAUDE_MD, GEMINI_SETTINGS, INSTRUCTION_FILE, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
 
 /** ShardMind's `--json` envelope. */
 export type ShardmindEnvelope<T> =
@@ -112,15 +112,18 @@ export function untouchedRetiredFiles(
 }
 
 /**
- * Whether an adopt leaves the release's AGENTS.md in place: it already
- * matches the release, or it is behind and the update writes it. Ahead or a
- * conflict, it may stay the user's own (old) copy.
+ * Whether an adopt leaves the release's instruction wiring in place: AGENTS.md
+ * and, where the Gemini module is installed, .gemini/settings.json each
+ * already match the release, or are behind and the update writes them. Ahead
+ * or a conflict, either may stay the user's own old copy: an old AGENTS.md
+ * only points at CLAUDE.md, and old settings send Gemini to GEMINI.md, which
+ * does the same.
  */
-export function instructionFileReady(plan: AdoptPlan, report: UpgradeReport): boolean {
-	return (
-		report.behind.includes(INSTRUCTION_FILE) ||
-		plan.files.some((f) => f.path === INSTRUCTION_FILE && f.classification === "matches")
-	);
+export function instructionFilesReady(plan: AdoptPlan, report: UpgradeReport): boolean {
+	const ready = (path: string) =>
+		report.behind.includes(path) || plan.files.some((f) => f.path === path && f.classification === "matches");
+	const hasGemini = plan.files.some((f) => f.path === GEMINI_SETTINGS);
+	return ready(INSTRUCTION_FILE) && (!hasGemini || ready(GEMINI_SETTINGS));
 }
 
 /**
@@ -218,23 +221,39 @@ export function classifyAdopt(plan: AdoptPlan, baseHash: (path: string) => strin
 }
 
 /**
- * The vault's AGENTS.md is a conflict (both sides changed it) while a retired
- * instruction file leaves (behind or a move). Changed by the user on top of
- * the old release, it may be the old one that only points at CLAUDE.md, so it
- * has to be settled first. Ahead never qualifies: ahead means the template
- * did not change AGENTS.md between the two releases, and the release that
- * retires CLAUDE.md does change it, so an ahead AGENTS.md is the user's edit
- * of the current one.
+ * Files to resolve to the release's version before the retired instruction
+ * files go, in that order. Each is a conflict (both sides changed it) while a
+ * retired file leaves (behind or a move); changed by the user on top of the
+ * old release, it may still be the old wiring:
+ * - AGENTS.md, whose old version only points at CLAUDE.md, when CLAUDE.md
+ *   is leaving;
+ * - .gemini/settings.json, whose old version names no context file, so
+ *   Gemini reads GEMINI.md (which only points at CLAUDE.md), when either is
+ *   leaving.
+ * Ahead never qualifies: ahead means the template did not change the file
+ * between the two releases, and the release that retires CLAUDE.md changes
+ * both, so an ahead copy is the user's edit of the current one.
  */
-export function mustSettleAgentsMd(r: UpgradeReport): boolean {
-	return (
-		r.conflicts.includes(INSTRUCTION_FILE) &&
-		RETIRED_INSTRUCTION_FILES.some((p) => r.behind.includes(p) || r.move.includes(p))
-	);
+export function settleFirst(r: UpgradeReport): string[] {
+	const leaving = (p: string) => r.behind.includes(p) || r.move.includes(p);
+	const out: string[] = [];
+	if (r.conflicts.includes(INSTRUCTION_FILE) && leaving(CLAUDE_MD)) out.push(INSTRUCTION_FILE);
+	if (r.conflicts.includes(GEMINI_SETTINGS) && RETIRED_INSTRUCTION_FILES.some(leaving)) out.push(GEMINI_SETTINGS);
+	return out;
 }
 
-const SETTLE_AGENTS_MD =
-	"\n### Settle AGENTS.md first\nYour AGENTS.md conflicts with the release's, and CLAUDE.md is being retired. The old AGENTS.md only points at CLAUDE.md, so once CLAUDE.md is gone every agent is left without the vault's conventions. Resolve AGENTS.md to the release's version (then re-add your own changes to it, or to `.claude/rules/local.md`). A managed update deletes an untouched CLAUDE.md in the same run, so resolve it there; in an unmanaged clone, CLAUDE.md stays until AGENTS.md is settled.\n";
+const SETTLE_WHY: Readonly<Record<string, string>> = {
+	[INSTRUCTION_FILE]:
+		"your copy may be the old one, which only points at CLAUDE.md, so once CLAUDE.md is gone every agent is left without the vault's conventions. Take the release's AGENTS.md, then re-add your own changes to it (or to `.claude/rules/local.md`).",
+	[GEMINI_SETTINGS]:
+		"your copy may name no context file, so Gemini keeps reading GEMINI.md, which only points at CLAUDE.md. Take the release's version, which sets `context.fileName` to AGENTS.md, then re-add your own settings.",
+};
+
+function settleSection(files: readonly string[]): string {
+	if (files.length === 0) return "";
+	const lines = files.map((p) => `- \`${p}\` conflicts with the release's: ${SETTLE_WHY[p]}`);
+	return `\n### Settle these first\nResolve each to the release's version in the same update, before the retired instruction files go. A managed update deletes an untouched CLAUDE.md or GEMINI.md in that run; an unmanaged clone keeps them until these are settled.\n${lines.join("\n")}\n`;
+}
 
 /** The report as markdown, for the user. Every list in full: a cut list would hide a decision. */
 export function formatUpgradeReport(r: UpgradeReport, from: string, to: string): string {
@@ -243,13 +262,13 @@ export function formatUpgradeReport(r: UpgradeReport, from: string, to: string):
 	return [
 		`## Upgrade plan: ${from} → ${to}`,
 		`${r.unchanged} file(s) need no judgment.`,
-		mustSettleAgentsMd(r) ? SETTLE_AGENTS_MD : "",
+		settleSection(settleFirst(r)),
 		section("Behind", "The template changed these and you never did. Taking the new version loses nothing.", r.behind),
 		section("Ahead — keep, and consider upstreaming", "Changed only in this vault. Kept as yours.", r.ahead),
 		section("Merged — review", "Changed on both sides; merged without conflict.", r.merged),
 		section(
 			"Move out — retired instruction file",
-			"Claude Code reads CLAUDE.md and skips AGENTS.md while this file is here. Settle `AGENTS.md` first if this report says so. Then move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping it under 23 KB), and delete the file. If you never edited it, just delete it. Nothing is merged automatically.",
+			"Claude Code reads CLAUDE.md and skips AGENTS.md while it is here, and Gemini no longer reads GEMINI.md, so anything you added there is lost. Settle the files this report lists first, if any. Then move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping it under 23 KB), and delete the file. If you never edited it, just delete it. Nothing is merged automatically.",
 			r.move,
 		),
 		section("Conflicts — your decision", "Changed on both sides (or a new template file where you already have one).", r.conflicts),

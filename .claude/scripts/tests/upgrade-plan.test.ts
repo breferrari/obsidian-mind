@@ -15,8 +15,8 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
-	instructionFileReady,
-	mustSettleAgentsMd,
+	instructionFilesReady,
+	settleFirst,
 	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
 	type AdoptPlan,
@@ -191,9 +191,41 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 			files: [{ path: "AGENTS.md", classification, shardHash: "h", volatile: false }],
 		});
 		const report = (behind: string[]) => ({ behind, ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 });
-		assert.equal(instructionFileReady(agents("matches"), report([])), true);
-		assert.equal(instructionFileReady(agents("differs"), report(["AGENTS.md"])), true);
-		assert.equal(instructionFileReady(agents("differs"), report([])), false);
+		assert.equal(instructionFilesReady(agents("matches"), report([])), true);
+		assert.equal(instructionFilesReady(agents("differs"), report(["AGENTS.md"])), true);
+		assert.equal(instructionFilesReady(agents("differs"), report([])), false);
+	});
+
+	test("a retired file is not deleted while .gemini/settings.json is still the user's old one", () => {
+		// The old settings name no context file, so Gemini reads GEMINI.md, and
+		// the old GEMINI.md only says "read CLAUDE.md".
+		const plan = (settings: AdoptPlan["files"][number]["classification"]): AdoptPlan => ({
+			dryRun: true,
+			files: [
+				{ path: "AGENTS.md", classification: "matches", shardHash: "h", volatile: false },
+				{ path: ".gemini/settings.json", classification: settings, shardHash: "s", volatile: false },
+			],
+		});
+		const report = (behind: string[]) => ({ behind, ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 });
+		assert.equal(instructionFilesReady(plan("matches"), report([])), true);
+		assert.equal(instructionFilesReady(plan("differs"), report([".gemini/settings.json"])), true);
+		assert.equal(instructionFilesReady(plan("differs"), report([])), false);
+		// A vault without the Gemini module has no settings file to wait for.
+		assert.equal(instructionFilesReady({ dryRun: true, files: [plan("matches").files[0]!] }, report([])), true);
+	});
+
+	test("managed: a GEMINI.md the user edited, which ShardMind keeps as theirs, is a move, not 'unchanged'", () => {
+		// Gemini now reads AGENTS.md through .gemini/settings.json, so an edited
+		// GEMINI.md is no longer loaded: its additions would vanish silently.
+		const plan: UpdatePlan = { dryRun: true, files: [{ path: "GEMINI.md", action: "keep_as_user" }] };
+		const r = withRetiredInstructionFiles(classifyUpdate(plan, null), present(["GEMINI.md"]));
+		assert.deepEqual(r.move, ["GEMINI.md"]);
+		assert.equal(r.unchanged, 0);
+	});
+
+	test("unmanaged: a GEMINI.md still byte-identical to the base release is behind, like CLAUDE.md", () => {
+		const untouched = untouchedRetiredFiles(() => "h-template", (p) => (p === "GEMINI.md" ? "h-template" : null), true);
+		assert.deepEqual(untouched, ["GEMINI.md"]);
 	});
 
 	test("a CLAUDE.md the update deletes stays behind, whatever AGENTS.md is: the report says what the update does", () => {
@@ -207,7 +239,7 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		}
 	});
 
-	test("while AGENTS.md is ahead or a conflict and CLAUDE.md is retiring, the report says to settle AGENTS.md first", () => {
+	test("while AGENTS.md is a conflict and CLAUDE.md is retiring, the report says to settle AGENTS.md first", () => {
 		// The vault's AGENTS.md may be the old one that only says "read
 		// CLAUDE.md": once CLAUDE.md is gone, every agent is left with nothing.
 		const empty = { behind: [], ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 };
@@ -215,15 +247,28 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 			{ ...empty, behind: ["CLAUDE.md"], conflicts: ["AGENTS.md"] },
 			{ ...empty, move: ["CLAUDE.md"], conflicts: ["AGENTS.md"] },
 		]) {
-			assert.equal(mustSettleAgentsMd(report), true);
+			assert.deepEqual(settleFirst(report), ["AGENTS.md"]);
 			const out = formatUpgradeReport(report, "v9.1.0", "v10.0.0");
-			assert.match(out, /### Settle AGENTS\.md first/);
-			assert.match(out, /only points at CLAUDE\.md/);
+			assert.match(out, /### Settle these first/);
+			assert.match(out, /`AGENTS\.md`[^\n]*only points at CLAUDE\.md/);
 			// First, before any section that acts on CLAUDE.md.
-			assert.ok(out.indexOf("Settle AGENTS.md first") < out.indexOf("`CLAUDE.md`"));
+			assert.ok(out.indexOf("Settle these first") < out.indexOf("- `CLAUDE.md`"));
 		}
-		assert.doesNotMatch(formatUpgradeReport({ ...empty, behind: ["CLAUDE.md"] }, "v9.1.0", "v10.0.0"), /Settle AGENTS\.md first/);
-		assert.doesNotMatch(formatUpgradeReport({ ...empty, conflicts: ["AGENTS.md"] }, "v9.1.0", "v10.0.0"), /Settle AGENTS\.md first/);
+		assert.doesNotMatch(formatUpgradeReport({ ...empty, behind: ["CLAUDE.md"] }, "v9.1.0", "v10.0.0"), /Settle these first/);
+		assert.doesNotMatch(formatUpgradeReport({ ...empty, conflicts: ["AGENTS.md"] }, "v9.1.0", "v10.0.0"), /Settle these first/);
+	});
+
+	test("while .gemini/settings.json is a conflict and a retired file is leaving, the report says to settle it first", () => {
+		// The user's old settings name no context file, so Gemini keeps reading
+		// GEMINI.md, which only points at CLAUDE.md.
+		const empty = { behind: [], ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 };
+		for (const leaving of [{ behind: ["CLAUDE.md"] }, { move: ["GEMINI.md"] }]) {
+			const report = { ...empty, ...leaving, conflicts: [".gemini/settings.json"] };
+			assert.deepEqual(settleFirst(report), [".gemini/settings.json"]);
+			assert.match(formatUpgradeReport(report, "v9.1.0", "v10.0.0"), /`\.gemini\/settings\.json`[^\n]*context\.fileName/);
+		}
+		const both = { ...empty, behind: ["CLAUDE.md"], conflicts: ["AGENTS.md", ".gemini/settings.json"] };
+		assert.deepEqual(settleFirst(both), ["AGENTS.md", ".gemini/settings.json"]);
 	});
 
 	test("an ahead AGENTS.md is the user's edit of the current release, never the old pointer: no settle warning", () => {
@@ -231,8 +276,17 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		// releases, and the release that retires CLAUDE.md does change it.
 		const empty = { behind: [], ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 };
 		const report = { ...empty, move: ["CLAUDE.md"], ahead: ["AGENTS.md"] };
-		assert.equal(mustSettleAgentsMd(report), false);
-		assert.doesNotMatch(formatUpgradeReport(report, "v10.0.0", "v10.1.0"), /Settle AGENTS\.md first/);
+		assert.deepEqual(settleFirst(report), []);
+		assert.doesNotMatch(formatUpgradeReport(report, "v10.0.0", "v10.1.0"), /Settle these first/);
+	});
+
+	test("the Move out text names what each retired file does wrong", () => {
+		const out = formatUpgradeReport(
+			{ behind: [], ahead: [], merged: [], conflicts: [], added: [], move: ["CLAUDE.md", "GEMINI.md"], unchanged: 0 },
+			"v9.1.0",
+			"v10.0.0",
+		);
+		assert.match(out, /Gemini no longer reads GEMINI\.md/);
 	});
 
 	test("the Move out text covers an untouched CLAUDE.md and an AGENTS.md that is not the new one yet", () => {
@@ -242,7 +296,7 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 			"v10.0.0",
 		);
 		assert.match(out, /If you never edited it, just delete it/);
-		assert.match(out, /Settle `AGENTS\.md` first if this report says so/);
+		assert.match(out, /Settle the files this report lists first, if any/);
 	});
 
 	test("no CLAUDE.md in the vault: nothing to move", () => {

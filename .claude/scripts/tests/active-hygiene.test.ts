@@ -433,6 +433,7 @@ describe("scanActiveHygiene — detectors", () => {
 			inboxPressure: null,
 			memoryInbox: { count: 4, oldestDays: 2, namedOnly: 0 },
 			leftoverClaudeMd: false,
+			leftoverGeminiMd: false,
 			agentsMd: null,
 		});
 		const text = lines.join("\n");
@@ -455,6 +456,7 @@ describe("scanActiveHygiene — detectors", () => {
 				inboxPressure: null,
 				memoryInbox: null,
 				leftoverClaudeMd: false,
+				leftoverGeminiMd: false,
 				agentsMd: null,
 			});
 		const atCap = report(HYGIENE_LIST_CAP);
@@ -550,6 +552,7 @@ describe("formatActiveHygiene", () => {
 			inboxPressure: null,
 			memoryInbox: null,
 			leftoverClaudeMd: false,
+			leftoverGeminiMd: false,
 			agentsMd: null,
 		});
 		const text = lines.join("\n");
@@ -612,6 +615,18 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 				text,
 				/CLAUDE\.md present beside AGENTS\.md — Claude Code reads CLAUDE\.md and skips AGENTS\.md; move your additions to \.claude\/rules\/ and delete it\./,
 			);
+		});
+	});
+
+	test("flags a GEMINI.md beside AGENTS.md on its own: Gemini reads AGENTS.md now, so GEMINI.md is never loaded", () => {
+		withFiles(["AGENTS.md", "GEMINI.md"], (root) => {
+			const report = scanActiveHygiene(root, NOW, DEFAULTS);
+			assert.equal(report.leftoverGeminiMd, true);
+			assert.equal(report.leftoverClaudeMd, false, "a GEMINI.md is not a leftover CLAUDE.md");
+			assert.match(formatActiveHygiene(report).join("\n"), /GEMINI\.md present beside AGENTS\.md — Gemini no longer reads GEMINI\.md/);
+		});
+		withFiles(["AGENTS.md", "CLAUDE.md"], (root) => {
+			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverGeminiMd, false);
 		});
 	});
 

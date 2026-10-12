@@ -12,12 +12,13 @@
  *   `shardmind adopt <source> --from-version <v> --dry-run --yes --json`,
  *   fetches that release to hash each file's base, and classifies with
  *   `classifyAdopt`.
- * In both modes, a CLAUDE.md still in the vault is reported as a move (#321):
- * Claude Code reads it in place of AGENTS.md. In an unmanaged clone, one whose
+ * In both modes, a CLAUDE.md or GEMINI.md still in the vault is reported as a
+ * move (#321): Claude Code reads a CLAUDE.md in place of AGENTS.md, and
+ * Gemini no longer reads GEMINI.md. In an unmanaged clone, one whose
  * bytes are the release it was cloned from is behind instead, and
  * --apply-behind deletes it.
  * Prints the report (or, with --json, `{ mode, from, to, report,
- * settleAgentsMdFirst }`).
+ * settleFirst }`).
  *
  * --apply-behind (unmanaged clone only): writes the latest release's bytes
  * for every BEHIND file — one the user never changed — after checking each
@@ -42,8 +43,8 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
-	instructionFileReady,
-	mustSettleAgentsMd,
+	instructionFilesReady,
+	settleFirst,
 	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
 	type AdoptPlan,
@@ -176,7 +177,7 @@ function main(): void {
 				return existsSync(f) ? sha256(readFileSync(f)) : null;
 			};
 			report = classifyAdopt(plan.result, hashIn(base));
-			untouched = untouchedRetiredFiles(hashIn(vault), hashIn(base), instructionFileReady(plan.result, report));
+			untouched = untouchedRetiredFiles(hashIn(vault), hashIn(base), instructionFilesReady(plan.result, report));
 		} finally {
 			rmSync(base, { recursive: true, force: true });
 		}
@@ -209,7 +210,7 @@ function main(): void {
 
 	process.stdout.write(
 		asJson
-			? `${JSON.stringify({ mode, from, to, report, settleAgentsMdFirst: mustSettleAgentsMd(report) }, null, 2)}\n`
+			? `${JSON.stringify({ mode, from, to, report, settleFirst: settleFirst(report) }, null, 2)}\n`
 			: `${formatUpgradeReport(report, `v${from}`, `v${to}`)}\n`,
 	);
 }
