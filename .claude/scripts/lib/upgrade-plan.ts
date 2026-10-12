@@ -16,7 +16,7 @@
  * supplies the hash of each file at the release the vault was cloned from.
  */
 
-import { RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
+import { isRetiredInstructionFile, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
 
 /** ShardMind's `--json` envelope. */
 export type ShardmindEnvelope<T> =
@@ -88,7 +88,7 @@ const empty = (): { -readonly [K in keyof UpgradeReport]: K extends "unchanged" 
 	unchanged: 0,
 });
 
-/**
+/*
  * A retired instruction file (#321) the user edited is neither "ahead" (keep
  * it) nor a conflict to merge: Claude Code reads a CLAUDE.md in place of
  * AGENTS.md, so the user moves their additions out and deletes it.
@@ -96,7 +96,22 @@ const empty = (): { -readonly [K in keyof UpgradeReport]: K extends "unchanged" 
  * cleanly, and `withRetiredInstructionFiles` reports the ones still in the
  * vault. Adopt plans never list them: the release has no such file.
  */
-const isRetired = (path: string): boolean => RETIRED_INSTRUCTION_FILES.includes(path);
+
+/**
+ * Retired instruction files in an unmanaged clone whose bytes are still those
+ * of the release it was cloned from: the user never edited them, so they are
+ * behind (the update removes them), not a move. Adopt cannot say so itself,
+ * because the latest release has no such file.
+ */
+export function untouchedRetiredFiles(
+	vaultHash: (path: string) => string | null,
+	baseHash: (path: string) => string | null,
+): string[] {
+	return RETIRED_INSTRUCTION_FILES.filter((p) => {
+		const mine = vaultHash(p);
+		return mine !== null && mine === baseHash(p);
+	});
+}
 
 /**
  * `report` with every retired instruction file still in the vault listed
@@ -126,7 +141,7 @@ export function classifyUpdate(plan: UpdatePlan, status: StatusResult | null): U
 	const r = empty();
 	const modified = modifiedPaths(status);
 	for (const f of plan.files) {
-		if (isRetired(f.path) && f.action !== "delete") continue;
+		if (isRetiredInstructionFile(f.path) && f.action !== "delete") continue;
 		switch (f.action) {
 			case "overwrite":
 			case "restore_missing":
@@ -200,7 +215,7 @@ export function formatUpgradeReport(r: UpgradeReport, from: string, to: string):
 		section("Merged — review", "Changed on both sides; merged without conflict.", r.merged),
 		section(
 			"Move out — retired instruction file",
-			"Claude Code reads CLAUDE.md and skips AGENTS.md while this file is here. Move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it), then delete the file. Nothing is merged automatically.",
+			"Claude Code reads CLAUDE.md and skips AGENTS.md while this file is here. Move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping it under ~22 KB), then delete the file. Nothing is merged automatically.",
 			r.move,
 		),
 		section("Conflicts — your decision", "Changed on both sides (or a new template file where you already have one).", r.conflicts),

@@ -46,7 +46,7 @@ It then prints every file needing judgment, sorted into:
 | **Merged** | Changed on both sides, merged cleanly | Show the user the result to review |
 | **Conflicts** | Changed on both sides, or a new template file where you already have one | The user decides per file |
 | **New in the template** | Added | Taken as is |
-| **Move out** | A retired instruction file (`CLAUDE.md`) still in the vault | Claude Code reads it and skips `AGENTS.md`. With the user, move what they added to `.claude/rules/local.md` (Claude Code only) or `AGENTS.md` (every agent), then delete it. Nothing is merged automatically |
+| **Move out** | A retired instruction file (`CLAUDE.md`) still in the vault | Claude Code reads it and skips `AGENTS.md`. With the user, move what they added to `.claude/rules/local.md` (Claude Code only) or `AGENTS.md` (every agent; keep it under ~22 KB, where Antigravity stops reading at ~24,000 bytes), then delete it. Nothing is merged automatically |
 
 Show the report to the user. With `--dry-run`, stop here.
 

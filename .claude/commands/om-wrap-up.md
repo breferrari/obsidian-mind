@@ -92,6 +92,8 @@ Present a concise summary:
 
 ## Ending a Substantial Session
 
+*For a session that ends without this command. When `/om-wrap-up` is running, follow the workflow above and skip this section.*
+
 If `/om-wrap-up` is not invoked, at minimum do these before wrapping up:
 
 1. **Archive completed projects**: `git mv` from `work/active/` to `work/archive/YYYY/`, update `status: completed` (or use `/om-project-archive`)

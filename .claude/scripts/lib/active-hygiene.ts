@@ -44,7 +44,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join } from "node:path";
-import { INSTRUCTION_FILE, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
+import { INSTRUCTION_FILE, isRetiredInstructionFile, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
 import { escapeRegex } from "./regex.ts";
 import { parsePromotedMarker, type PromotedRef } from "./memory-promoted.ts";
 import {
@@ -422,7 +422,7 @@ function findOversizedNotes(
 				// which says to move it out, not to split it (#321).
 				if (
 					relDir === "" &&
-					(isInfraFilename(e.name, infraRootFilenames) || RETIRED_INSTRUCTION_FILES.includes(e.name))
+					(isInfraFilename(e.name, infraRootFilenames) || isRetiredInstructionFile(e.name))
 				)
 					continue;
 				try {
@@ -667,7 +667,7 @@ export function scanActiveHygiene(
  * upgraded yet, and its CLAUDE.md is still the file that carries everything.
  */
 function hasLeftoverClaudeMd(root: string): boolean {
-	return existsSync(join(root, "CLAUDE.md")) && existsSync(join(root, INSTRUCTION_FILE));
+	return existsSync(join(root, INSTRUCTION_FILE)) && RETIRED_INSTRUCTION_FILES.some((f) => existsSync(join(root, f)));
 }
 
 /**

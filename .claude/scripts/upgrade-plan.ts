@@ -13,7 +13,9 @@
  *   fetches that release to hash each file's base, and classifies with
  *   `classifyAdopt`.
  * In both modes, a CLAUDE.md still in the vault is reported as a move (#321):
- * Claude Code reads it in place of AGENTS.md.
+ * Claude Code reads it in place of AGENTS.md. In an unmanaged clone, one whose
+ * bytes are the release it was cloned from is behind instead, and
+ * --apply-behind deletes it.
  * Prints the report (or, with --json, `{ mode, from, to, report }`).
  *
  * --apply-behind (unmanaged clone only): writes the latest release's bytes
@@ -39,6 +41,7 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
+	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
 	type AdoptPlan,
 	type ShardmindEnvelope,
@@ -161,11 +164,17 @@ function main(): void {
 		const plan = shardmind<AdoptPlan>(vault, ["adopt", source, "--from-version", from, "--dry-run", "--yes", "--json"]);
 		if (!plan.ok) fail(`adopt plan: ${plan.error.message}${plan.error.hint ? ` — ${plan.error.hint}` : ""}`);
 		const base = cloneRelease(source, from);
+		// Retired instruction files the user never edited: the latest release
+		// has none, so applying "behind" for them means deleting them.
+		let untouched: string[] = [];
 		try {
-			report = classifyAdopt(plan.result, (p) => {
-				const f = join(base, p);
+			const hashIn = (dir: string) => (p: string) => {
+				const f = join(dir, p);
 				return existsSync(f) ? sha256(readFileSync(f)) : null;
-			});
+			};
+			report = classifyAdopt(plan.result, hashIn(base));
+			untouched = untouchedRetiredFiles(hashIn(vault), hashIn(base));
+			report = { ...report, behind: [...report.behind, ...untouched] };
 		} finally {
 			rmSync(base, { recursive: true, force: true });
 		}
@@ -175,6 +184,7 @@ function main(): void {
 			try {
 				const want = new Map(plan.result.files.map((f) => [f.path, f.shardHash]));
 				for (const p of report.behind) {
+					if (untouched.includes(p)) continue;
 					const bytes = readFileSync(join(latest, p));
 					if (sha256(bytes) !== want.get(p)) fail(`${p} at v${to} does not match adopt's plan; nothing more was written`);
 					writeFileSync(join(vault, p), bytes);
@@ -182,7 +192,10 @@ function main(): void {
 			} finally {
 				rmSync(latest, { recursive: true, force: true });
 			}
-			process.stderr.write(`upgrade-plan: wrote v${to} of ${report.behind.length} behind file(s)\n`);
+			for (const p of untouched) rmSync(join(vault, p));
+			process.stderr.write(
+				`upgrade-plan: wrote v${to} of ${report.behind.length - untouched.length} behind file(s), removed ${untouched.length} retired instruction file(s) you never edited\n`,
+			);
 		}
 	}
 

@@ -435,11 +435,19 @@ describe("version detection across the AGENTS.md release (#321)", () => {
 	// a fingerprint matches when every `exists` path is there and no `missing`
 	// path is; the newest match wins. Run here against the real manifest and
 	// this repo's own tree, so the entries the release depends on are pinned.
+	// Only the fingerprints up to v10.0 take part, and v10.0's own `missing`
+	// is ignored: a later release adds both, and neither changes how a v9.1
+	// or v10.0 vault is told apart.
 	type Fp = { exists: string[]; missing?: string[] };
 	const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-	const fingerprints = (
+	const all = (
 		JSON.parse(readFileSync(join(repoRoot, "vault-manifest.json"), "utf-8")) as { version_fingerprints: Record<string, Fp> }
 	).version_fingerprints;
+	const fingerprints: Record<string, Fp> = Object.fromEntries(
+		Object.entries(all)
+			.filter(([key]) => compareFingerprintKeys(key, "v10.0") <= 0)
+			.map(([key, fp]) => [key, key === "v10.0" ? { exists: fp.exists } : fp]),
+	);
 	/** This repo's tree, with some paths forced present or absent. */
 	const vault = (overrides: Record<string, boolean>) => (p: string) =>
 		p in overrides ? overrides[p]! : existsSync(join(repoRoot, p));
@@ -466,7 +474,8 @@ describe("version detection across the AGENTS.md release (#321)", () => {
 		assert.equal(detect(vault({ ...without(RULES), "CLAUDE.md": true, "GEMINI.md": true })), "v9.1");
 	});
 
-	test("the newest fingerprint is the open one, so the next release can close it", () => {
-		assert.equal(findLatestOpenFingerprint(fingerprints), "v10.0");
+	test("v9.1 is closed by a v10.0 marker, so the two never both match", () => {
+		const v91 = all["v9.1"]!;
+		assert.ok(v91.missing?.some((p) => all["v10.0"]!.exists.includes(p)), "v9.1's missing must name a file v10.0 requires");
 	});
 });

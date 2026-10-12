@@ -638,6 +638,16 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		});
 	});
 
+	test("where a large claude.md resolves as CLAUDE.md, it is the leftover flag only, never a note to SPLIT", () => {
+		withFiles(["AGENTS.md"], (root) => {
+			writeFileSync(join(root, "claude.md"), "x".repeat(MONOLITH_BYTES + 1000));
+			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
+			if (!existsSync(join(root, "CLAUDE.md"))) return; // case-sensitive filesystem: a plain note
+			assert.equal(report.leftoverClaudeMd, true);
+			assert.deepEqual(report.oversizedNotes, []);
+		});
+	});
+
 	test("silent for a vault that has not upgraded yet (CLAUDE.md, no AGENTS.md)", () => {
 		withFiles(["CLAUDE.md"], (root) => {
 			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverClaudeMd, false);

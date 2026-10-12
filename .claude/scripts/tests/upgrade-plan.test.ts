@@ -15,6 +15,7 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
+	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
 	type AdoptPlan,
 	type UpdatePlan,
@@ -150,6 +151,28 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		};
 		const r = withRetiredInstructionFiles(classifyAdopt(plan, () => null), present(["CLAUDE.md"]));
 		assert.deepEqual(r.move, ["CLAUDE.md"]);
+	});
+
+	test("unmanaged: a CLAUDE.md byte-identical to the release the vault was cloned from is behind (delete it), not a move", () => {
+		const hashes: Record<string, string> = { "CLAUDE.md": "h-template" };
+		const untouched = untouchedRetiredFiles(
+			(p) => hashes[p] ?? null,
+			(p) => (p === "CLAUDE.md" ? "h-template" : null),
+		);
+		assert.deepEqual(untouched, ["CLAUDE.md"]);
+		const plan: AdoptPlan = { dryRun: true, files: [] };
+		const r = withRetiredInstructionFiles(
+			{ ...classifyAdopt(plan, () => null), behind: untouched },
+			present(["CLAUDE.md"]),
+		);
+		assert.deepEqual(r.behind, ["CLAUDE.md"]);
+		assert.deepEqual(r.move, []);
+	});
+
+	test("unmanaged: an edited CLAUDE.md, or one the base release never had, is not untouched", () => {
+		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => "h-template"), []);
+		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => null), []);
+		assert.deepEqual(untouchedRetiredFiles(() => null, () => "h-template"), []);
 	});
 
 	test("no CLAUDE.md in the vault: nothing to move", () => {

@@ -9,3 +9,12 @@
 export const INSTRUCTION_FILE = "AGENTS.md";
 
 export const RETIRED_INSTRUCTION_FILES: readonly string[] = ["CLAUDE.md"];
+
+/**
+ * Whether a root file name is a retired instruction file, ignoring case:
+ * Windows and macOS resolve `claude.md` as `CLAUDE.md`, so an agent loads it.
+ */
+export function isRetiredInstructionFile(name: string): boolean {
+	const lower = name.toLowerCase();
+	return RETIRED_INSTRUCTION_FILES.some((f) => f.toLowerCase() === lower);
+}

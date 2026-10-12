@@ -8,7 +8,7 @@ Claude Code loads this file beside `AGENTS.md`, which holds every convention the
 
 ## Hooks
 
-Five lifecycle hooks in `.claude/settings.json`:
+The lifecycle hooks in `.claude/settings.json`:
 
 | Hook | When | What |
 |------|------|------|

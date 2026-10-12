@@ -219,7 +219,7 @@ When asked to "remember" something:
 
 ### When to Consult Brain Topics
 
-Debugging, "how do we usually…", "why did we decide"? Read **When to Consult Brain Topics** in `brain/Memories.md` first.
+Debugging, "how do we usually…", "why did we decide"? Read **When to Consult Brain Topics** in `brain/Skills.md` first.
 
 ## Reaching the Vault From Another Repo
 

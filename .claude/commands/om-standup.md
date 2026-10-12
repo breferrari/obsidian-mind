@@ -25,6 +25,8 @@ Keep it concise. This is a quick orientation, not a deep dive.
 
 ## Starting a Substantial Session
 
+*For a session that does not run this command. When `/om-standup` is running, follow the steps above and skip this section.*
+
 The `SessionStart` hook automatically injects rich context: vault file listing, North Star goals, active work, recent git changes, open tasks (aggregated from `work/active/` and the vault root, excluding infrastructure files), vault-hygiene drift flags (act on them or run `/om-tidy`), and triggers a QMD re-index. Most context is already loaded -- you don't need to manually read files.
 
 **Shortcut**: Run `/om-standup` for a structured morning kickoff that reads everything and presents a summary with suggested priorities.
