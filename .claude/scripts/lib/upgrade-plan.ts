@@ -122,7 +122,8 @@ export function untouchedRetiredFiles(
 export function instructionFilesReady(plan: AdoptPlan, report: UpgradeReport): boolean {
 	const ready = (path: string) =>
 		report.behind.includes(path) || plan.files.some((f) => f.path === path && f.classification === "matches");
-	const hasGemini = plan.files.some((f) => f.path === GEMINI_SETTINGS);
+	// Shard-only means the vault has no Gemini settings at all: nothing to wait for.
+	const hasGemini = plan.files.some((f) => f.path === GEMINI_SETTINGS && f.classification !== "shard-only");
 	return ready(INSTRUCTION_FILE) && (!hasGemini || ready(GEMINI_SETTINGS));
 }
 
@@ -268,7 +269,7 @@ export function formatUpgradeReport(r: UpgradeReport, from: string, to: string):
 		section("Merged — review", "Changed on both sides; merged without conflict.", r.merged),
 		section(
 			"Move out — retired instruction file",
-			"Claude Code reads CLAUDE.md and skips AGENTS.md while it is here, and Gemini no longer reads GEMINI.md, so anything you added there is lost. Settle the files this report lists first, if any. Then move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping it under 23 KB), and delete the file. If you never edited it, just delete it. Nothing is merged automatically.",
+			"Claude Code reads CLAUDE.md and skips AGENTS.md while it is here, and Gemini no longer reads GEMINI.md, so anything you added there is lost. Settle the files this report lists first, if any. Then move what you added: from GEMINI.md into `AGENTS.md`; from CLAUDE.md into `.claude/rules/local.md`, or into `AGENTS.md` if every agent needs it. Keep `AGENTS.md` under 23 KB. Then delete the file. If you never edited it, just delete it. Nothing is merged automatically.",
 			r.move,
 		),
 		section("Conflicts — your decision", "Changed on both sides (or a new template file where you already have one).", r.conflicts),

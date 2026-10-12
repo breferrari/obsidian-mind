@@ -64,7 +64,7 @@ ShardMind executes only through its terminal UI (`--json` works with `--dry-run`
 **A Move out file the user changed:** the interactive `shardmind update` asks whether to keep or delete it, because the release removed it. Tell the user to answer **keep**: deleting it there loses their additions. Once the update is done, move the additions as U1 says, then delete the file.
 
 **Cloned without ShardMind:**
-1. Write the new release's bytes for the **behind** files only. Each is checked against adopt's plan before it is written, so nothing you changed is touched. A `CLAUDE.md` listed as behind is one you never edited, and this step **deletes** it, after the new `AGENTS.md` is written: name it to the user and get their yes before running it:
+1. Write the new release's bytes for the **behind** files only. Each is checked against adopt's plan before it is written, so nothing you changed is touched. A `CLAUDE.md` or `GEMINI.md` listed as behind is one you never edited, and this step **deletes** it, after the new `AGENTS.md` is written: name it to the user and get their yes before running it:
    ```bash
    node --experimental-strip-types .claude/scripts/upgrade-plan.ts --apply-behind
    ```
