@@ -32,9 +32,11 @@ export function listingCommand(platform: NodeJS.Platform = process.platform): { 
 				"-NoProfile",
 				"-NonInteractive",
 				"-Command",
-				// UTF-8 out, so a non-ASCII path survives the pipe; and not this
-				// PowerShell itself, whose own command line holds the filter text.
-				"[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%qmd-refresh-run%'\" | Where-Object { $_.ProcessId -ne $PID } | ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
+				// UTF-8 out, so a non-ASCII path survives the pipe; not this
+				// PowerShell itself, whose own command line holds the filter text;
+				// and each command line on one line, so a continuation line can
+				// never read as a pid of its own.
+				"[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%qmd-refresh-run%'\" | Where-Object { $_.ProcessId -ne $PID } | ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine -replace '[\\r\\n]+', ' ')\" }",
 			],
 		};
 	}

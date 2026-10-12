@@ -284,9 +284,13 @@ function touchSentinel(sentinelPath: string): void {
  */
 export const REFRESH_SWITCH = "VAULT_QMD_REFRESH";
 
-/** Whether the detached qmd refresh is switched off for this process: "off", in any case. */
+/**
+ * Whether the detached qmd refresh is switched off for this process: exactly
+ * "off". wiki-mind's copy reads the same variable the same way, and one
+ * variable must mean the same to every vault's hooks.
+ */
 export function refreshDisabled(): boolean {
-	return process.env[REFRESH_SWITCH]?.trim().toLowerCase() === "off";
+	return process.env[REFRESH_SWITCH] === "off";
 }
 
 /**

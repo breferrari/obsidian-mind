@@ -156,7 +156,9 @@ describe("VAULT_QMD_REFRESH=off — no detached worker (#337)", () => {
 	// The negative tests wait well past it, so a slow cold start cannot pass
 	// for "nothing spawned".
 	let spawnMs = 0;
-	const negativeWaitMs = () => Math.max(2_000, 3 * spawnMs);
+	// Unmeasured (the control was filtered out or failed): the control's own
+	// 10 s ceiling, never a guess that a slow spawn could outlast.
+	const negativeWaitMs = () => (spawnMs === 0 ? 10_000 : Math.max(2_000, 3 * spawnMs));
 
 	test("control: with the switch unset the real worker runs, so the observation works", async () => {
 		await withSwitch(undefined, async () => {
@@ -203,8 +205,9 @@ describe("VAULT_QMD_REFRESH=off — no detached worker (#337)", () => {
 		});
 	});
 
-	test("the switch reads 'off' in any case and with stray spaces; other values leave the refresh on", async () => {
-		for (const [value, off] of [["off", true], ["OFF", true], [" Off ", true], ["on", false], ["", false], ["0", false]] as const) {
+	test("the switch is exactly 'off', as wiki-mind's copy reads it; anything else leaves the refresh on", async () => {
+		// One variable read by two vaults' hooks must mean the same to both.
+		for (const [value, off] of [["off", true], ["OFF", false], [" off ", false], ["on", false], ["", false], ["0", false]] as const) {
 			await withSwitch(value, async () => {
 				assert.equal(refreshDisabled(), off, JSON.stringify(value));
 			});

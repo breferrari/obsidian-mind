@@ -34,6 +34,10 @@ describe("listingCommand", () => {
 		assert.match(listingCommand("win32").args.join(" "), /ProcessId -ne \$PID/);
 	});
 
+	test("Windows flattens a multi-line command line, so no continuation line reads as a pid of its own", () => {
+		assert.match(listingCommand("win32").args.join(" "), /\$_\.CommandLine -replace '\[\\r\\n\]\+', ' '/);
+	});
+
 	test("Windows writes UTF-8, so a non-ASCII path in a command line still matches", () => {
 		assert.match(listingCommand("win32").args.join(" "), /\[Console\]::OutputEncoding = \[Text\.Encoding\]::UTF8/);
 	});
