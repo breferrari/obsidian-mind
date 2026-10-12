@@ -26,7 +26,7 @@ const EVERY_FINDING: ActiveHygieneReport = {
 	inboxPressure: { count: 2, oldestDays: 9 },
 	memoryInbox: { count: 4, oldestDays: 2, namedOnly: 1 },
 	leftoverClaudeMd: true,
-	agentsMdBytes: 23000,
+	agentsMd: { sizeKb: 23 },
 };
 
 describe("stopSummary", () => {
@@ -71,7 +71,7 @@ describe("hygieneClaims", () => {
 
 	test("a clean report has no claims", () => {
 		assert.deepEqual(
-			hygieneClaims({ completedInActive: [], ungroupedClusters: [], oversizedNotes: [], openLoops: [], inboxPressure: null, memoryInbox: null, leftoverClaudeMd: false, agentsMdBytes: null }),
+			hygieneClaims({ completedInActive: [], ungroupedClusters: [], oversizedNotes: [], openLoops: [], inboxPressure: null, memoryInbox: null, leftoverClaudeMd: false, agentsMd: null }),
 			[],
 		);
 	});

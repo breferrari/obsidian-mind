@@ -16,3 +16,6 @@ The hook scripts in `.claude/scripts/` are agent-agnostic TypeScript and shell, 
 | `classify-message.ts` | Classify messages, inject routing hints, hand over the last Stop report (Claude Code and Codex: Gemini's checklist runs on SessionEnd and saves none) | UserPromptSubmit | UserPromptSubmit | BeforeAgent |
 | `validate-write.ts` | Validate frontmatter and wikilinks | PostToolUse | PostToolUse | AfterTool |
 | `pre-compact.ts` | Back up transcript before compaction | PreCompact | — | PreCompress |
+| `stop-checklist.ts` | Wrap-up checklist and vault-hygiene drift findings (Claude Code and Codex: per response, deduped; Gemini: once, at shutdown) | Stop | Stop | SessionEnd |
+
+Grok, once the vault is trusted, runs the project `.claude/settings.json` hooks, so it gets the Claude Code column (its own layer is #323).

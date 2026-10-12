@@ -105,9 +105,16 @@ describe("AGENTS.md is the one instruction file (#321)", () => {
 		const schema = readFileSync(resolve(repoRoot, ".shardmind/shard-schema.yaml"), "utf-8");
 		const modulesBlock = schema.slice(schema.indexOf("\nmodules:\n"), schema.indexOf("\nsignals:\n"));
 		const modules = modulesBlock.split(/\n  (?=[a-z_]+:\n)/).slice(1);
-		const removablePaths = modules
-			.filter((m) => /\n    removable: true\b/.test(m))
-			.flatMap((m) => [...m.matchAll(/\n      - "([^"]+)"/g)].map((x) => x[1]!));
+		// A module's `paths`, written either as a flow list (`paths: ["a/"]`)
+		// or as a block list of `- "a/"` lines; the schema uses both.
+		const pathsOf = (m: string): string[] => {
+			const flow = /\n    paths: \[([^\]]*)\]/.exec(m);
+			if (flow) return [...flow[1]!.matchAll(/"([^"]+)"/g)].map((x) => x[1]!);
+			const block = /\n    paths:\n((?:      - "[^"]+"\n|      #[^\n]*\n)+)/.exec(m);
+			return block ? [...block[1]!.matchAll(/- "([^"]+)"/g)].map((x) => x[1]!) : [];
+		};
+		assert.ok(pathsOf(modules.find((m) => m.startsWith("brain:"))!).includes("brain/"), "pathsOf misreads a flow-style list");
+		const removablePaths = modules.filter((m) => /\n    removable: true\b/.test(m)).flatMap(pathsOf);
 		assert.ok(modules.length > 0, "found no modules in shard-schema.yaml");
 		const claims = (path: string, claim: string) => (claim.endsWith("/") ? path.startsWith(claim) : path === claim);
 		for (const t of [...pointerTargets(), "AGENTS.md"]) {
@@ -116,7 +123,7 @@ describe("AGENTS.md is the one instruction file (#321)", () => {
 		}
 		// And the Claude module, removable or not, claims only the Claude-only files.
 		const claude = modules.find((m) => m.startsWith("claude:"))!;
-		const claudePaths = [...claude.matchAll(/\n      - "([^"]+)"/g)].map((x) => x[1]!);
+		const claudePaths = pathsOf(claude);
 		assert.ok(!claudePaths.includes(".claude/rules/"), "the Claude module claims all of .claude/rules/, shared files included");
 		const dir = resolve(repoRoot, ".claude/rules");
 		const claudeOnly = readdirSync(dir)

@@ -195,6 +195,27 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		assert.equal(instructionFileReady(agents("differs"), report([])), false);
 	});
 
+	test("while AGENTS.md is ahead or a conflict, CLAUDE.md is a move even when the update would delete it", () => {
+		// The vault's AGENTS.md may still be the old one that only says "read
+		// CLAUDE.md": deleting CLAUDE.md first would point every agent at nothing.
+		for (const where of ["ahead", "conflicts"] as const) {
+			const base = { behind: ["CLAUDE.md"], ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 };
+			const r = withRetiredInstructionFiles({ ...base, [where]: ["AGENTS.md"] }, present(["CLAUDE.md", "AGENTS.md"]));
+			assert.deepEqual(r.move, ["CLAUDE.md"], where);
+			assert.deepEqual(r.behind, [], where);
+		}
+	});
+
+	test("the Move out text covers an untouched CLAUDE.md and an AGENTS.md that is not the new one yet", () => {
+		const out = formatUpgradeReport(
+			{ behind: [], ahead: [], merged: [], conflicts: [], added: [], move: ["CLAUDE.md"], unchanged: 0 },
+			"v9.1.0",
+			"v10.0.0",
+		);
+		assert.match(out, /If you never edited it, just delete it/);
+		assert.match(out, /take the new `AGENTS\.md` first/);
+	});
+
 	test("no CLAUDE.md in the vault: nothing to move", () => {
 		const r = withRetiredInstructionFiles(classifyUpdate({ dryRun: true, files: [] }, null), present([]));
 		assert.deepEqual(r.move, []);

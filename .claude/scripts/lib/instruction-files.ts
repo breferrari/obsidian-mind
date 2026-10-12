@@ -13,9 +13,16 @@ export const INSTRUCTION_FILE = "AGENTS.md";
  * 1.3.0 truncated a 36 KB `AGENTS.md` between byte 23,860 and byte 24,305,
  * silently, and Codex CLI 0.160.0 stopped consistent with a 32 KiB cap; this
  * leaves ~2 KB of margin under the first. The template's own
- * test fails at it, and the hygiene scan flags a vault's copy that reaches it.
+ * test fails at it.
  */
 export const AGENTS_MD_MAX_BYTES = 22_000;
+
+/**
+ * Where the hygiene scan flags a vault's own AGENTS.md: 1 KB above the
+ * template's cap, so a user's first additions are not a finding, and still
+ * under byte 23,860, the last one Antigravity was seen to read.
+ */
+export const AGENTS_MD_FLAG_BYTES = 23_000;
 
 export const RETIRED_INSTRUCTION_FILES: readonly string[] = ["CLAUDE.md"];
 

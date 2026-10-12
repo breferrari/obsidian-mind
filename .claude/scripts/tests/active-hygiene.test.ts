@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import {
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	mkdtempSync,
 	rmSync,
 	utimesSync,
@@ -34,7 +35,8 @@ import {
 	walkMarkdown,
 } from "../lib/active-hygiene.ts";
 
-import { AGENTS_MD_MAX_BYTES } from "../lib/instruction-files.ts";
+import { AGENTS_MD_FLAG_BYTES, AGENTS_MD_MAX_BYTES } from "../lib/instruction-files.ts";
+import { reportKey } from "../lib/report-key.ts";
 import { rmTemp } from "./_helpers.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -429,7 +431,7 @@ describe("scanActiveHygiene — detectors", () => {
 			inboxPressure: null,
 			memoryInbox: { count: 4, oldestDays: 2, namedOnly: 0 },
 			leftoverClaudeMd: false,
-			agentsMdBytes: null,
+			agentsMd: null,
 		});
 		const text = lines.join("\n");
 		assert.match(text, /COPYING it/);
@@ -451,7 +453,7 @@ describe("scanActiveHygiene — detectors", () => {
 				inboxPressure: null,
 				memoryInbox: null,
 				leftoverClaudeMd: false,
-				agentsMdBytes: null,
+				agentsMd: null,
 			});
 		const atCap = report(HYGIENE_LIST_CAP);
 		assert.equal(atCap.filter((l) => l.startsWith("   - ")).length, 3 * HYGIENE_LIST_CAP);
@@ -546,7 +548,7 @@ describe("formatActiveHygiene", () => {
 			inboxPressure: null,
 			memoryInbox: null,
 			leftoverClaudeMd: false,
-			agentsMdBytes: null,
+			agentsMd: null,
 		});
 		const text = lines.join("\n");
 		assert.match(text, /marked done but still in active\//);
@@ -658,16 +660,49 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		});
 	});
 
-	test("AGENTS.md past the size the agents read whole is flagged, with the agent that cuts it off", () => {
+	test("AGENTS.md near where Antigravity stops reading is flagged, with the agent that cuts it off", () => {
 		withFiles([], (root) => {
-			writeFileSync(join(root, "AGENTS.md"), "x".repeat(AGENTS_MD_MAX_BYTES));
+			writeFileSync(join(root, "AGENTS.md"), "x".repeat(AGENTS_MD_FLAG_BYTES));
 			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
-			assert.equal(report.agentsMdBytes, AGENTS_MD_MAX_BYTES);
-			assert.match(formatActiveHygiene(report).join("\n"), /AGENTS\.md is 22KB[\s\S]*Antigravity stopped reading it at ~24,000 bytes/);
+			assert.deepEqual(report.agentsMd, { sizeKb: 23 });
+			assert.match(formatActiveHygiene(report).join("\n"), /AGENTS\.md is 23KB[\s\S]*Antigravity stopped reading it at ~24,000 bytes/);
 		});
 		withFiles([], (root) => {
-			writeFileSync(join(root, "AGENTS.md"), "x".repeat(AGENTS_MD_MAX_BYTES - 1));
-			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]).agentsMdBytes, null);
+			writeFileSync(join(root, "AGENTS.md"), "x".repeat(AGENTS_MD_FLAG_BYTES - 1));
+			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]).agentsMd, null);
+		});
+	});
+
+	test("a vault's AGENTS.md has room to grow past the template's own cap before it is flagged", () => {
+		// The template's test holds the shipped file under AGENTS_MD_MAX_BYTES;
+		// the vault flag sits nearer the measured cutoff (byte 23,860 was still
+		// read), so a user's first additions are not a finding.
+		assert.ok(AGENTS_MD_FLAG_BYTES >= AGENTS_MD_MAX_BYTES + 1000);
+		assert.ok(AGENTS_MD_FLAG_BYTES < 23_860);
+	});
+
+	test("editing an AGENTS.md that is already flagged is not a new finding (#252)", () => {
+		const keyAt = (bytes: number) =>
+			withScan(bytes, (report) => reportKey({ report }, new Set(["sizeKb", "ageDays", "oldestDays"])));
+		const withScan = <T,>(bytes: number, run: (r: ReturnType<typeof scanActiveHygiene>) => T): T => {
+			let out!: T;
+			withFiles([], (root) => {
+				writeFileSync(join(root, "AGENTS.md"), "x".repeat(bytes));
+				out = run(scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]));
+			});
+			return out;
+		};
+		assert.equal(keyAt(AGENTS_MD_FLAG_BYTES + 10), keyAt(AGENTS_MD_FLAG_BYTES + 900));
+		assert.notEqual(keyAt(AGENTS_MD_FLAG_BYTES - 1), keyAt(AGENTS_MD_FLAG_BYTES + 10));
+	});
+
+	test("on a case-sensitive filesystem, a claude.md beside a real CLAUDE.md is still a note that can be oversized", () => {
+		withFiles(["AGENTS.md", "CLAUDE.md"], (root) => {
+			writeFileSync(join(root, "claude.md"), "x".repeat(MONOLITH_BYTES + 1000));
+			const caseSensitive = readdirSync(root).includes("claude.md") && readdirSync(root).includes("CLAUDE.md");
+			if (!caseSensitive) return; // Windows, macOS: the write above went to CLAUDE.md itself
+			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
+			assert.deepEqual(report.oversizedNotes.map((n) => n.path), ["claude.md"]);
 		});
 	});
 

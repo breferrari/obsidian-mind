@@ -133,8 +133,12 @@ export function instructionFileReady(plan: AdoptPlan, report: UpgradeReport): bo
  * so presence in the vault is what decides.
  */
 export function withRetiredInstructionFiles(report: UpgradeReport, present: (path: string) => boolean): UpgradeReport {
-	const move = RETIRED_INSTRUCTION_FILES.filter((p) => present(p) && !report.behind.includes(p));
-	return { ...report, move };
+	// While the vault keeps its own AGENTS.md, it may be the old one that only
+	// says "read CLAUDE.md", so a retired file is a move even if it is behind:
+	// deleting it first would point every agent at nothing.
+	const agentsKept = report.ahead.includes(INSTRUCTION_FILE) || report.conflicts.includes(INSTRUCTION_FILE);
+	const move = RETIRED_INSTRUCTION_FILES.filter((p) => present(p) && (agentsKept || !report.behind.includes(p)));
+	return { ...report, behind: report.behind.filter((p) => !move.includes(p)), move };
 }
 
 function modifiedPaths(status: StatusResult | null): Set<string> {
@@ -229,7 +233,7 @@ export function formatUpgradeReport(r: UpgradeReport, from: string, to: string):
 		section("Merged — review", "Changed on both sides; merged without conflict.", r.merged),
 		section(
 			"Move out — retired instruction file",
-			"Claude Code reads CLAUDE.md and skips AGENTS.md while this file is here. Move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping it under ~22 KB), then delete the file. Nothing is merged automatically.",
+			"Claude Code reads CLAUDE.md and skips AGENTS.md while this file is here. If `AGENTS.md` is listed as ahead or a conflict in this report, take the new `AGENTS.md` first: yours may still be the old one that only points here. Then move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping it under ~22 KB), and delete the file. If you never edited it, just delete it. Nothing is merged automatically.",
 			r.move,
 		),
 		section("Conflicts — your decision", "Changed on both sides (or a new template file where you already have one).", r.conflicts),

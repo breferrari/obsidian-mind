@@ -101,6 +101,7 @@ When adding or modifying commands, agents, hooks, or vault structure, **all of t
 |------|---------------|
 | `AGENTS.md` | Vault structure table (no command table and no counts: Write-Correctness law 6) |
 | `.claude/rules/subagents.md` | Agent table |
+| `.claude/rules/hooks-per-agent.md`, `.claude/rules/hooks-and-mod.md` | Hook tables, when a hook or its event changes |
 | `README.md` | Command table, agent table, vault structure diagram, counts |
 | `README.ja.md`, `README.ko.md`, `README.zh-CN.md` | Same as README, in the respective language |
 | `brain/Skills.md` | Command tables (by category), subagents table, workflows |

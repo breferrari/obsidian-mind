@@ -116,6 +116,7 @@ Glob all `.md`, `.base`, `.canvas` files and binary files (images, PDFs) in the 
 | `.claude/commands/` not in template | **MERGE** | `.claude/commands/` (user addition) |
 | `.claude/agents/` not in template | **MERGE** | `.claude/agents/` (user addition) |
 | `.claude/scripts/` not in template | **MERGE** | `.claude/scripts/` (user addition) |
+| `.claude/rules/` not in template | **MERGE** | `.claude/rules/` (user addition, such as `local.md` or a section moved out of `AGENTS.md`; its `AGENTS.md` pointer comes with the user's `AGENTS.md` additions) |
 | `scaffold` path with real content | **REPLACE** | Same path in target |
 | `scaffold` path with stub-only content | **SKIP** | Template stub is fine |
 | `user_content_roots` glob | **COPY** | Same relative path |

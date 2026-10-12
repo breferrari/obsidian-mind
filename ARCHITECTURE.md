@@ -907,7 +907,7 @@ flowchart TB
     end
     subgraph Manuals["Instruction files"]
         AM["AGENTS.md<br/>(every agent)"]
-        RM[".claude/rules/*.md<br/>(Claude Code only)"]
+        RM[".claude/rules/*.md<br/>(Claude-only files, and shared<br/>sections AGENTS.md points to)"]
     end
 
     Claude --> Shared
@@ -915,6 +915,7 @@ flowchart TB
     Gemini --> Shared
     Claude -.reads.-> AM
     Claude -.reads.-> RM
+    AM -.points to.-> RM
     Codex -.reads.-> AM
     Gemini -.reads.-> AM
 ```
