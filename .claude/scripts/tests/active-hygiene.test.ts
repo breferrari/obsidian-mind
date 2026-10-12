@@ -663,7 +663,7 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 			writeFileSync(join(root, "AGENTS.md"), "x".repeat(AGENTS_MD_MAX_BYTES));
 			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
 			assert.equal(report.agentsMdBytes, AGENTS_MD_MAX_BYTES);
-			assert.match(formatActiveHygiene(report).join("\n"), /AGENTS\.md is 22KB[\s\S]*Antigravity stops reading it at ~24,000 bytes/);
+			assert.match(formatActiveHygiene(report).join("\n"), /AGENTS\.md is 22KB[\s\S]*Antigravity stopped reading it at ~24,000 bytes/);
 		});
 		withFiles([], (root) => {
 			writeFileSync(join(root, "AGENTS.md"), "x".repeat(AGENTS_MD_MAX_BYTES - 1));

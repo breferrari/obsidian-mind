@@ -666,10 +666,6 @@ export function scanActiveHygiene(
 }
 
 /**
- * Both instruction files at the root. CLAUDE.md alone is a vault that has not
- * upgraded yet, and its CLAUDE.md is still the file that carries everything.
- */
-/**
  * A root file an agent loads as a retired instruction file: the exact name,
  * or another casing where the filesystem resolves it to that name (Windows,
  * macOS). On a case-sensitive filesystem a `claude.md` is a plain note.
@@ -693,6 +689,10 @@ function agentsMdPastCap(root: string): number | null {
 	}
 }
 
+/**
+ * Both instruction files at the root. CLAUDE.md alone is a vault that has not
+ * upgraded yet, and its CLAUDE.md is still the file that carries everything.
+ */
 function hasLeftoverClaudeMd(root: string): boolean {
 	return existsSync(join(root, INSTRUCTION_FILE)) && RETIRED_INSTRUCTION_FILES.some((f) => existsSync(join(root, f)));
 }
@@ -792,7 +792,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (agentsMdBytes !== null) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			`⚠️  ${claims.agentsMd(agentsMdBytes)} — Antigravity stops reading it at ~24,000 bytes, silently. Move a section an agent can safely skip to a file it reads on demand, word for word, and leave a one-line pointer; Claude Code-only additions go to .claude/rules/.`,
+			`⚠️  ${claims.agentsMd(agentsMdBytes)} — Antigravity stopped reading it at ~24,000 bytes, silently (Antigravity 1.3.0, measured 2026-10-06, #321). Move a section an agent can safely skip to a file it reads on demand, word for word, and leave a one-line pointer; Claude Code-only additions go to .claude/rules/.`,
 		);
 	}
 

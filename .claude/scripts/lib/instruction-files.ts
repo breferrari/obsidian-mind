@@ -9,9 +9,10 @@
 export const INSTRUCTION_FILE = "AGENTS.md";
 
 /**
- * The size `AGENTS.md` stays under. Antigravity truncated a 36 KB `AGENTS.md`
- * between byte 23,860 and byte 24,305, silently (#321), and Codex stops at
- * ~32 KiB; this leaves ~2 KB of margin under the first. The template's own
+ * The size `AGENTS.md` stays under. Measured 2026-10-06 (#321): Antigravity
+ * 1.3.0 truncated a 36 KB `AGENTS.md` between byte 23,860 and byte 24,305,
+ * silently, and Codex CLI 0.160.0 stopped consistent with a 32 KiB cap; this
+ * leaves ~2 KB of margin under the first. The template's own
  * test fails at it, and the hygiene scan flags a vault's copy that reaches it.
  */
 export const AGENTS_MD_MAX_BYTES = 22_000;

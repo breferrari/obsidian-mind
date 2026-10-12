@@ -94,7 +94,7 @@ const empty = (): { -readonly [K in keyof UpgradeReport]: K extends "unchanged" 
  * behind (the update removes them), not a move. Adopt cannot say so itself,
  * because the latest release has no such file.
  *
- * Only once the new AGENTS.md is certain to be in place (`instructionFileReady`:
+ * Only once the new AGENTS.md is certain to be in place (`agentsMdInPlace`:
  * the update writes it, or it already matches the release). Until then the
  * vault's AGENTS.md may be the old one, which only says "read CLAUDE.md", and
  * deleting CLAUDE.md would leave every agent pointed at a missing file.
@@ -102,9 +102,9 @@ const empty = (): { -readonly [K in keyof UpgradeReport]: K extends "unchanged" 
 export function untouchedRetiredFiles(
 	vaultHash: (path: string) => string | null,
 	baseHash: (path: string) => string | null,
-	instructionFileReady: boolean,
+	agentsMdInPlace: boolean,
 ): string[] {
-	if (!instructionFileReady) return [];
+	if (!agentsMdInPlace) return [];
 	return RETIRED_INSTRUCTION_FILES.filter((p) => {
 		const mine = vaultHash(p);
 		return mine !== null && mine === baseHash(p);

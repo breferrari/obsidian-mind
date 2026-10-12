@@ -98,7 +98,7 @@ describe("AGENTS.md is the one instruction file (#321)", () => {
 		}
 	});
 
-	test("under every module selection, every file AGENTS.md points at is installed", () => {
+	test("every file AGENTS.md points at is claimed by no removable module, so every module selection installs it", () => {
 		// A file claimed by a removable module disappears when that module is
 		// deselected, and a Codex-only vault would then follow a pointer to
 		// nothing. Shared files must be core: claimed by no removable module.
@@ -118,6 +118,16 @@ describe("AGENTS.md is the one instruction file (#321)", () => {
 		const claude = modules.find((m) => m.startsWith("claude:"))!;
 		const claudePaths = [...claude.matchAll(/\n      - "([^"]+)"/g)].map((x) => x[1]!);
 		assert.ok(!claudePaths.includes(".claude/rules/"), "the Claude module claims all of .claude/rules/, shared files included");
+		const dir = resolve(repoRoot, ".claude/rules");
+		const claudeOnly = readdirSync(dir)
+			.filter((f) => f.endsWith(".md") && !readFileSync(resolve(dir, f), "utf-8").startsWith(SHARED_LINE))
+			.map((f) => `.claude/rules/${f}`)
+			.sort();
+		assert.deepEqual(
+			claudePaths.filter((p) => p.startsWith(".claude/rules/")).sort(),
+			claudeOnly,
+			"the Claude module must claim exactly the Claude-only rules files",
+		);
 	});
 
 	test("every .claude/rules/*.md exists and is non-empty", () => {
