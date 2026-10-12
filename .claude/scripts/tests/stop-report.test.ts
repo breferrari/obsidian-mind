@@ -25,8 +25,7 @@ const EVERY_FINDING: ActiveHygieneReport = {
 	openLoops: [{ path: "work/1-1/Weekly.md", ageDays: 20, openItems: 2 }],
 	inboxPressure: { count: 2, oldestDays: 9 },
 	memoryInbox: { count: 4, oldestDays: 2, namedOnly: 1 },
-	leftoverClaudeMd: true,
-	leftoverGeminiMd: true,
+	leftoverInstructionFiles: ["CLAUDE.md", "GEMINI.md"],
 	agentsMd: { sizeKb: 23 },
 };
 
@@ -73,7 +72,7 @@ describe("hygieneClaims", () => {
 
 	test("a clean report has no claims", () => {
 		assert.deepEqual(
-			hygieneClaims({ completedInActive: [], ungroupedClusters: [], oversizedNotes: [], openLoops: [], inboxPressure: null, memoryInbox: null, leftoverClaudeMd: false, leftoverGeminiMd: false, agentsMd: null }),
+			hygieneClaims({ completedInActive: [], ungroupedClusters: [], oversizedNotes: [], openLoops: [], inboxPressure: null, memoryInbox: null, leftoverInstructionFiles: [], agentsMd: null }),
 			[],
 		);
 	});

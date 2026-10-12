@@ -271,6 +271,14 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		assert.deepEqual(settleFirst(both), ["AGENTS.md", ".gemini/settings.json"]);
 	});
 
+	test("an AGENTS.md conflict is settled first even when GEMINI.md is the only file leaving", () => {
+		// The new settings send Gemini to AGENTS.md: if that is still the old
+		// pointer to a CLAUDE.md that is gone, Gemini reads nothing.
+		const empty = { behind: [], ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 };
+		const report = { ...empty, move: ["GEMINI.md"], conflicts: ["AGENTS.md", ".gemini/settings.json"] };
+		assert.deepEqual(settleFirst(report), ["AGENTS.md", ".gemini/settings.json"]);
+	});
+
 	test("an ahead AGENTS.md is the user's edit of the current release, never the old pointer: no settle warning", () => {
 		// Ahead means the template did not change AGENTS.md between the two
 		// releases, and the release that retires CLAUDE.md does change it.

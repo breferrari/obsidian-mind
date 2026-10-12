@@ -48,6 +48,7 @@ import {
 	AGENTS_MD_FLAG_BYTES,
 	CLAUDE_MD,
 	GEMINI_MD,
+	GEMINI_SETTINGS,
 	INSTRUCTION_FILE,
 	isRetiredInstructionFile,
 	RETIRED_INSTRUCTION_FILES,
@@ -142,10 +143,11 @@ export type ActiveHygieneReport = {
 	readonly openLoops: readonly OpenLoop[];
 	readonly inboxPressure: InboxPressure | null;
 	readonly memoryInbox: MemoryInboxPressure | null;
-	/** A CLAUDE.md at the vault root beside AGENTS.md, which Claude Code reads in its place. */
-	readonly leftoverClaudeMd: boolean;
-	/** A GEMINI.md at the vault root beside AGENTS.md: Gemini reads AGENTS.md now, so it is never loaded. */
-	readonly leftoverGeminiMd: boolean;
+	/**
+	 * Retired instruction files at the vault root beside AGENTS.md that still go
+	 * wrong, in RETIRED_INSTRUCTION_FILES order (see LEFTOVER_HARM).
+	 */
+	readonly leftoverInstructionFiles: readonly string[];
 	/** AGENTS.md's size once it reaches AGENTS_MD_FLAG_BYTES, else null. `sizeKb`, so a report's identity ignores it (#252). */
 	readonly agentsMd: { readonly sizeKb: number } | null;
 };
@@ -679,8 +681,7 @@ export function scanActiveHygiene(
 		openLoops: findOpenLoops(root, nowMs, openLoopConfig),
 		inboxPressure: findInboxPressure(root, nowMs),
 		memoryInbox: findMemoryInbox(root, memoryRoot, nowMs),
-		leftoverClaudeMd: besideAgentsMd(root, CLAUDE_MD),
-		leftoverGeminiMd: besideAgentsMd(root, GEMINI_MD),
+		leftoverInstructionFiles: findLeftoverInstructionFiles(root),
 		agentsMd: agentsMdPastFlag(root),
 	};
 }
@@ -726,12 +727,36 @@ function agentsMdPastFlag(root: string): { sizeKb: number } | null {
 }
 
 /**
- * Both instruction files at the root. CLAUDE.md alone is a vault that has not
- * upgraded yet, and its CLAUDE.md is still the file that carries everything.
+ * Retired instruction files beside AGENTS.md that still go wrong. Without
+ * AGENTS.md the vault has not upgraded yet, and its old file still carries
+ * everything. A GEMINI.md counts only once Gemini's settings point it at
+ * AGENTS.md: before that, Gemini still reads GEMINI.md, and deleting it would
+ * cut Gemini off.
  */
-function besideAgentsMd(root: string, retired: string): boolean {
-	return existsSync(join(root, INSTRUCTION_FILE)) && existsSync(join(root, retired));
+function findLeftoverInstructionFiles(root: string): string[] {
+	if (!existsSync(join(root, INSTRUCTION_FILE))) return [];
+	return RETIRED_INSTRUCTION_FILES.filter(
+		(f) => existsSync(join(root, f)) && (f !== GEMINI_MD || geminiReadsAgentsMd(root)),
+	);
 }
+
+/** Whether .gemini/settings.json lists AGENTS.md in context.fileName. */
+function geminiReadsAgentsMd(root: string): boolean {
+	try {
+		const settings = JSON.parse(readFileSync(join(root, GEMINI_SETTINGS), "utf8")) as { context?: { fileName?: unknown } };
+		const names = settings.context?.fileName;
+		return Array.isArray(names) ? names.includes(INSTRUCTION_FILE) : names === INSTRUCTION_FILE;
+	} catch {
+		return false;
+	}
+}
+
+/** What each retired file does wrong while it stays, and what to do about it. */
+const LEFTOVER_HARM: Readonly<Record<string, string>> = {
+	[CLAUDE_MD]: "Claude Code reads CLAUDE.md and skips AGENTS.md; move your additions to .claude/rules/ and delete it.",
+	[GEMINI_MD]:
+		"Gemini no longer reads GEMINI.md: .gemini/settings.json points it at AGENTS.md. Move anything you added there to AGENTS.md and delete it.",
+};
 
 /**
  * How many entries a hygiene list prints before "… and N more". The flag's
@@ -769,17 +794,15 @@ const claims = {
 	openLoops: (n: number) => `${n} note(s) with open follow-ups untouched ${OPEN_LOOP_DAYS}+ days`,
 	inbox: (n: number) => `${n} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days`,
 	memoryInbox: (n: number) => `${n} cross-repo memory capture(s) awaiting review`,
-	leftoverClaudeMd: () => "CLAUDE.md present beside AGENTS.md",
-	leftoverGeminiMd: () => "GEMINI.md present beside AGENTS.md",
+	leftover: (file: string) => `${file} present beside AGENTS.md`,
 	agentsMd: (sizeKb: number) => `AGENTS.md is ${sizeKb}KB`,
 };
 
 /** The claim of every finding in `report`, in the order the formatter lists them. */
 export function hygieneClaims(report: ActiveHygieneReport): string[] {
-	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox, leftoverClaudeMd, leftoverGeminiMd, agentsMd } = report;
+	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox, leftoverInstructionFiles, agentsMd } = report;
 	const out: string[] = [];
-	if (leftoverClaudeMd) out.push(claims.leftoverClaudeMd());
-	if (leftoverGeminiMd) out.push(claims.leftoverGeminiMd());
+	for (const file of leftoverInstructionFiles) out.push(claims.leftover(file));
 	if (agentsMd !== null) out.push(claims.agentsMd(agentsMd.sizeKb));
 	if (completedInActive.length > 0) out.push(claims.completed(completedInActive.length));
 	if (ungroupedClusters.length > 0) out.push(claims.clusters());
@@ -802,8 +825,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		openLoops,
 		inboxPressure,
 		memoryInbox,
-		leftoverClaudeMd,
-		leftoverGeminiMd,
+		leftoverInstructionFiles,
 		agentsMd,
 	} = report;
 	if (
@@ -813,27 +835,18 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		openLoops.length === 0 &&
 		inboxPressure === null &&
 		memoryInbox === null &&
-		!leftoverClaudeMd &&
-		!leftoverGeminiMd &&
+		leftoverInstructionFiles.length === 0 &&
 		agentsMd === null
 	) {
 		return [];
 	}
 	const lines: string[] = [];
 
-	// First: until it is gone, Claude Code reads none of the rest of the
-	// conventions this vault ships in AGENTS.md.
-	if (leftoverClaudeMd) {
-		lines.push(
-			`⚠️  ${claims.leftoverClaudeMd()} — Claude Code reads CLAUDE.md and skips AGENTS.md; move your additions to .claude/rules/ and delete it.`,
-		);
-	}
-
-	if (leftoverGeminiMd) {
+	// First: until they are gone, an agent reads none of the rest of the
+	// conventions this vault ships in AGENTS.md, or loses what the user added.
+	for (const file of leftoverInstructionFiles) {
 		if (lines.length > 0) lines.push("");
-		lines.push(
-			`⚠️  ${claims.leftoverGeminiMd()} — Gemini no longer reads GEMINI.md: .gemini/settings.json points it at AGENTS.md. Move anything you added there to AGENTS.md and delete it.`,
-		);
+		lines.push(`⚠️  ${claims.leftover(file)} — ${LEFTOVER_HARM[file]}`);
 	}
 
 	if (agentsMd !== null) {

@@ -16,7 +16,7 @@
  * supplies the hash of each file at the release the vault was cloned from.
  */
 
-import { CLAUDE_MD, GEMINI_SETTINGS, INSTRUCTION_FILE, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
+import { GEMINI_SETTINGS, INSTRUCTION_FILE, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
 
 /** ShardMind's `--json` envelope. */
 export type ShardmindEnvelope<T> =
@@ -226,8 +226,9 @@ export function classifyAdopt(plan: AdoptPlan, baseHash: (path: string) => strin
  * files go, in that order. Each is a conflict (both sides changed it) while a
  * retired file leaves (behind or a move); changed by the user on top of the
  * old release, it may still be the old wiring:
- * - AGENTS.md, whose old version only points at CLAUDE.md, when CLAUDE.md
- *   is leaving;
+ * - AGENTS.md, whose old version only points at CLAUDE.md, when either
+ *   retired file is leaving: the new Gemini settings send Gemini to AGENTS.md
+ *   too, so an old one leaves both agents with a dangling pointer;
  * - .gemini/settings.json, whose old version names no context file, so
  *   Gemini reads GEMINI.md (which only points at CLAUDE.md), when either is
  *   leaving.
@@ -238,7 +239,7 @@ export function classifyAdopt(plan: AdoptPlan, baseHash: (path: string) => strin
 export function settleFirst(r: UpgradeReport): string[] {
 	const leaving = (p: string) => r.behind.includes(p) || r.move.includes(p);
 	const out: string[] = [];
-	if (r.conflicts.includes(INSTRUCTION_FILE) && leaving(CLAUDE_MD)) out.push(INSTRUCTION_FILE);
+	if (r.conflicts.includes(INSTRUCTION_FILE) && RETIRED_INSTRUCTION_FILES.some(leaving)) out.push(INSTRUCTION_FILE);
 	if (r.conflicts.includes(GEMINI_SETTINGS) && RETIRED_INSTRUCTION_FILES.some(leaving)) out.push(GEMINI_SETTINGS);
 	return out;
 }

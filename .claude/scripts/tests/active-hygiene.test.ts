@@ -432,8 +432,7 @@ describe("scanActiveHygiene — detectors", () => {
 			openLoops: [],
 			inboxPressure: null,
 			memoryInbox: { count: 4, oldestDays: 2, namedOnly: 0 },
-			leftoverClaudeMd: false,
-			leftoverGeminiMd: false,
+			leftoverInstructionFiles: [],
 			agentsMd: null,
 		});
 		const text = lines.join("\n");
@@ -455,8 +454,7 @@ describe("scanActiveHygiene — detectors", () => {
 				openLoops: [],
 				inboxPressure: null,
 				memoryInbox: null,
-				leftoverClaudeMd: false,
-				leftoverGeminiMd: false,
+				leftoverInstructionFiles: [],
 				agentsMd: null,
 			});
 		const atCap = report(HYGIENE_LIST_CAP);
@@ -551,8 +549,7 @@ describe("formatActiveHygiene", () => {
 			openLoops: [{ path: "work/1-1/A 2026-01-01.md", ageDays: 20, openItems: 2 }],
 			inboxPressure: null,
 			memoryInbox: null,
-			leftoverClaudeMd: false,
-			leftoverGeminiMd: false,
+			leftoverInstructionFiles: [],
 			agentsMd: null,
 		});
 		const text = lines.join("\n");
@@ -609,7 +606,7 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 	test("flags a CLAUDE.md sitting beside AGENTS.md, with what to do about it", () => {
 		withFiles(["AGENTS.md", "CLAUDE.md"], (root) => {
 			const report = scanActiveHygiene(root, NOW, DEFAULTS);
-			assert.equal(report.leftoverClaudeMd, true);
+			assert.equal(report.leftoverInstructionFiles.includes("CLAUDE.md"), true);
 			const text = formatActiveHygiene(report).join("\n");
 			assert.match(
 				text,
@@ -618,22 +615,45 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		});
 	});
 
-	test("flags a GEMINI.md beside AGENTS.md on its own: Gemini reads AGENTS.md now, so GEMINI.md is never loaded", () => {
+	/** Write .gemini/settings.json with the given context.fileName (or none). */
+	const geminiSettings = (root: string, fileName?: string[]): void => {
+		mkdirSync(join(root, ".gemini"), { recursive: true });
+		writeFileSync(join(root, ".gemini/settings.json"), JSON.stringify(fileName ? { context: { fileName } } : { hooks: {} }));
+	};
+
+	test("flags a GEMINI.md beside AGENTS.md once Gemini's settings point it at AGENTS.md, so GEMINI.md is never loaded", () => {
 		withFiles(["AGENTS.md", "GEMINI.md"], (root) => {
+			geminiSettings(root, ["AGENTS.md"]);
 			const report = scanActiveHygiene(root, NOW, DEFAULTS);
-			assert.equal(report.leftoverGeminiMd, true);
-			assert.equal(report.leftoverClaudeMd, false, "a GEMINI.md is not a leftover CLAUDE.md");
+			assert.deepEqual(report.leftoverInstructionFiles, ["GEMINI.md"], "a GEMINI.md is not a leftover CLAUDE.md");
 			assert.match(formatActiveHygiene(report).join("\n"), /GEMINI\.md present beside AGENTS\.md — Gemini no longer reads GEMINI\.md/);
 		});
 		withFiles(["AGENTS.md", "CLAUDE.md"], (root) => {
-			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverGeminiMd, false);
+			geminiSettings(root, ["AGENTS.md"]);
+			assert.deepEqual(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles, ["CLAUDE.md"]);
+		});
+	});
+
+	test("silent about a GEMINI.md that Gemini still reads: its settings name no AGENTS.md, or there are none", () => {
+		// A vault that kept its own older settings: Gemini reads GEMINI.md as its
+		// only context file, so telling the user to delete it would cut Gemini off.
+		withFiles(["AGENTS.md", "GEMINI.md"], (root) => {
+			geminiSettings(root);
+			assert.deepEqual(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles, []);
+		});
+		withFiles(["AGENTS.md", "GEMINI.md"], (root) => {
+			geminiSettings(root, ["GEMINI.md"]);
+			assert.deepEqual(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles, []);
+		});
+		withFiles(["AGENTS.md", "GEMINI.md"], (root) => {
+			assert.deepEqual(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles, []);
 		});
 	});
 
 	test("silent with AGENTS.md alone", () => {
 		withFiles(["AGENTS.md"], (root) => {
 			const report = scanActiveHygiene(root, NOW, DEFAULTS);
-			assert.equal(report.leftoverClaudeMd, false);
+			assert.equal(report.leftoverInstructionFiles.includes("CLAUDE.md"), false);
 			assert.deepEqual(formatActiveHygiene(report), []);
 		});
 	});
@@ -646,7 +666,7 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		withFiles(["AGENTS.md"], (root) => {
 			writeFileSync(join(root, "CLAUDE.md"), "x".repeat(MONOLITH_BYTES + 1000));
 			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
-			assert.equal(report.leftoverClaudeMd, true);
+			assert.equal(report.leftoverInstructionFiles.includes("CLAUDE.md"), true);
 			assert.deepEqual(report.oversizedNotes, []);
 		});
 	});
@@ -657,7 +677,7 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		// a case-sensitive filesystem neither finds it.
 		withFiles(["AGENTS.md", "claude.md"], (root) => {
 			const resolves = existsSync(join(root, "CLAUDE.md"));
-			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverClaudeMd, resolves);
+			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles.includes("CLAUDE.md"), resolves);
 		});
 	});
 
@@ -667,11 +687,11 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
 			if (existsSync(join(root, "CLAUDE.md"))) {
 				// Windows, macOS: Claude Code loads it, so it is a leftover, never a note to split.
-				assert.equal(report.leftoverClaudeMd, true);
+				assert.equal(report.leftoverInstructionFiles.includes("CLAUDE.md"), true);
 				assert.deepEqual(report.oversizedNotes, []);
 			} else {
 				// A case-sensitive filesystem: no agent loads it, so it is a plain note, and still seen.
-				assert.equal(report.leftoverClaudeMd, false);
+				assert.equal(report.leftoverInstructionFiles.includes("CLAUDE.md"), false);
 				assert.deepEqual(report.oversizedNotes.map((n) => n.path), ["claude.md"]);
 			}
 		});
@@ -722,7 +742,7 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 				return; // no symlink rights (Windows without developer mode), or the name is taken (case-insensitive)
 			}
 			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
-			assert.equal(report.leftoverClaudeMd, true);
+			assert.equal(report.leftoverInstructionFiles.includes("CLAUDE.md"), true);
 			assert.deepEqual(report.oversizedNotes, []);
 		});
 	});
@@ -739,7 +759,7 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 
 	test("silent for a vault that has not upgraded yet (CLAUDE.md, no AGENTS.md)", () => {
 		withFiles(["CLAUDE.md"], (root) => {
-			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverClaudeMd, false);
+			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles.includes("CLAUDE.md"), false);
 		});
 	});
 });
