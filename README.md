@@ -253,8 +253,8 @@ obsidian-mind works with Claude Code, Codex CLI, Gemini CLI, Antigravity and Gro
 | **Claude Code** | Natively, when no `CLAUDE.md` is present | Yes, but `@` imports are dropped (upstream) | `.claude/rules/*.md` | A `CLAUDE.md` beside or above `AGENTS.md` is read instead, silently: see [Troubleshooting](#-troubleshooting) |
 | **Codex CLI** | Natively | Yes (walks up to the git root) | — | Stops reading past ~32 KiB, silently |
 | **Gemini CLI** | Through `.gemini/settings.json` (`context.fileName`) | **No**: see [Troubleshooting](#-troubleshooting) | — | What a live session does with it is not yet observed (TBC) |
-| **Antigravity** | Natively | Yes | — | Stops reading past ~24,000 bytes, silently. Its `.agents/` manifests are not exercised here (TBC) |
-| **Grok** | Once the folder is trusted | Yes, once trusted | `.claude/rules/*.md` and `CLAUDE.md`, plus project `.claude/settings.json` hooks | An untrusted folder gets no project instructions at all: see [Troubleshooting](#-troubleshooting) |
+| **Antigravity** | Natively | Yes | — (not `.claude/rules/`, not `CLAUDE.md`) | Stops reading past ~24,000 bytes, silently. Has a workspace-trust dialog; whether it gates `AGENTS.md` is TBC (a headless `-p` run loaded it in a never-opened folder). Its `.agents/` manifests are not exercised here (TBC) |
+| **Grok** | Once the folder is trusted | Yes, once trusted | `.claude/rules/*.md` and `CLAUDE.md`, plus project `.claude/settings.json` hooks and user-level `~/.claude` skills, permissions and hooks | An untrusted folder gets no project instructions at all: see [Troubleshooting](#-troubleshooting) |
 
 Observed with scratch vaults as of 2026-10-06 (Claude Code 2.1.291, Codex CLI 0.160.0, Gemini CLI 0.37.1 discovery log, Antigravity 1.3.0, Grok 1.0.46); the measurements are in [#321](https://github.com/breferrari/obsidian-mind/issues/321). A test keeps `AGENTS.md` under 22,000 bytes, so no agent cuts it off.
 
@@ -567,8 +567,8 @@ templates/              Obsidian templates with YAML frontmatter
 
 .claude/
   rules/                Claude Code-only guidance, loaded beside AGENTS.md
-  commands/             18 slash commands
-  agents/               9 subagents
+  commands/             20 slash commands
+  agents/               10 subagents
   scripts/              Hook scripts + charcount.ts utility
   skills/               Obsidian + QMD skills, and the obsidian-mind mod
   settings.json         5 hooks configuration

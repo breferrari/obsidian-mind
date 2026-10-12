@@ -274,7 +274,7 @@ Each law exists because its absence caused real correction work in vaults runnin
 - Never modify `.obsidian/` config files unless explicitly asked.
 - Preserve existing frontmatter when editing notes.
 - Git sync is handled by the user's preferred method (obsidian-git, manual commits, etc.) -- don't configure git hooks or auto-commit.
-- When asked to "remember" something, write to the relevant `brain/` topic note with a link to context. Never create memory files in `~/.claude/` -- they are not git-tracked.
+- When asked to "remember" something, write to the relevant `brain/` topic note with a link to context.
 - Prefer Obsidian CLI over filesystem when Obsidian is **already** running. On macOS, the first `obsidian` call launches the Electron app (visible window flash) if no instance is running — open Obsidian once at session start, then subsequent calls forward args silently. In non-interactive contexts where you can't guarantee Obsidian is open (background hooks, automation), prefer filesystem reads.
 - Always check for and suggest connections between notes.
 - Every note must have a `description` field (~150 chars). The agent fills this automatically.

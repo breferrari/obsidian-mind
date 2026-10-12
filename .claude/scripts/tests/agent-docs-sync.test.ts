@@ -55,6 +55,12 @@ describe("AGENTS.md is the one instruction file (#321)", () => {
 		);
 	});
 
+	test("AGENTS.md is LF-only, so its size is the same on every checkout", () => {
+		// .gitattributes forces eol=lf; a CRLF checkout would add a byte per
+		// line (~300) and move the file toward the cap on Windows only.
+		assert.ok(!readFileSync(agentsPath, "utf-8").includes("\r"), "AGENTS.md has CRLF line endings");
+	});
+
 	test("no CLAUDE.md or GEMINI.md at the vault root", () => {
 		// Claude Code reads a CLAUDE.md in place of AGENTS.md, silently.
 		assert.ok(!existsSync(resolve(repoRoot, "CLAUDE.md")), "CLAUDE.md is back at the root: Claude Code reads it and skips AGENTS.md");

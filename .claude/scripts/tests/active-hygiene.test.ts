@@ -8,6 +8,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	rmSync,
@@ -624,6 +625,16 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
 			assert.equal(report.leftoverClaudeMd, true);
 			assert.deepEqual(report.oversizedNotes, []);
+		});
+	});
+
+	test("a differently cased claude.md flags exactly where the filesystem resolves it as CLAUDE.md", () => {
+		// Windows and macOS resolve names case-insensitively, so Claude Code
+		// finds a `claude.md` there as CLAUDE.md, and the flag must say so; on
+		// a case-sensitive filesystem neither finds it.
+		withFiles(["AGENTS.md", "claude.md"], (root) => {
+			const resolves = existsSync(join(root, "CLAUDE.md"));
+			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverClaudeMd, resolves);
 		});
 	});
 
