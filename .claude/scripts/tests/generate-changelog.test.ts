@@ -7,7 +7,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -427,5 +427,54 @@ describe("findLatestOpenFingerprint", () => {
 			"v3.7": { exists: ["c"] },
 		};
 		assert.equal(findLatestOpenFingerprint(fp), "v3.7");
+	});
+});
+
+describe("version detection across the AGENTS.md release (#321)", () => {
+	// The rule /om-vault-upgrade applies to a vault with no manifest version:
+	// a fingerprint matches when every `exists` path is there and no `missing`
+	// path is; the newest match wins. Run here against the real manifest and
+	// this repo's own tree, so the entries the release depends on are pinned.
+	type Fp = { exists: string[]; missing?: string[] };
+	const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+	const fingerprints = (
+		JSON.parse(readFileSync(join(repoRoot, "vault-manifest.json"), "utf-8")) as { version_fingerprints: Record<string, Fp> }
+	).version_fingerprints;
+	const order = (k: string) => k.replace(/^v/, "").split(".").map(Number);
+	const newer = (a: string, b: string) => {
+		const [pa, pb] = [order(a), order(b)];
+		for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+			if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
+		}
+		return false;
+	};
+	/** This repo's tree, with some paths forced present or absent. */
+	const vault = (overrides: Record<string, boolean>) => (p: string) =>
+		p in overrides ? overrides[p]! : existsSync(join(repoRoot, p));
+	const detect = (has: (p: string) => boolean): string | null => {
+		let best: string | null = null;
+		for (const [key, fp] of Object.entries(fingerprints)) {
+			if (!fp.exists.every(has) || (fp.missing ?? []).some(has)) continue;
+			if (best === null || newer(key, best)) best = key;
+		}
+		return best;
+	};
+	const RULES = [".claude/rules/skills.md", ".claude/rules/subagents.md", ".claude/rules/memory.md", ".claude/rules/hooks-and-mod.md"];
+	const without = (paths: readonly string[]) => Object.fromEntries(paths.map((p) => [p, false]));
+
+	test("a v10 vault reads as v10.0", () => {
+		assert.equal(detect(vault({ "CLAUDE.md": false, "GEMINI.md": false })), "v10.0");
+	});
+
+	test("a v10 vault with a leftover CLAUDE.md (the case the upgrade guards target) still reads as v10.0", () => {
+		assert.equal(detect(vault({ "CLAUDE.md": true })), "v10.0");
+	});
+
+	test("a v9.1 vault, with CLAUDE.md and GEMINI.md and no .claude/rules/, reads as v9.1", () => {
+		assert.equal(detect(vault({ ...without(RULES), "CLAUDE.md": true, "GEMINI.md": true })), "v9.1");
+	});
+
+	test("the newest fingerprint is the open one, so the next release can close it", () => {
+		assert.equal(findLatestOpenFingerprint(fingerprints), "v10.0");
 	});
 });
