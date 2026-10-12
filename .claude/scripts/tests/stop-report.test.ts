@@ -25,6 +25,7 @@ const EVERY_FINDING: ActiveHygieneReport = {
 	openLoops: [{ path: "work/1-1/Weekly.md", ageDays: 20, openItems: 2 }],
 	inboxPressure: { count: 2, oldestDays: 9 },
 	memoryInbox: { count: 4, oldestDays: 2, namedOnly: 1 },
+	leftoverClaudeMd: true,
 };
 
 describe("stopSummary", () => {
@@ -48,6 +49,7 @@ describe("stopSummary", () => {
 describe("hygieneClaims", () => {
 	test("every finding reduces to its claim: counts, no file lists, no instructions", () => {
 		assert.deepEqual(hygieneClaims(EVERY_FINDING), [
+			"CLAUDE.md present beside AGENTS.md",
 			"2 note(s) marked done but still in active/",
 			"Loose active/ notes that look like one topic",
 			`1 note(s) past the ${MONOLITH_BYTES / 1000}KB organization threshold`,
@@ -67,7 +69,7 @@ describe("hygieneClaims", () => {
 
 	test("a clean report has no claims", () => {
 		assert.deepEqual(
-			hygieneClaims({ completedInActive: [], ungroupedClusters: [], oversizedNotes: [], openLoops: [], inboxPressure: null, memoryInbox: null }),
+			hygieneClaims({ completedInActive: [], ungroupedClusters: [], oversizedNotes: [], openLoops: [], inboxPressure: null, memoryInbox: null, leftoverClaudeMd: false }),
 			[],
 		);
 	});

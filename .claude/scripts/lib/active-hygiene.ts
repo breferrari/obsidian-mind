@@ -29,6 +29,11 @@
  *      by /om-intake; raw exports sitting there are unprocessed by
  *      definition.
  *
+ *   6. LEFTOVER CLAUDE.md (#321) — AGENTS.md is the one instruction file,
+ *      and Claude Code reads a CLAUDE.md beside it instead, silently. An
+ *      update keeps a CLAUDE.md the user edited, so this says so until the
+ *      user's additions are moved to .claude/rules/ and the file is gone.
+ *
  * Philosophy: pattern-based, no LLM, conservative. This NUDGES — it never
  * moves files. False negatives (missing a cluster) are preferable to false
  * positives (nagging about unrelated notes), so the cluster detector leans
@@ -37,7 +42,7 @@
  * topic.
  */
 
-import { readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import { escapeRegex } from "./regex.ts";
 import { parsePromotedMarker, type PromotedRef } from "./memory-promoted.ts";
@@ -120,6 +125,8 @@ export type ActiveHygieneReport = {
 	readonly openLoops: readonly OpenLoop[];
 	readonly inboxPressure: InboxPressure | null;
 	readonly memoryInbox: MemoryInboxPressure | null;
+	/** A CLAUDE.md at the vault root beside AGENTS.md, which Claude Code reads in its place. */
+	readonly leftoverClaudeMd: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -644,7 +651,16 @@ export function scanActiveHygiene(
 		openLoops: findOpenLoops(root, nowMs, openLoopConfig),
 		inboxPressure: findInboxPressure(root, nowMs),
 		memoryInbox: findMemoryInbox(root, memoryRoot, nowMs),
+		leftoverClaudeMd: hasLeftoverClaudeMd(root),
 	};
+}
+
+/**
+ * Both instruction files at the root. CLAUDE.md alone is a vault that has not
+ * upgraded yet, and its CLAUDE.md is still the file that carries everything.
+ */
+function hasLeftoverClaudeMd(root: string): boolean {
+	return existsSync(join(root, "CLAUDE.md")) && existsSync(join(root, "AGENTS.md"));
 }
 
 /**
@@ -683,12 +699,14 @@ const claims = {
 	openLoops: (n: number) => `${n} note(s) with open follow-ups untouched ${OPEN_LOOP_DAYS}+ days`,
 	inbox: (n: number) => `${n} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days`,
 	memoryInbox: (n: number) => `${n} cross-repo memory capture(s) awaiting review`,
+	leftoverClaudeMd: () => "CLAUDE.md present beside AGENTS.md",
 };
 
 /** The claim of every finding in `report`, in the order the formatter lists them. */
 export function hygieneClaims(report: ActiveHygieneReport): string[] {
-	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox } = report;
+	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox, leftoverClaudeMd } = report;
 	const out: string[] = [];
+	if (leftoverClaudeMd) out.push(claims.leftoverClaudeMd());
 	if (completedInActive.length > 0) out.push(claims.completed(completedInActive.length));
 	if (ungroupedClusters.length > 0) out.push(claims.clusters());
 	if (oversizedNotes.length > 0) out.push(claims.oversized(oversizedNotes.length));
@@ -710,6 +728,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		openLoops,
 		inboxPressure,
 		memoryInbox,
+		leftoverClaudeMd,
 	} = report;
 	if (
 		completedInActive.length === 0 &&
@@ -717,11 +736,20 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		oversizedNotes.length === 0 &&
 		openLoops.length === 0 &&
 		inboxPressure === null &&
-		memoryInbox === null
+		memoryInbox === null &&
+		!leftoverClaudeMd
 	) {
 		return [];
 	}
 	const lines: string[] = [];
+
+	// First: until it is gone, Claude Code reads none of the rest of the
+	// conventions this vault ships in AGENTS.md.
+	if (leftoverClaudeMd) {
+		lines.push(
+			`⚠️  ${claims.leftoverClaudeMd()} — Claude Code reads CLAUDE.md and skips AGENTS.md; move your additions to .claude/rules/ and delete it.`,
+		);
+	}
 
 	if (completedInActive.length > 0) {
 		lines.push(

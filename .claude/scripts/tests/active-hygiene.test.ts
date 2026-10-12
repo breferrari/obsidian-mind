@@ -426,6 +426,7 @@ describe("scanActiveHygiene — detectors", () => {
 			openLoops: [],
 			inboxPressure: null,
 			memoryInbox: { count: 4, oldestDays: 2, namedOnly: 0 },
+			leftoverClaudeMd: false,
 		});
 		const text = lines.join("\n");
 		assert.match(text, /COPYING it/);
@@ -446,6 +447,7 @@ describe("scanActiveHygiene — detectors", () => {
 				openLoops: [],
 				inboxPressure: null,
 				memoryInbox: null,
+				leftoverClaudeMd: false,
 			});
 		const atCap = report(HYGIENE_LIST_CAP);
 		assert.equal(atCap.filter((l) => l.startsWith("   - ")).length, 3 * HYGIENE_LIST_CAP);
@@ -539,6 +541,7 @@ describe("formatActiveHygiene", () => {
 			openLoops: [{ path: "work/1-1/A 2026-01-01.md", ageDays: 20, openItems: 2 }],
 			inboxPressure: null,
 			memoryInbox: null,
+			leftoverClaudeMd: false,
 		});
 		const text = lines.join("\n");
 		assert.match(text, /marked done but still in active\//);
@@ -573,5 +576,47 @@ describe("open loops — a capped list keeps its membership as time passes", () 
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
+	// A vault upgraded past the single-instruction-file release keeps a
+	// CLAUDE.md the user edited (their bytes survive the update). Claude Code
+	// then reads CLAUDE.md and silently skips AGENTS.md, so the hygiene scan
+	// says so at every session boundary until it is moved out.
+	const withFiles = (names: readonly string[], run: (root: string) => void): void => {
+		const root = mkdtempSync(join(tmpdir(), "leftover-claude-md-"));
+		try {
+			for (const n of names) writeFileSync(join(root, n), "# Vault\n");
+			run(root);
+		} finally {
+			rmTemp(root);
+		}
+	};
+
+	test("flags a CLAUDE.md sitting beside AGENTS.md, with what to do about it", () => {
+		withFiles(["AGENTS.md", "CLAUDE.md"], (root) => {
+			const report = scanActiveHygiene(root, NOW, DEFAULTS);
+			assert.equal(report.leftoverClaudeMd, true);
+			const text = formatActiveHygiene(report).join("\n");
+			assert.match(
+				text,
+				/CLAUDE\.md present beside AGENTS\.md — Claude Code reads CLAUDE\.md and skips AGENTS\.md; move your additions to \.claude\/rules\/ and delete it\./,
+			);
+		});
+	});
+
+	test("silent with AGENTS.md alone", () => {
+		withFiles(["AGENTS.md"], (root) => {
+			const report = scanActiveHygiene(root, NOW, DEFAULTS);
+			assert.equal(report.leftoverClaudeMd, false);
+			assert.deepEqual(formatActiveHygiene(report), []);
+		});
+	});
+
+	test("silent for a vault that has not upgraded yet (CLAUDE.md, no AGENTS.md)", () => {
+		withFiles(["CLAUDE.md"], (root) => {
+			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverClaudeMd, false);
+		});
 	});
 });
