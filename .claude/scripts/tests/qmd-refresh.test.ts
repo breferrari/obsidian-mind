@@ -121,6 +121,102 @@ describe("triggerDebouncedRefresh — schedules one trailing flush per window", 
 	});
 });
 
+describe("VAULT_QMD_REFRESH=off — no detached worker (#337)", () => {
+	// The test runner sets this so a suite leaves no qmd-refresh-run worker
+	// behind. The real spawner is observed through a fake worker that writes
+	// a marker when it runs: no seam, so the switch is what decides.
+	function fixture() {
+		const dir = mkdtempSync(join(tmpdir(), "qmd-refresh-off-"));
+		const sentinel = join(dir, ".qmd-refresh-sentinel");
+		const marker = join(dir, "worker-ran");
+		const workerPath = join(dir, "fake-worker.mjs");
+		writeFileSync(workerPath, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "");\n`);
+		const fire = () =>
+			triggerDebouncedRefresh({ sentinelPath: sentinel, workerPath, debounceMs: 30_000, logPrefix: "test", qmdAvailable: () => true });
+		return { dir, sentinel, marker, fire };
+	}
+	/** Run `body` with VAULT_QMD_REFRESH set to `value` (or removed), restoring it after. */
+	function withSwitch(value: string | undefined, body: () => Promise<void>): Promise<void> {
+		const before = process.env["VAULT_QMD_REFRESH"];
+		if (value === undefined) delete process.env["VAULT_QMD_REFRESH"];
+		else process.env["VAULT_QMD_REFRESH"] = value;
+		return body().finally(() => {
+			if (before === undefined) delete process.env["VAULT_QMD_REFRESH"];
+			else process.env["VAULT_QMD_REFRESH"] = before;
+		});
+	}
+	const appears = async (path: string, ms: number) => {
+		for (const end = Date.now() + ms; Date.now() < end; ) {
+			if (existsSync(path)) return true;
+			await new Promise((r) => setTimeout(r, 50));
+		}
+		return existsSync(path);
+	};
+
+	test("control: with the switch unset the real worker runs, so the observation works", async () => {
+		await withSwitch(undefined, async () => {
+			const f = fixture();
+			try {
+				f.fire();
+				assert.ok(await appears(f.marker, 5_000), "the fake worker never ran: the test cannot see a spawn");
+			} finally {
+				rmTemp(f.dir);
+			}
+		});
+	});
+
+	test("the immediate path spawns nothing, and still stamps the sentinel", async () => {
+		await withSwitch("off", async () => {
+			const f = fixture();
+			try {
+				f.fire();
+				assert.ok(existsSync(f.sentinel), "the sentinel is still stamped");
+				assert.equal(await appears(f.marker, 1_500), false, "a worker ran with VAULT_QMD_REFRESH=off");
+			} finally {
+				rmTemp(f.dir);
+			}
+		});
+	});
+
+	test("the trailing path spawns nothing, and still claims the pending marker", async () => {
+		await withSwitch("off", async () => {
+			const f = fixture();
+			try {
+				// Fresh, as runHook leaves it: the trailing path. Aged 10 s, because a
+				// sentinel stamped in the same millisecond reads as clock skew.
+				writeFileSync(f.sentinel, "");
+				const t = (Date.now() - 10_000) / 1000;
+				utimesSync(f.sentinel, t, t);
+				f.fire();
+				assert.ok(existsSync(pendingPathFor(f.sentinel)), "the pending marker is still claimed");
+				assert.equal(await appears(f.marker, 1_500), false, "a worker ran with VAULT_QMD_REFRESH=off");
+			} finally {
+				rmTemp(f.dir);
+			}
+		});
+	});
+
+	test("an explicit spawnWorker seam still runs when the switch is off", async () => {
+		await withSwitch("off", async () => {
+			const dir = mkdtempSync(join(tmpdir(), "qmd-refresh-off-seam-"));
+			try {
+				const spawned: (readonly string[])[] = [];
+				triggerDebouncedRefresh({
+					sentinelPath: join(dir, ".qmd-refresh-sentinel"),
+					workerPath: "worker.ts",
+					debounceMs: 30_000,
+					logPrefix: "test",
+					qmdAvailable: () => true,
+					spawnWorker: (_p, args) => spawned.push(args),
+				});
+				assert.deepEqual(spawned, [[]]);
+			} finally {
+				rmTemp(dir);
+			}
+		});
+	});
+});
+
 describe("claimTrailingFlush — the worker's gate after sleeping", () => {
 	test("runs when no newer refresh started, clears the marker, stamps the sentinel", () => {
 		const dir = mkdtempSync(join(tmpdir(), "qmd-claim-"));

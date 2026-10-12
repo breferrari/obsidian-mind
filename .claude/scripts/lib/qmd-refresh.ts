@@ -283,6 +283,18 @@ function touchSentinel(sentinelPath: string): void {
  * naked `spawn` creates on Windows. Errors are logged under HOOK_DEBUG
  * only — production is silent per the hook protocol.
  */
+/**
+ * The switch that stops the trigger from spawning its detached worker. The
+ * test runner sets it, so a suite leaves no qmd-refresh-run process behind;
+ * wiki-mind's vendored copy uses the same name (wiki-mind #93).
+ */
+export const REFRESH_SWITCH = "VAULT_QMD_REFRESH";
+
+/** Whether the detached refresh worker is switched off for this process. */
+export function refreshDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
+	return env[REFRESH_SWITCH] === "off";
+}
+
 function spawnDetachedWorker(
 	workerPath: string,
 	logPrefix: string,
@@ -348,9 +360,14 @@ export function triggerDebouncedRefresh(opts: {
 		debug(`${opts.logPrefix}: qmd not resolvable; skipping`);
 		return;
 	}
+	// VAULT_QMD_REFRESH=off (set by the test runner) stops the detached worker
+	// and nothing else: the decision and its sentinel and pending stamps run
+	// as usual, so the trigger's observable behaviour is unchanged (#337).
 	const spawnWorker =
 		opts.spawnWorker ??
-		((path: string, args: readonly string[]) => spawnDetachedWorker(path, opts.logPrefix, args));
+		(refreshDisabled()
+			? () => debug(`${opts.logPrefix}: refresh off (${REFRESH_SWITCH}=off); no worker spawned`)
+			: (path: string, args: readonly string[]) => spawnDetachedWorker(path, opts.logPrefix, args));
 
 	if (plan === "now") {
 		touchSentinel(opts.sentinelPath);
