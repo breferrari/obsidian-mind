@@ -116,16 +116,16 @@ describe("session context (#265)", () => {
 
 describe("withSessionContext", () => {
 	const PATH = `${ROOT}/.claude/session-context.md`;
-	const claudeMd = { path: `${ROOT}/CLAUDE.md`, kind: "project" as const, content: "# Vault" };
+	const agentsMd = { path: `${ROOT}/AGENTS.md`, kind: "project" as const, content: "# Vault" };
 
 	test("adds the context as a project instruction file, after the files already there", () => {
-		const out = withSessionContext({ blocks: [{ name: "claudeMd", text: "" }], instructionFiles: [claudeMd] }, PATH, CONTEXT);
-		expect(out.instructionFiles).toEqual([claudeMd, { path: PATH, kind: "project", content: CONTEXT }]);
+		const out = withSessionContext({ blocks: [{ name: "claudeMd", text: "" }], instructionFiles: [agentsMd] }, PATH, CONTEXT);
+		expect(out.instructionFiles).toEqual([agentsMd, { path: PATH, kind: "project", content: CONTEXT }]);
 		expect(out.blocks).toEqual([{ name: "claudeMd", text: "" }]);
 	});
 
 	test("replaces an earlier copy instead of adding a second", () => {
-		const once = withSessionContext({ blocks: [], instructionFiles: [claudeMd] }, PATH, "old");
+		const once = withSessionContext({ blocks: [], instructionFiles: [agentsMd] }, PATH, "old");
 		const twice = withSessionContext(once, PATH, CONTEXT);
 		expect(twice.instructionFiles?.filter((file) => file.path === PATH)).toEqual([{ path: PATH, kind: "project", content: CONTEXT }]);
 	});

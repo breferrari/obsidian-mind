@@ -414,10 +414,14 @@ function findOversizedNotes(
 			} else if (e.isFile() && isMarkdownFilename(e.name)) {
 				if (isMonolithExempt(e.name)) continue;
 				// Root-level infrastructure docs (README + translations,
-				// CLAUDE.md, …) are repo files, not vault notes — their bulk
+				// AGENTS.md, …) are repo files, not vault notes — their bulk
 				// is not a split candidate.
 				if (relDir === "" && isInfraFilename(e.name, infraRootFilenames))
 					continue;
+				// A root CLAUDE.md is an instruction file whatever the manifest
+				// lists. Left over beside AGENTS.md it has its own flag, which
+				// says to move it out, not to split it (#321).
+				if (relDir === "" && e.name === "CLAUDE.md") continue;
 				try {
 					const size = statSync(join(root, rel)).size;
 					if (size >= MONOLITH_BYTES) {

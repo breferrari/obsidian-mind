@@ -146,7 +146,6 @@ describe("toFingerprintKey", () => {
 
 describe("pickMarkers", () => {
 	const GLOBS = [
-		"CLAUDE.md",
 		"AGENTS.md",
 		".mcp.json",
 		".claude/**",

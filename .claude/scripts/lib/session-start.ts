@@ -747,7 +747,7 @@ export function isMarkdownFilename(name: string): boolean {
 
 /**
  * Extract the root-level entries from `vault-manifest.json`'s `infrastructure`
- * list — files like CLAUDE.md, README.*.md, Home.md that aren't user content
+ * list — files like AGENTS.md, README.*.md, Home.md that aren't user content
  * and therefore shouldn't be scanned for open tasks. Glob patterns with `/`
  * (e.g. `.claude/**`) are excluded because they target subdirectories.
  *
@@ -774,7 +774,7 @@ export function parseInfraRootFilenames(
 
 /**
  * True if `filename` matches any of the given root-level infrastructure
- * patterns. Patterns are literal filenames (`CLAUDE.md`) or globs with `*`
+ * patterns. Patterns are literal filenames (`AGENTS.md`) or globs with `*`
  * wildcards (`README.*.md`). Other regex metacharacters are escaped so a
  * pattern like `foo.md` matches `foo.md`, not `fooXmd`.
  */

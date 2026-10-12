@@ -22,5 +22,5 @@
 - [ ] PR title follows `type: description` format
 - [ ] Tests pass (`cd .claude/scripts && npm test`)
 - [ ] Any NEW guard, check, or config constraint has demonstrated a red — broken deliberately, seen to fire, reverted. Say which, in one line
-- [ ] Doc tables updated if adding commands/agents (CLAUDE.md, README, Skills.md, translations)
+- [ ] Doc tables updated if adding commands/agents (AGENTS.md, README, Skills.md, translations)
 - [ ] No changes to CHANGELOG.md or vault-manifest.json version (automated by release pipeline)

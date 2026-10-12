@@ -5,7 +5,7 @@ export const CONTEXT_BLOCK = "obsidian-mind";
 
 /**
  * The first message's context with the session context added: as a project
- * instruction file, which Claude Code frames like CLAUDE.md, re-reads after
+ * instruction file, which Claude Code frames like AGENTS.md, re-reads after
  * compaction and `/clear`, and gives general-purpose subagents.
  *
  * When a hook above rewrote the `claudeMd` text, the files behind it are

@@ -22,3 +22,17 @@ Present a structured standup summary:
 - **Suggested Focus**: What to prioritize today based on goals + open items — act on injected hygiene flags here
 
 Keep it concise. This is a quick orientation, not a deep dive.
+
+## Starting a Substantial Session
+
+The `SessionStart` hook automatically injects rich context: vault file listing, North Star goals, active work, recent git changes, open tasks (aggregated from `work/active/` and the vault root, excluding infrastructure files), vault-hygiene drift flags (act on them or run `/om-tidy`), and triggers a QMD re-index. Most context is already loaded -- you don't need to manually read files.
+
+**Shortcut**: Run `/om-standup` for a structured morning kickoff that reads everything and presents a summary with suggested priorities.
+
+If doing it manually:
+
+1. Read `Home.md` -- vault entry point with embedded dashboards
+2. Read `brain/North Star.md` -- ground suggestions in current goals
+3. Check `work/Index.md` -- see active projects and recent notes
+4. Scan `brain/Memories.md` -- index of memory topics, then read relevant topic notes
+5. `obsidian tasks daily todo` -- see pending items

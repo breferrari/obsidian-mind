@@ -407,7 +407,7 @@ describe("MACHINERY_DIRS", () => {
 		// The cached template copy and every pre-update backup snapshot —
 		// engine artifacts that outnumbered real notes 3:1 on a v7.0.1 install.
 		assert.equal(
-			isSkippedPath(".shardmind/templates/CLAUDE.md", MACHINERY_DIRS),
+			isSkippedPath(".shardmind/templates/AGENTS.md", MACHINERY_DIRS),
 			true,
 		);
 		assert.equal(
@@ -740,14 +740,14 @@ describe("parseInfraRootFilenames", () => {
 	});
 	test("returns empty when infrastructure field is not an array", () => {
 		assert.deepEqual(
-			parseInfraRootFilenames(JSON.stringify({ infrastructure: "CLAUDE.md" })),
+			parseInfraRootFilenames(JSON.stringify({ infrastructure: "AGENTS.md" })),
 			[],
 		);
 	});
 	test("returns only the root-level entries (filters out anything containing '/')", () => {
 		const manifest = JSON.stringify({
 			infrastructure: [
-				"CLAUDE.md",
+				"AGENTS.md",
 				"README.*.md",
 				".claude/**",
 				"templates/**",
@@ -755,17 +755,17 @@ describe("parseInfraRootFilenames", () => {
 			],
 		});
 		assert.deepEqual(parseInfraRootFilenames(manifest), [
-			"CLAUDE.md",
+			"AGENTS.md",
 			"README.*.md",
 			"Home.md",
 		]);
 	});
 	test("filters out non-string entries silently", () => {
 		const manifest = JSON.stringify({
-			infrastructure: ["CLAUDE.md", 42, null, "Home.md"],
+			infrastructure: ["AGENTS.md", 42, null, "Home.md"],
 		});
 		assert.deepEqual(parseInfraRootFilenames(manifest), [
-			"CLAUDE.md",
+			"AGENTS.md",
 			"Home.md",
 		]);
 	});
@@ -774,17 +774,17 @@ describe("parseInfraRootFilenames", () => {
 describe("isInfraFilename", () => {
 	// Mirrors the vault-manifest.json shape: literal entries for the canonical
 	// names plus a glob for localized README variants. Both forms must work.
-	const patterns = ["CLAUDE.md", "README.md", "README.*.md", "Home.md"];
+	const patterns = ["AGENTS.md", "README.md", "README.*.md", "Home.md"];
 
 	test("matches literal filenames exactly", () => {
-		assert.equal(isInfraFilename("CLAUDE.md", patterns), true);
+		assert.equal(isInfraFilename("AGENTS.md", patterns), true);
 		assert.equal(isInfraFilename("README.md", patterns), true);
 		assert.equal(isInfraFilename("Home.md", patterns), true);
 	});
 	test("rejects close-but-not-equal filenames", () => {
 		assert.equal(isInfraFilename("claude.md", patterns), false); // case-sensitive
-		assert.equal(isInfraFilename("CLAUDE.md.bak", patterns), false);
-		assert.equal(isInfraFilename("MY-CLAUDE.md", patterns), false);
+		assert.equal(isInfraFilename("AGENTS.md.bak", patterns), false);
+		assert.equal(isInfraFilename("MY-AGENTS.md", patterns), false);
 	});
 	test("glob patterns match the localized variants they target", () => {
 		assert.equal(isInfraFilename("README.ja.md", patterns), true);
@@ -803,11 +803,11 @@ describe("isInfraFilename", () => {
 		assert.equal(isInfraFilename("foo.qux.md", ["*.bar.*"]), false);
 	});
 	test("escapes regex metacharacters in literal segments of patterns", () => {
-		// `.` in `CLAUDE.md` must not match `CLAUDExmd`
-		assert.equal(isInfraFilename("CLAUDExmd", patterns), false);
+		// `.` in `AGENTS.md` must not match `AGENTSxmd`
+		assert.equal(isInfraFilename("AGENTSxmd", patterns), false);
 	});
 	test("returns false on empty pattern list", () => {
-		assert.equal(isInfraFilename("CLAUDE.md", []), false);
+		assert.equal(isInfraFilename("AGENTS.md", []), false);
 	});
 	test("user content files are not infra", () => {
 		assert.equal(isInfraFilename("2026-05-18.md", patterns), false);

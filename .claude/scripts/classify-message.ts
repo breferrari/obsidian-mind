@@ -64,7 +64,7 @@ if (toEmit.length > 0) {
 	parts.push(
 		"Content classification hints (act on these if the user's message contains relevant info):\n" +
 			hints +
-			"\n\nRemember: use proper templates, add [[wikilinks]], follow CLAUDE.md conventions.",
+			"\n\nRemember: use proper templates, add [[wikilinks]], follow AGENTS.md conventions.",
 	);
 }
 if (stopReport !== null) parts.push(stopReport);

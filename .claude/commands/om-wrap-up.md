@@ -89,3 +89,19 @@ Present a concise summary:
 - This is a READ + VERIFY pass, not a creation pass. Fix small issues (broken links, missing frontmatter), but flag larger changes for user approval.
 - Be honest about what's missing — the goal is leaving the vault in a better state than you found it.
 - If North Star goals shifted during the session, suggest updating it.
+
+## Ending a Substantial Session
+
+If `/om-wrap-up` is not invoked, at minimum do these before wrapping up:
+
+1. **Archive completed projects**: `git mv` from `work/active/` to `work/archive/YYYY/`, update `status: completed` (or use `/om-project-archive`)
+2. Update `work/Index.md` if new notes or decisions were created
+3. Update the relevant brain topic note (`brain/Key Decisions.md`, `brain/Patterns.md`, `brain/Gotchas.md`) with key learnings
+4. Update `org/People & Context.md` if org knowledge changed
+5. Update `perf/Brag Doc.md` if wins or impact were achieved
+6. Offer to update `brain/North Star.md` if goals shifted or new focus emerged
+7. Verify all new notes link to at least one existing note (orphans are bugs)
+8. If work demonstrates competencies, add competency links to the work note's `## Related`
+9. Run `/om-vault-audit` if the session created many notes
+
+Skip steps that don't apply. The goal is transferring durable knowledge from conversation to vault state.

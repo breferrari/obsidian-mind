@@ -614,6 +614,19 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		});
 	});
 
+	test("a large leftover CLAUDE.md is the leftover flag only, never a note to SPLIT", () => {
+		// CLAUDE.md left the manifest's infrastructure list in the same release,
+		// so the root-infra exemption no longer covers it. Telling the user to
+		// split a file the other flag says to move out and delete would be two
+		// contradictory instructions about one file.
+		withFiles(["AGENTS.md"], (root) => {
+			writeFileSync(join(root, "CLAUDE.md"), "x".repeat(MONOLITH_BYTES + 1000));
+			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
+			assert.equal(report.leftoverClaudeMd, true);
+			assert.deepEqual(report.oversizedNotes, []);
+		});
+	});
+
 	test("silent for a vault that has not upgraded yet (CLAUDE.md, no AGENTS.md)", () => {
 		withFiles(["CLAUDE.md"], (root) => {
 			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverClaudeMd, false);

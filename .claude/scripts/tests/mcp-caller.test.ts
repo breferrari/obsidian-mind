@@ -223,7 +223,7 @@ describe("recognising the vault itself", () => {
 
 describe("sanitising text that crosses back to the caller", () => {
 	test("a Windows path in a real fs error is stripped", () => {
-		const msg = "ENOENT: no such file or directory, lstat 'C:\\Users\\someone\\vault\\CLAUDE.md'";
+		const msg = "ENOENT: no such file or directory, lstat 'C:\\Users\\someone\\vault\\AGENTS.md'";
 		const out = sanitize(msg);
 		assert.ok(!out.includes("Users"), out);
 		assert.ok(!out.includes("someone"), out);

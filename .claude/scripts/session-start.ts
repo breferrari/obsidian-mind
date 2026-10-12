@@ -402,7 +402,7 @@ function openTasks(): Built {
 	// the Electron app on macOS). Order matters: project tasks in work/active/
 	// surface first, then vault-root notes (which is where daily notes live by
 	// Obsidian's default — empirically the dominant task store in user vaults).
-	// Infra files (CLAUDE.md, README.*.md, …) are excluded so the section is
+	// Infra files (AGENTS.md, README.*.md, …) are excluded so the section is
 	// user content only. Paths use forward slashes so the output reads the same
 	// in Claude's context on any OS.
 	const sources = [

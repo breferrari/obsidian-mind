@@ -82,7 +82,7 @@ if (shouldRefreshForPath(filePath)) {
 // Memory-location guard (#81) runs BEFORE the vault-root skip: the
 // auto-memory directory lives in ~/.claude/, outside the vault, and would
 // otherwise be skipped. Only MEMORY.md (the auto-loaded index) belongs
-// there — durable knowledge goes to brain/ topic notes per CLAUDE.md.
+// there — durable knowledge goes to brain/ topic notes per .claude/rules/memory.md.
 // PostToolUse can't block the write, but a loud warning makes the
 // violation immediately visible so the file gets migrated before the
 // index drifts. The predicate checks the lexically-normalized path AND
@@ -100,7 +100,7 @@ if (isBlockedMemoryPath(filePath) || isBlockedMemoryPath(resolvedPath)) {
 	const memoryContext = [
 		`⚠️  Memory location violation: \`${file}\` was written to \`~/.claude/.../memory/\`.`,
 		"",
-		"Per CLAUDE.md, this directory should contain only MEMORY.md (the auto-loaded index).",
+		"Per .claude/rules/memory.md, this directory should contain only MEMORY.md (the auto-loaded index).",
 		"All durable knowledge belongs in the vault under `brain/` topic notes:",
 		"",
 		"- Patterns/conventions → `brain/Patterns.md`",

@@ -19,14 +19,14 @@ import {
 import { rmTemp } from "./_helpers.ts";
 
 /** The real manifest's shape, in miniature. */
-const GLOBS = ["CLAUDE.md", ".claude/**", "templates/**", "brain/Skills.md"];
+const GLOBS = ["AGENTS.md", ".claude/**", "templates/**", "brain/Skills.md"];
 
 describe("globToRegex", () => {
 	test("exact string (no wildcards)", () => {
-		const r = globToRegex("CLAUDE.md");
-		assert.ok(r.test("CLAUDE.md"));
+		const r = globToRegex("AGENTS.md");
+		assert.ok(r.test("AGENTS.md"));
 		// dots must be escaped — a slash-separator should not match a dot
-		assert.ok(!r.test("CLAUDExmd"));
+		assert.ok(!r.test("AGENTSxmd"));
 	});
 
 	test("double-star matches any depth", () => {
@@ -62,9 +62,9 @@ describe("globToRegex", () => {
 	});
 
 	test("anchors with ^ and $ (no prefix/suffix bleed)", () => {
-		const r = globToRegex("CLAUDE.md");
-		assert.ok(!r.test("xCLAUDE.md"));
-		assert.ok(!r.test("CLAUDE.mdx"));
+		const r = globToRegex("AGENTS.md");
+		assert.ok(!r.test("xAGENTS.md"));
+		assert.ok(!r.test("AGENTS.mdx"));
 	});
 
 	test("plus and other regex specials are escaped", () => {
@@ -76,7 +76,7 @@ describe("globToRegex", () => {
 
 describe("isCovered", () => {
 	test("exact-string glob matches the same string", () => {
-		assert.equal(isCovered("CLAUDE.md", GLOBS), true);
+		assert.equal(isCovered("AGENTS.md", GLOBS), true);
 		assert.equal(isCovered("brain/Skills.md", GLOBS), true);
 	});
 
@@ -95,8 +95,8 @@ describe("isCovered", () => {
 	});
 
 	test("exact-string glob does NOT match prefix variants", () => {
-		assert.equal(isCovered("CLAUDE.md.bak", GLOBS), false);
-		assert.equal(isCovered("x/CLAUDE.md", GLOBS), false);
+		assert.equal(isCovered("AGENTS.md.bak", GLOBS), false);
+		assert.equal(isCovered("x/AGENTS.md", GLOBS), false);
 	});
 
 	// The manifest globs are POSIX, but the directory walk built its paths with

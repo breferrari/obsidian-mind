@@ -88,6 +88,7 @@ const WATCHED: ReadonlyArray<{
 }> = [
 	{ dir: ".claude/commands", exts: [".md"] },
 	{ dir: ".claude/agents", exts: [".md"] },
+	{ dir: ".claude/rules", exts: [".md"] },
 	{ dir: ".claude/scripts", exts: [".ts", ".json"] },
 	{ dir: ".claude-plugin", exts: [".json"] },
 	{ dir: ".codex", exts: [".json", ".md"] },
@@ -104,10 +105,8 @@ const WATCHED: ReadonlyArray<{
 const WATCHED_ROOT_FILES: readonly string[] = [
 	"AGENTS.md",
 	"ARCHITECTURE.md",
-	"CLAUDE.md",
 	"CHANGELOG.md",
 	"CONTRIBUTING.md",
-	"GEMINI.md",
 	"Home.md",
 	"LICENSE",
 	"README.md",
