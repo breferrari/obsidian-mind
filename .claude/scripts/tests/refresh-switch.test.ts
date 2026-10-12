@@ -22,7 +22,15 @@ import { rmTemp, runScript } from "./_helpers.ts";
 
 const testsDir = dirname(fileURLToPath(import.meta.url));
 
-test("this test process sees the refresh switch off", () => {
+test("this test process sees the refresh switch off, wherever the preload or runner ran", (t) => {
+	// A bare `node --test` (CI's test-without-qmd leg, the release job) loads
+	// neither, so this process has no switch; every hook it runs still gets it
+	// from runScript, which the last test below pins. OM_QMD_ISOLATED is set by
+	// both the preload and the runner, so it says whether either ran.
+	if (process.env["OM_QMD_ISOLATED"] === undefined) {
+		t.skip("bare node --test: no preload or runner, so the switch reaches hooks through runScript only");
+		return;
+	}
 	assert.equal(process.env[REFRESH_SWITCH], "off");
 });
 
