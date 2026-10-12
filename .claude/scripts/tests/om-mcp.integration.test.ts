@@ -412,6 +412,117 @@ describe("the om server on the wire", () => {
 	});
 
 	/**
+	 * Supersession vs. the duplicate guard, over the wire.
+	 *
+	 * A correction is a near-copy of what it corrects — same subject, one value or
+	 * one cause changed — so the near-duplicate check used to refuse exactly the
+	 * call `supersedes` exists for, then told the caller to pass `supersedes`,
+	 * which they had. What has to hold is the ORDER inside `callRemember`, and a
+	 * unit test of `findSimilar` cannot tell the two orderings apart: only the
+	 * live server sees the refusal, the back-link and the advice together.
+	 */
+	describe("a correction that supersedes an existing memory", () => {
+		const A_TITLE = "The importer times out after 30 seconds on large CSV files";
+		const A_BODY =
+			"The importer times out after 30 seconds on large CSV files because the reader holds the whole file in memory instead of streaming rows.";
+		const B_TITLE = "The build cache misses when the lockfile is regenerated";
+		const B_BODY =
+			"The build cache misses when the lockfile is regenerated because the cache key is derived from the lockfile hash, so every task reruns from scratch.";
+		/** A restatement of A that changes the CAUSE, but stays a near-duplicate of it. */
+		const CORRECTION_A =
+			"The importer times out after 30 seconds on large CSV files because the proxy in front of it times out first, not the reader holding the whole file in memory.";
+
+		/** Fixture memory, written the way the server writes one so supersession may touch it. */
+		const memory = (name: string, title: string, body: string): string => {
+			const rel = `memories/2026/07/${name}.md`;
+			put(
+				rel,
+				"---\n" +
+					`description: "${body}"\n` +
+					"tags: [memory]\n" +
+					"source: mcp-capture\n" +
+					`origin: "${CALLER}"\n` +
+					"scope: project\n" +
+					`projects: [${CALLER}]\n` +
+					"confidence: verified\n" +
+					"---\n\n" +
+					`# ${title}\n\n${body}\n`,
+			);
+			return rel;
+		};
+
+		const remember = (args: Record<string, unknown>): Promise<Rpc> =>
+			call("tools/call", {
+				name: "remember",
+				arguments: {
+					confidence: "verified",
+					verification: "Observed in this run.",
+					scope: "project",
+					projects: [CALLER],
+					...args,
+				},
+			});
+
+		test("is recorded instead of refused, and back-links the memory it replaces", async () => {
+			const rel = memory("import-timeout", A_TITLE, A_BODY);
+
+			const t = textOf(
+				await remember({ title: A_TITLE, body: CORRECTION_A, supersedes: [A_TITLE] }),
+			);
+			assert.match(t, /Recorded: memories\//, "a declared correction must not be refused as a duplicate");
+			assert.match(t, new RegExp(`Superseded: ${A_TITLE}`));
+
+			// Kept, not deleted — the history is the point, so the proof is the
+			// back-link landing in the file.
+			const old = readFileSync(join(vault, rel), "utf8");
+			assert.match(old, /superseded_by: \["The importer times out/);
+		});
+
+		test("the same correction WITHOUT supersedes is still refused", async () => {
+			memory("import-timeout-undeclared", A_TITLE, A_BODY);
+
+			const t = textOf(await remember({ title: A_TITLE, body: CORRECTION_A }));
+			assert.match(t, /near-identical memory already exists/);
+			assert.doesNotMatch(t, /Recorded:/, "an undeclared restatement is what the guard is for");
+		});
+
+		test("superseding A does not excuse a near-copy of B", async () => {
+			memory("build-cache", B_TITLE, B_BODY);
+			memory("importer", A_TITLE, A_BODY);
+
+			// Names A, but the text collides with B. Only the NAMED target drops out
+			// of the comparison — a correction is not a licence.
+			const t = textOf(
+				await remember({
+					title: B_TITLE,
+					body: `${B_BODY.replace(/reruns from scratch\.$/, "reruns from scratch on a clean checkout.")}`,
+					supersedes: [A_TITLE],
+				}),
+			);
+			assert.match(t, /near-identical memory already exists/);
+			assert.match(t, new RegExp(B_TITLE), "the refusal must name the memory that actually collides");
+			assert.doesNotMatch(t, new RegExp(`Superseded: ${A_TITLE}`));
+		});
+
+		test("a supersedes title that matches nothing is named, not re-advised", async () => {
+			memory("build-cache-unmatched", B_TITLE, B_BODY);
+
+			const t = textOf(
+				await remember({
+					title: B_TITLE,
+					body: `${B_BODY.replace(/reruns from scratch\.$/, "reruns from scratch on a clean checkout.")}`,
+					supersedes: ["A title nobody has ever written"],
+				}),
+			);
+			assert.match(t, /near-identical memory already exists/);
+			// The caller DID pass supersedes and it cannot work, so repeating the
+			// advice sends them round the same loop. Say what did not resolve.
+			assert.match(t, /Supersedes did not match any memory: A title nobody has ever written/);
+			assert.doesNotMatch(t, /pass supersedes/, "the advice the caller already followed must not come back");
+		});
+	});
+
+	/**
 	 * Promotion, over the wire.
 	 *
 	 * The unit suite proves the resolver. What only a live server proves is that

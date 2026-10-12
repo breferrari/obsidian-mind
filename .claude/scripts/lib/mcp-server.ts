@@ -525,24 +525,14 @@ export function createHandlers(deps: ServerDeps): Handlers {
 
 		const digests = digestsFrom(storeFresh());
 
-		// Near-duplicate suppression, facet-gated so two projects can each hold
-		// their own copy of the same lesson.
-		if (args.force !== true) {
-			const { duplicates } = findSimilar(v.value, digests);
-			if (duplicates.length) {
-				const d = duplicates[0]!;
-				return [
-					`Not recorded: a near-identical memory already exists (${Math.round(d.score * 100)}% similar).`,
-					`  ${d.entry.title}`,
-					`  ${d.entry.rel}`,
-					"",
-					"If this genuinely differs, pass force: true. If it CORRECTS that memory,",
-					"pass supersedes: [\"<its exact title>\"] instead — the old one is kept and back-linked.",
-				].join("\n");
-			}
-		}
-
-		const { resolved, dropped } = resolveLinks(args.links, resolvable);
+		// Resolved BEFORE the duplicate check, because a correction is by nature a
+		// near-copy of what it corrects: same subject, one value or one cause
+		// changed. A check that ran first asked "is this a restatement?" of a
+		// memory the caller had already named as replaced, then told the caller to
+		// pass supersedes — which they had. The named targets drop out of the
+		// comparison; every OTHER memory stays in it, so a correction that also
+		// duplicates a third note is still refused, which is the check working.
+		//
 		// Only what recall serves this caller (#364). A title can name a memory
 		// scoped to another project, or one recall already withholds; marking it
 		// would withhold it from its own project's callers, whose only replacement
@@ -558,6 +548,44 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			args.supersedes,
 			digests.filter((d) => served.has(d.rel)),
 		);
+		const superseded = new Set(supers.matched.map((m) => m.rel));
+
+		// Near-duplicate suppression, facet-gated so two projects can each hold
+		// their own copy of the same lesson.
+		if (args.force !== true) {
+			const { duplicates } = findSimilar(
+				v.value,
+				digests.filter((d) => !superseded.has(d.rel)),
+			);
+			if (duplicates.length) {
+				const d = duplicates[0]!;
+				// When the caller DID pass supersedes and none of them resolved,
+				// repeating "pass supersedes" is an instruction they already followed
+				// and cannot follow successfully — the title they named does not exist.
+				// Say which ones did not resolve, and point at the exact-match rule,
+				// instead of sending them round the loop a second time.
+				const advice = supers.unmatched.length
+					? [
+							"If this genuinely differs, pass force: true.",
+							"",
+							`Supersedes did not match any memory: ${supers.unmatched.join(", ")}.`,
+							"Titles are matched exactly, case-insensitively — check the spelling against a recall result.",
+						]
+					: [
+							"If this genuinely differs, pass force: true. If it CORRECTS that memory,",
+							"pass supersedes: [\"<its exact title>\"] instead — the old one is kept and back-linked.",
+						];
+				return [
+					`Not recorded: a near-identical memory already exists (${Math.round(d.score * 100)}% similar).`,
+					`  ${d.entry.title}`,
+					`  ${d.entry.rel}`,
+					"",
+					...advice,
+				].join("\n");
+			}
+		}
+
+		const { resolved, dropped } = resolveLinks(args.links, resolvable);
 		// A match the server may not modify (a hand-filed memory) is shown apart,
 		// so a preview never promises a mark the write will refuse.
 		const markable = supers.matched.filter((d) => isServerOwned(d.source));
