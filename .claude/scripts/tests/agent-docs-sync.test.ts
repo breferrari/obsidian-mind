@@ -70,6 +70,56 @@ describe("AGENTS.md is the one instruction file (#321)", () => {
 		assert.ok(Array.isArray(names) && names.includes("AGENTS.md"), ".gemini/settings.json context.fileName must list AGENTS.md");
 	});
 
+	/** The `.claude/rules/*.md` files AGENTS.md's pointers name. */
+	const pointerTargets = (): string[] => [
+		...new Set([...readFileSync(agentsPath, "utf-8").matchAll(/`(\.claude\/rules\/[\w.-]+\.md)`/g)].map((m) => m[1]!)),
+	];
+	const SHARED_LINE =
+		"Shared section: Claude Code and Grok load it at session start; other agents read it when AGENTS.md points here.";
+
+	test("every rules file AGENTS.md points at exists, is non-empty, and says it is shared", () => {
+		const targets = pointerTargets();
+		assert.ok(targets.length > 0, "AGENTS.md names no .claude/rules/ file: the moved sections have no pointer");
+		for (const t of targets) {
+			const p = resolve(repoRoot, t);
+			assert.ok(existsSync(p), `AGENTS.md points at ${t}, which does not exist`);
+			const text = readFileSync(p, "utf-8");
+			assert.ok(text.trim().length > 0, `${t} is empty`);
+			assert.equal(text.split("\n")[0], SHARED_LINE, `${t} does not open with the shared-section line`);
+		}
+	});
+
+	test("every shared rules file is pointed at by AGENTS.md, so no agent but Claude Code and Grok is cut off from it", () => {
+		const targets = new Set(pointerTargets());
+		const dir = resolve(repoRoot, ".claude/rules");
+		for (const f of readdirSync(dir).filter((n) => n.endsWith(".md"))) {
+			const shared = readFileSync(resolve(dir, f), "utf-8").startsWith(SHARED_LINE);
+			assert.equal(targets.has(`.claude/rules/${f}`), shared, `.claude/rules/${f}: ${shared ? "shared but AGENTS.md never points at it" : "Claude-only but AGENTS.md points at it"}`);
+		}
+	});
+
+	test("under every module selection, every file AGENTS.md points at is installed", () => {
+		// A file claimed by a removable module disappears when that module is
+		// deselected, and a Codex-only vault would then follow a pointer to
+		// nothing. Shared files must be core: claimed by no removable module.
+		const schema = readFileSync(resolve(repoRoot, ".shardmind/shard-schema.yaml"), "utf-8");
+		const modulesBlock = schema.slice(schema.indexOf("\nmodules:\n"), schema.indexOf("\nsignals:\n"));
+		const modules = modulesBlock.split(/\n  (?=[a-z_]+:\n)/).slice(1);
+		const removablePaths = modules
+			.filter((m) => /\n    removable: true\b/.test(m))
+			.flatMap((m) => [...m.matchAll(/\n      - "([^"]+)"/g)].map((x) => x[1]!));
+		assert.ok(modules.length > 0, "found no modules in shard-schema.yaml");
+		const claims = (path: string, claim: string) => (claim.endsWith("/") ? path.startsWith(claim) : path === claim);
+		for (const t of [...pointerTargets(), "AGENTS.md"]) {
+			const by = removablePaths.find((c) => claims(t, c));
+			assert.equal(by, undefined, `${t} is claimed by a removable module (${by}), so a vault without that module loses it`);
+		}
+		// And the Claude module, removable or not, claims only the Claude-only files.
+		const claude = modules.find((m) => m.startsWith("claude:"))!;
+		const claudePaths = [...claude.matchAll(/\n      - "([^"]+)"/g)].map((x) => x[1]!);
+		assert.ok(!claudePaths.includes(".claude/rules/"), "the Claude module claims all of .claude/rules/, shared files included");
+	});
+
 	test("every .claude/rules/*.md exists and is non-empty", () => {
 		const dir = resolve(repoRoot, ".claude/rules");
 		assert.ok(existsSync(dir), ".claude/rules/ is missing: the Claude-only guidance has nowhere to load from");
