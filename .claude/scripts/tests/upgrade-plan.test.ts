@@ -15,7 +15,7 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
-	instructionFilesReady,
+	retiredFileReady,
 	settleFirst,
 	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
@@ -160,7 +160,7 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		const untouched = untouchedRetiredFiles(
 			(p) => hashes[p] ?? null,
 			(p) => (p === "CLAUDE.md" ? "h-template" : null),
-			true,
+			() => true,
 		);
 		assert.deepEqual(untouched, ["CLAUDE.md"]);
 		const plan: AdoptPlan = { dryRun: true, files: [] };
@@ -173,16 +173,16 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 	});
 
 	test("unmanaged: an edited CLAUDE.md, or one the base release never had, is not untouched", () => {
-		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => "h-template", true), []);
-		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => null, true), []);
-		assert.deepEqual(untouchedRetiredFiles(() => null, () => "h-template", true), []);
+		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => "h-template", () => true), []);
+		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => null, () => true), []);
+		assert.deepEqual(untouchedRetiredFiles(() => null, () => "h-template", () => true), []);
 	});
 
 	test("unmanaged: an untouched CLAUDE.md stays a move while the new AGENTS.md is not certain to be in place", () => {
 		// The v9.1 AGENTS.md only says "read CLAUDE.md". If the user's AGENTS.md
 		// is ahead or a conflict, it is not rewritten, and deleting CLAUDE.md
 		// would leave every agent pointed at a missing file.
-		assert.deepEqual(untouchedRetiredFiles(() => "h-template", () => "h-template", false), []);
+		assert.deepEqual(untouchedRetiredFiles(() => "h-template", () => "h-template", () => false), []);
 	});
 
 	test("the new AGENTS.md is in place when it matches the release or is behind, not when it is ahead or a conflict", () => {
@@ -191,9 +191,9 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 			files: [{ path: "AGENTS.md", classification, shardHash: "h", volatile: false }],
 		});
 		const report = (behind: string[]) => ({ behind, ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 });
-		assert.equal(instructionFilesReady(agents("matches"), report([])), true);
-		assert.equal(instructionFilesReady(agents("differs"), report(["AGENTS.md"])), true);
-		assert.equal(instructionFilesReady(agents("differs"), report([])), false);
+		assert.equal(retiredFileReady(agents("matches"), report([]))("CLAUDE.md"), true);
+		assert.equal(retiredFileReady(agents("differs"), report(["AGENTS.md"]))("CLAUDE.md"), true);
+		assert.equal(retiredFileReady(agents("differs"), report([]))("CLAUDE.md"), false);
 	});
 
 	test("a retired file is not deleted while .gemini/settings.json is still the user's old one", () => {
@@ -207,11 +207,31 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 			],
 		});
 		const report = (behind: string[]) => ({ behind, ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 });
-		assert.equal(instructionFilesReady(plan("matches"), report([])), true);
-		assert.equal(instructionFilesReady(plan("differs"), report([".gemini/settings.json"])), true);
-		assert.equal(instructionFilesReady(plan("differs"), report([])), false);
+		for (const file of ["CLAUDE.md", "GEMINI.md"]) {
+			assert.equal(retiredFileReady(plan("matches"), report([]))(file), true, file);
+			assert.equal(retiredFileReady(plan("differs"), report([".gemini/settings.json"]))(file), true, file);
+			assert.equal(retiredFileReady(plan("differs"), report([]))(file), false, file);
+		}
 		// A vault without the Gemini module has no settings file to wait for.
-		assert.equal(instructionFilesReady({ dryRun: true, files: [plan("matches").files[0]!] }, report([])), true);
+		assert.equal(retiredFileReady({ dryRun: true, files: [plan("matches").files[0]!] }, report([]))("CLAUDE.md"), true);
+	});
+
+	test("a vault with no Gemini settings (shard-only) frees CLAUDE.md but keeps GEMINI.md, which Gemini still falls back to", () => {
+		// --apply-behind writes behind files only; a shard-only settings file
+		// arrives with the later adopt. Until then Gemini has no settings and
+		// reads GEMINI.md by default, so deleting it would cut Gemini off.
+		const plan: AdoptPlan = {
+			dryRun: true,
+			files: [
+				{ path: "AGENTS.md", classification: "matches", shardHash: "h", volatile: false },
+				{ path: ".gemini/settings.json", classification: "shard-only", shardHash: "s", volatile: false },
+			],
+		};
+		const report = { behind: [], ahead: [], merged: [], conflicts: [], added: [".gemini/settings.json"], move: [], unchanged: 0 };
+		const ready = retiredFileReady(plan, report);
+		assert.equal(ready("CLAUDE.md"), true);
+		assert.equal(ready("GEMINI.md"), false);
+		assert.deepEqual(untouchedRetiredFiles(() => "h", () => "h", ready), ["CLAUDE.md"]);
 	});
 
 	test("managed: a GEMINI.md the user edited, which ShardMind keeps as theirs, is a move, not 'unchanged'", () => {
@@ -224,7 +244,7 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 	});
 
 	test("unmanaged: a GEMINI.md still byte-identical to the base release is behind, like CLAUDE.md", () => {
-		const untouched = untouchedRetiredFiles(() => "h-template", (p) => (p === "GEMINI.md" ? "h-template" : null), true);
+		const untouched = untouchedRetiredFiles(() => "h-template", (p) => (p === "GEMINI.md" ? "h-template" : null), () => true);
 		assert.deepEqual(untouched, ["GEMINI.md"]);
 	});
 

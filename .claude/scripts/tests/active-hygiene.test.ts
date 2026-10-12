@@ -648,6 +648,22 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		withFiles(["AGENTS.md", "GEMINI.md"], (root) => {
 			assert.deepEqual(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles, []);
 		});
+		// Both named: Gemini loads GEMINI.md as well, so it is not a leftover.
+		withFiles(["AGENTS.md", "GEMINI.md"], (root) => {
+			geminiSettings(root, ["AGENTS.md", "GEMINI.md"]);
+			assert.deepEqual(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles, []);
+		});
+	});
+
+	test("Gemini settings with comments or a BOM, which Gemini accepts, are still read", () => {
+		withFiles(["AGENTS.md", "GEMINI.md"], (root) => {
+			mkdirSync(join(root, ".gemini"), { recursive: true });
+			writeFileSync(
+				join(root, ".gemini/settings.json"),
+				'﻿{\n  // where Gemini looks\n  "context": { "fileName": ["AGENTS.md"] },\n  /* hooks */ "hooks": {}\n}\n',
+			);
+			assert.deepEqual(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles, ["GEMINI.md"]);
+		});
 	});
 
 	test("silent with AGENTS.md alone", () => {

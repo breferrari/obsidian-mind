@@ -16,7 +16,7 @@
  * supplies the hash of each file at the release the vault was cloned from.
  */
 
-import { GEMINI_SETTINGS, INSTRUCTION_FILE, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
+import { GEMINI_MD, GEMINI_SETTINGS, INSTRUCTION_FILE, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
 
 /** ShardMind's `--json` envelope. */
 export type ShardmindEnvelope<T> =
@@ -94,37 +94,43 @@ const empty = (): { -readonly [K in keyof UpgradeReport]: K extends "unchanged" 
  * behind (the update removes them), not a move. Adopt cannot say so itself,
  * because the latest release has no such file.
  *
- * Only once the new AGENTS.md is certain to be in place (`agentsMdInPlace`:
- * the update writes it, or it already matches the release). Until then the
- * vault's AGENTS.md may be the old one, which only says "read CLAUDE.md", and
- * deleting CLAUDE.md would leave every agent pointed at a missing file.
+ * Only each one whose replacement is certain to be in place (`ready`, from
+ * `retiredFileReady`). Until then deleting it would leave an agent pointed at
+ * a missing file.
  */
 export function untouchedRetiredFiles(
 	vaultHash: (path: string) => string | null,
 	baseHash: (path: string) => string | null,
-	agentsMdInPlace: boolean,
+	ready: (retired: string) => boolean,
 ): string[] {
-	if (!agentsMdInPlace) return [];
 	return RETIRED_INSTRUCTION_FILES.filter((p) => {
 		const mine = vaultHash(p);
-		return mine !== null && mine === baseHash(p);
+		return mine !== null && mine === baseHash(p) && ready(p);
 	});
 }
 
 /**
- * Whether an adopt leaves the release's instruction wiring in place: AGENTS.md
- * and, where the Gemini module is installed, .gemini/settings.json each
- * already match the release, or are behind and the update writes them. Ahead
- * or a conflict, either may stay the user's own old copy: an old AGENTS.md
- * only points at CLAUDE.md, and old settings send Gemini to GEMINI.md, which
- * does the same.
+ * Whether an adopt leaves in place what replaces a retired file, so an
+ * untouched one may be deleted. A file counts when it already matches the
+ * release, or is behind and `--apply-behind` writes it; ahead or a conflict,
+ * it may stay the user's own old copy.
+ * - CLAUDE.md needs the new AGENTS.md (the old one only points at CLAUDE.md),
+ *   and, where the vault has Gemini settings of its own, the new settings too
+ *   (old ones send Gemini to GEMINI.md, which also points at CLAUDE.md).
+ * - GEMINI.md needs both, and needs the settings even when the vault has none
+ *   (shard-only): they arrive only with the later adopt, and until then
+ *   Gemini reads GEMINI.md by default.
  */
-export function instructionFilesReady(plan: AdoptPlan, report: UpgradeReport): boolean {
-	const ready = (path: string) =>
+export function retiredFileReady(plan: AdoptPlan, report: UpgradeReport): (retired: string) => boolean {
+	const inPlace = (path: string) =>
 		report.behind.includes(path) || plan.files.some((f) => f.path === path && f.classification === "matches");
-	// Shard-only means the vault has no Gemini settings at all: nothing to wait for.
-	const hasGemini = plan.files.some((f) => f.path === GEMINI_SETTINGS && f.classification !== "shard-only");
-	return ready(INSTRUCTION_FILE) && (!hasGemini || ready(GEMINI_SETTINGS));
+	const settings = plan.files.find((f) => f.path === GEMINI_SETTINGS);
+	const vaultHasSettings = settings !== undefined && settings.classification !== "shard-only";
+	return (retired) => {
+		if (!inPlace(INSTRUCTION_FILE)) return false;
+		if (retired === GEMINI_MD) return settings === undefined || inPlace(GEMINI_SETTINGS);
+		return !vaultHasSettings || inPlace(GEMINI_SETTINGS);
+	};
 }
 
 /**
@@ -246,7 +252,7 @@ export function settleFirst(r: UpgradeReport): string[] {
 
 const SETTLE_WHY: Readonly<Record<string, string>> = {
 	[INSTRUCTION_FILE]:
-		"your copy may be the old one, which only points at CLAUDE.md, so once CLAUDE.md is gone every agent is left without the vault's conventions. Take the release's AGENTS.md, then re-add your own changes to it (or to `.claude/rules/local.md`).",
+		"your copy may be the old one, which only points at CLAUDE.md. This update retires CLAUDE.md and GEMINI.md, and the new Gemini settings send Gemini to AGENTS.md too, so an old copy leaves every agent without the vault's conventions. Take the release's AGENTS.md, then re-add your own changes to it (or to `.claude/rules/local.md`).",
 	[GEMINI_SETTINGS]:
 		"your copy may name no context file, so Gemini keeps reading GEMINI.md, which only points at CLAUDE.md. Take the release's version, which sets `context.fileName` to AGENTS.md, then re-add your own settings.",
 };

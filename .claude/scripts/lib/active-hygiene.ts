@@ -742,12 +742,29 @@ function findLeftoverInstructionFiles(root: string): string[] {
 
 /** Whether .gemini/settings.json lists AGENTS.md in context.fileName. */
 function geminiReadsAgentsMd(root: string): boolean {
+	const names = geminiContextFiles(root);
+	return names.includes(INSTRUCTION_FILE) && !names.includes(GEMINI_MD);
+}
+
+/**
+ * The context files .gemini/settings.json names (context.fileName, a string
+ * or a list), or [] when there is none. Gemini accepts comments and a BOM in
+ * that file, so a strict JSON.parse is tried first and a narrow read of the
+ * fileName value second.
+ */
+function geminiContextFiles(root: string): string[] {
+	let text: string;
 	try {
-		const settings = JSON.parse(readFileSync(join(root, GEMINI_SETTINGS), "utf8")) as { context?: { fileName?: unknown } };
-		const names = settings.context?.fileName;
-		return Array.isArray(names) ? names.includes(INSTRUCTION_FILE) : names === INSTRUCTION_FILE;
+		text = readFileSync(join(root, GEMINI_SETTINGS), "utf8").replace(/^\uFEFF/, "");
 	} catch {
-		return false;
+		return [];
+	}
+	try {
+		const names = (JSON.parse(text) as { context?: { fileName?: unknown } }).context?.fileName;
+		return (Array.isArray(names) ? names : [names]).filter((n): n is string => typeof n === "string");
+	} catch {
+		const value = /"fileName"\s*:\s*(\[[^\]]*\]|"[^"]*")/.exec(text)?.[1] ?? "";
+		return [...value.matchAll(/"([^"]*)"/g)].map((m) => m[1]!);
 	}
 }
 
@@ -846,7 +863,8 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	// conventions this vault ships in AGENTS.md, or loses what the user added.
 	for (const file of leftoverInstructionFiles) {
 		if (lines.length > 0) lines.push("");
-		lines.push(`⚠️  ${claims.leftover(file)} — ${LEFTOVER_HARM[file]}`);
+		const harm = LEFTOVER_HARM[file] ?? "it is a retired instruction file; move anything you added there to AGENTS.md and delete it.";
+		lines.push(`⚠️  ${claims.leftover(file)} — ${harm}`);
 	}
 
 	if (agentsMd !== null) {

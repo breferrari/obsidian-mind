@@ -43,7 +43,7 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
-	instructionFilesReady,
+	retiredFileReady,
 	settleFirst,
 	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
@@ -177,7 +177,7 @@ function main(): void {
 				return existsSync(f) ? sha256(readFileSync(f)) : null;
 			};
 			report = classifyAdopt(plan.result, hashIn(base));
-			untouched = untouchedRetiredFiles(hashIn(vault), hashIn(base), instructionFilesReady(plan.result, report));
+			untouched = untouchedRetiredFiles(hashIn(vault), hashIn(base), retiredFileReady(plan.result, report));
 		} finally {
 			rmSync(base, { recursive: true, force: true });
 		}
