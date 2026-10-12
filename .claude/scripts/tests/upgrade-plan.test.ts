@@ -15,6 +15,7 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
+	instructionFileReady,
 	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
 	type AdoptPlan,
@@ -158,6 +159,7 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		const untouched = untouchedRetiredFiles(
 			(p) => hashes[p] ?? null,
 			(p) => (p === "CLAUDE.md" ? "h-template" : null),
+			true,
 		);
 		assert.deepEqual(untouched, ["CLAUDE.md"]);
 		const plan: AdoptPlan = { dryRun: true, files: [] };
@@ -170,9 +172,27 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 	});
 
 	test("unmanaged: an edited CLAUDE.md, or one the base release never had, is not untouched", () => {
-		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => "h-template"), []);
-		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => null), []);
-		assert.deepEqual(untouchedRetiredFiles(() => null, () => "h-template"), []);
+		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => "h-template", true), []);
+		assert.deepEqual(untouchedRetiredFiles(() => "h-mine", () => null, true), []);
+		assert.deepEqual(untouchedRetiredFiles(() => null, () => "h-template", true), []);
+	});
+
+	test("unmanaged: an untouched CLAUDE.md stays a move while the new AGENTS.md is not certain to be in place", () => {
+		// The v9.1 AGENTS.md only says "read CLAUDE.md". If the user's AGENTS.md
+		// is ahead or a conflict, it is not rewritten, and deleting CLAUDE.md
+		// would leave every agent pointed at a missing file.
+		assert.deepEqual(untouchedRetiredFiles(() => "h-template", () => "h-template", false), []);
+	});
+
+	test("the new AGENTS.md is in place when it matches the release or is behind, not when it is ahead or a conflict", () => {
+		const agents = (classification: AdoptPlan["files"][number]["classification"]): AdoptPlan => ({
+			dryRun: true,
+			files: [{ path: "AGENTS.md", classification, shardHash: "h", volatile: false }],
+		});
+		const report = (behind: string[]) => ({ behind, ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 });
+		assert.equal(instructionFileReady(agents("matches"), report([])), true);
+		assert.equal(instructionFileReady(agents("differs"), report(["AGENTS.md"])), true);
+		assert.equal(instructionFileReady(agents("differs"), report([])), false);
 	});
 
 	test("no CLAUDE.md in the vault: nothing to move", () => {

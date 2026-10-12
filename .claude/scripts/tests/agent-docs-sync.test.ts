@@ -23,14 +23,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+import { AGENTS_MD_MAX_BYTES } from "../lib/instruction-files.ts";
 
-/**
- * Where the test fails. Antigravity truncated a 36 KB `AGENTS.md` between
- * byte 23,860 and byte 24,305 (#321); this leaves ~2 KB of margin under that,
- * and ~1 KB above the file as shipped for the template to grow into.
- */
-const AGENTS_MD_MAX_BYTES = 22_000;
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 describe("AGENTS.md is the one instruction file (#321)", () => {
 	const agentsPath = resolve(repoRoot, "AGENTS.md");

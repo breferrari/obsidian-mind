@@ -474,6 +474,11 @@ describe("version detection across the AGENTS.md release (#321)", () => {
 		assert.equal(detect(vault({ ...without(RULES), "CLAUDE.md": true, "GEMINI.md": true })), "v9.1");
 	});
 
+	test("the newest fingerprint in the manifest is the open one, so the next release can close it", () => {
+		const newest = Object.keys(all).sort(compareFingerprintKeys).at(-1);
+		assert.equal(findLatestOpenFingerprint(all), newest);
+	});
+
 	test("v9.1 is closed by a v10.0 marker, so the two never both match", () => {
 		const v91 = all["v9.1"]!;
 		assert.ok(v91.missing?.some((p) => all["v10.0"]!.exists.includes(p)), "v9.1's missing must name a file v10.0 requires");

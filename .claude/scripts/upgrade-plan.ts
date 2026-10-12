@@ -41,6 +41,7 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
+	instructionFileReady,
 	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
 	type AdoptPlan,
@@ -173,28 +174,31 @@ function main(): void {
 				return existsSync(f) ? sha256(readFileSync(f)) : null;
 			};
 			report = classifyAdopt(plan.result, hashIn(base));
-			untouched = untouchedRetiredFiles(hashIn(vault), hashIn(base));
-			report = { ...report, behind: [...report.behind, ...untouched] };
+			untouched = untouchedRetiredFiles(hashIn(vault), hashIn(base), instructionFileReady(plan.result, report));
 		} finally {
 			rmSync(base, { recursive: true, force: true });
 		}
+		const toWrite = report.behind;
+		report = { ...report, behind: [...toWrite, ...untouched] };
 
 		if (applyBehind && report.behind.length > 0) {
-			const latest = cloneRelease(source, to);
-			try {
-				const want = new Map(plan.result.files.map((f) => [f.path, f.shardHash]));
-				for (const p of report.behind) {
-					if (untouched.includes(p)) continue;
-					const bytes = readFileSync(join(latest, p));
-					if (sha256(bytes) !== want.get(p)) fail(`${p} at v${to} does not match adopt's plan; nothing more was written`);
-					writeFileSync(join(vault, p), bytes);
+			if (toWrite.length > 0) {
+				const latest = cloneRelease(source, to);
+				try {
+					const want = new Map(plan.result.files.map((f) => [f.path, f.shardHash]));
+					for (const p of toWrite) {
+						const bytes = readFileSync(join(latest, p));
+						if (sha256(bytes) !== want.get(p)) fail(`${p} at v${to} does not match adopt's plan; nothing more was written`);
+						writeFileSync(join(vault, p), bytes);
+					}
+				} finally {
+					rmSync(latest, { recursive: true, force: true });
 				}
-			} finally {
-				rmSync(latest, { recursive: true, force: true });
 			}
+			// Only after every write succeeded: the new AGENTS.md is in place.
 			for (const p of untouched) rmSync(join(vault, p));
 			process.stderr.write(
-				`upgrade-plan: wrote v${to} of ${report.behind.length - untouched.length} behind file(s), removed ${untouched.length} retired instruction file(s) you never edited\n`,
+				`upgrade-plan: wrote v${to} of ${toWrite.length} behind file(s), removed ${untouched.length} retired instruction file(s) you never edited\n`,
 			);
 		}
 	}

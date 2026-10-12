@@ -44,7 +44,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join } from "node:path";
-import { INSTRUCTION_FILE, isRetiredInstructionFile, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
+import { AGENTS_MD_MAX_BYTES, INSTRUCTION_FILE, isRetiredInstructionFile, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
 import { escapeRegex } from "./regex.ts";
 import { parsePromotedMarker, type PromotedRef } from "./memory-promoted.ts";
 import {
@@ -128,6 +128,8 @@ export type ActiveHygieneReport = {
 	readonly memoryInbox: MemoryInboxPressure | null;
 	/** A CLAUDE.md at the vault root beside AGENTS.md, which Claude Code reads in its place. */
 	readonly leftoverClaudeMd: boolean;
+	/** AGENTS.md's size when it has reached AGENTS_MD_MAX_BYTES, else null. */
+	readonly agentsMdBytes: number | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -422,7 +424,7 @@ function findOversizedNotes(
 				// which says to move it out, not to split it (#321).
 				if (
 					relDir === "" &&
-					(isInfraFilename(e.name, infraRootFilenames) || isRetiredInstructionFile(e.name))
+					(isInfraFilename(e.name, infraRootFilenames) || loadsAsRetiredInstructionFile(root, e.name))
 				)
 					continue;
 				try {
@@ -659,6 +661,7 @@ export function scanActiveHygiene(
 		inboxPressure: findInboxPressure(root, nowMs),
 		memoryInbox: findMemoryInbox(root, memoryRoot, nowMs),
 		leftoverClaudeMd: hasLeftoverClaudeMd(root),
+		agentsMdBytes: agentsMdPastCap(root),
 	};
 }
 
@@ -666,6 +669,30 @@ export function scanActiveHygiene(
  * Both instruction files at the root. CLAUDE.md alone is a vault that has not
  * upgraded yet, and its CLAUDE.md is still the file that carries everything.
  */
+/**
+ * A root file an agent loads as a retired instruction file: the exact name,
+ * or another casing where the filesystem resolves it to that name (Windows,
+ * macOS). On a case-sensitive filesystem a `claude.md` is a plain note.
+ */
+function loadsAsRetiredInstructionFile(root: string, name: string): boolean {
+	if (!isRetiredInstructionFile(name)) return false;
+	return RETIRED_INSTRUCTION_FILES.includes(name) || RETIRED_INSTRUCTION_FILES.some((f) => existsSync(join(root, f)));
+}
+
+/**
+ * AGENTS.md's size once it reaches the cap. It is an infrastructure file, so
+ * the oversize scan never sees it, yet a user folding their additions into it
+ * can push it past where Antigravity stops reading, silently.
+ */
+function agentsMdPastCap(root: string): number | null {
+	try {
+		const size = statSync(join(root, INSTRUCTION_FILE)).size;
+		return size >= AGENTS_MD_MAX_BYTES ? size : null;
+	} catch {
+		return null;
+	}
+}
+
 function hasLeftoverClaudeMd(root: string): boolean {
 	return existsSync(join(root, INSTRUCTION_FILE)) && RETIRED_INSTRUCTION_FILES.some((f) => existsSync(join(root, f)));
 }
@@ -707,13 +734,15 @@ const claims = {
 	inbox: (n: number) => `${n} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days`,
 	memoryInbox: (n: number) => `${n} cross-repo memory capture(s) awaiting review`,
 	leftoverClaudeMd: () => "CLAUDE.md present beside AGENTS.md",
+	agentsMd: (bytes: number) => `AGENTS.md is ${Math.round(bytes / 1000)}KB`,
 };
 
 /** The claim of every finding in `report`, in the order the formatter lists them. */
 export function hygieneClaims(report: ActiveHygieneReport): string[] {
-	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox, leftoverClaudeMd } = report;
+	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox, leftoverClaudeMd, agentsMdBytes } = report;
 	const out: string[] = [];
 	if (leftoverClaudeMd) out.push(claims.leftoverClaudeMd());
+	if (agentsMdBytes !== null) out.push(claims.agentsMd(agentsMdBytes));
 	if (completedInActive.length > 0) out.push(claims.completed(completedInActive.length));
 	if (ungroupedClusters.length > 0) out.push(claims.clusters());
 	if (oversizedNotes.length > 0) out.push(claims.oversized(oversizedNotes.length));
@@ -736,6 +765,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		inboxPressure,
 		memoryInbox,
 		leftoverClaudeMd,
+		agentsMdBytes,
 	} = report;
 	if (
 		completedInActive.length === 0 &&
@@ -744,7 +774,8 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		openLoops.length === 0 &&
 		inboxPressure === null &&
 		memoryInbox === null &&
-		!leftoverClaudeMd
+		!leftoverClaudeMd &&
+		agentsMdBytes === null
 	) {
 		return [];
 	}
@@ -755,6 +786,13 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (leftoverClaudeMd) {
 		lines.push(
 			`⚠️  ${claims.leftoverClaudeMd()} — Claude Code reads CLAUDE.md and skips AGENTS.md; move your additions to .claude/rules/ and delete it.`,
+		);
+	}
+
+	if (agentsMdBytes !== null) {
+		if (lines.length > 0) lines.push("");
+		lines.push(
+			`⚠️  ${claims.agentsMd(agentsMdBytes)} — Antigravity stops reading it at ~24,000 bytes, silently. Move a section an agent can safely skip to a file it reads on demand, word for word, and leave a one-line pointer; Claude Code-only additions go to .claude/rules/.`,
 		);
 	}
 

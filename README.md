@@ -197,7 +197,7 @@ The `om` server sends a lexical *and* a vector sub-query, so retrieval finds the
 
 ### 🔗 Hooks
 
-Five lifecycle hooks handle routing automatically:
+The lifecycle hooks handle routing automatically:
 
 | Hook | When | What |
 |------|------|------|

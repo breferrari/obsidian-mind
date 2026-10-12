@@ -34,6 +34,7 @@ import {
 	walkMarkdown,
 } from "../lib/active-hygiene.ts";
 
+import { AGENTS_MD_MAX_BYTES } from "../lib/instruction-files.ts";
 import { rmTemp } from "./_helpers.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -428,6 +429,7 @@ describe("scanActiveHygiene — detectors", () => {
 			inboxPressure: null,
 			memoryInbox: { count: 4, oldestDays: 2, namedOnly: 0 },
 			leftoverClaudeMd: false,
+			agentsMdBytes: null,
 		});
 		const text = lines.join("\n");
 		assert.match(text, /COPYING it/);
@@ -449,6 +451,7 @@ describe("scanActiveHygiene — detectors", () => {
 				inboxPressure: null,
 				memoryInbox: null,
 				leftoverClaudeMd: false,
+				agentsMdBytes: null,
 			});
 		const atCap = report(HYGIENE_LIST_CAP);
 		assert.equal(atCap.filter((l) => l.startsWith("   - ")).length, 3 * HYGIENE_LIST_CAP);
@@ -543,6 +546,7 @@ describe("formatActiveHygiene", () => {
 			inboxPressure: null,
 			memoryInbox: null,
 			leftoverClaudeMd: false,
+			agentsMdBytes: null,
 		});
 		const text = lines.join("\n");
 		assert.match(text, /marked done but still in active\//);
@@ -638,13 +642,32 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		});
 	});
 
-	test("where a large claude.md resolves as CLAUDE.md, it is the leftover flag only, never a note to SPLIT", () => {
+	test("a large claude.md is the leftover flag where it resolves as CLAUDE.md, and an oversized note where it does not", () => {
 		withFiles(["AGENTS.md"], (root) => {
 			writeFileSync(join(root, "claude.md"), "x".repeat(MONOLITH_BYTES + 1000));
 			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
-			if (!existsSync(join(root, "CLAUDE.md"))) return; // case-sensitive filesystem: a plain note
-			assert.equal(report.leftoverClaudeMd, true);
-			assert.deepEqual(report.oversizedNotes, []);
+			if (existsSync(join(root, "CLAUDE.md"))) {
+				// Windows, macOS: Claude Code loads it, so it is a leftover, never a note to split.
+				assert.equal(report.leftoverClaudeMd, true);
+				assert.deepEqual(report.oversizedNotes, []);
+			} else {
+				// A case-sensitive filesystem: no agent loads it, so it is a plain note, and still seen.
+				assert.equal(report.leftoverClaudeMd, false);
+				assert.deepEqual(report.oversizedNotes.map((n) => n.path), ["claude.md"]);
+			}
+		});
+	});
+
+	test("AGENTS.md past the size the agents read whole is flagged, with the agent that cuts it off", () => {
+		withFiles([], (root) => {
+			writeFileSync(join(root, "AGENTS.md"), "x".repeat(AGENTS_MD_MAX_BYTES));
+			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
+			assert.equal(report.agentsMdBytes, AGENTS_MD_MAX_BYTES);
+			assert.match(formatActiveHygiene(report).join("\n"), /AGENTS\.md is 22KB[\s\S]*Antigravity stops reading it at ~24,000 bytes/);
+		});
+		withFiles([], (root) => {
+			writeFileSync(join(root, "AGENTS.md"), "x".repeat(AGENTS_MD_MAX_BYTES - 1));
+			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]).agentsMdBytes, null);
 		});
 	});
 

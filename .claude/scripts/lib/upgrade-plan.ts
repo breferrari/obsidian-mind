@@ -16,7 +16,7 @@
  * supplies the hash of each file at the release the vault was cloned from.
  */
 
-import { isRetiredInstructionFile, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
+import { INSTRUCTION_FILE, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
 
 /** ShardMind's `--json` envelope. */
 export type ShardmindEnvelope<T> =
@@ -88,25 +88,23 @@ const empty = (): { -readonly [K in keyof UpgradeReport]: K extends "unchanged" 
 	unchanged: 0,
 });
 
-/*
- * A retired instruction file (#321) the user edited is neither "ahead" (keep
- * it) nor a conflict to merge: Claude Code reads a CLAUDE.md in place of
- * AGENTS.md, so the user moves their additions out and deletes it.
- * `classifyUpdate` leaves these paths out unless the update deletes the file
- * cleanly, and `withRetiredInstructionFiles` reports the ones still in the
- * vault. Adopt plans never list them: the release has no such file.
- */
-
 /**
  * Retired instruction files in an unmanaged clone whose bytes are still those
  * of the release it was cloned from: the user never edited them, so they are
  * behind (the update removes them), not a move. Adopt cannot say so itself,
  * because the latest release has no such file.
+ *
+ * Only once the new AGENTS.md is certain to be in place (`instructionFileReady`:
+ * the update writes it, or it already matches the release). Until then the
+ * vault's AGENTS.md may be the old one, which only says "read CLAUDE.md", and
+ * deleting CLAUDE.md would leave every agent pointed at a missing file.
  */
 export function untouchedRetiredFiles(
 	vaultHash: (path: string) => string | null,
 	baseHash: (path: string) => string | null,
+	instructionFileReady: boolean,
 ): string[] {
+	if (!instructionFileReady) return [];
 	return RETIRED_INSTRUCTION_FILES.filter((p) => {
 		const mine = vaultHash(p);
 		return mine !== null && mine === baseHash(p);
@@ -114,10 +112,25 @@ export function untouchedRetiredFiles(
 }
 
 /**
+ * Whether an adopt leaves the release's AGENTS.md in place: it already
+ * matches the release, or it is behind and the update writes it. Ahead or a
+ * conflict, it may stay the user's own (old) copy.
+ */
+export function instructionFileReady(plan: AdoptPlan, report: UpgradeReport): boolean {
+	return (
+		report.behind.includes(INSTRUCTION_FILE) ||
+		plan.files.some((f) => f.path === INSTRUCTION_FILE && f.classification === "matches")
+	);
+}
+
+/**
  * `report` with every retired instruction file still in the vault listed
  * under `move`, unless the update removes it anyway (it is behind: the user
- * never changed it). Adopt plans never list these paths, because the release
- * has no such file, so presence in the vault is what decides.
+ * never changed it). A retired file the user edited is neither "ahead" (keep
+ * it) nor a conflict to merge: Claude Code reads a CLAUDE.md in place of
+ * AGENTS.md (#321), so the user moves their additions out and deletes it.
+ * Adopt plans never list these paths, because the release has no such file,
+ * so presence in the vault is what decides.
  */
 export function withRetiredInstructionFiles(report: UpgradeReport, present: (path: string) => boolean): UpgradeReport {
 	const move = RETIRED_INSTRUCTION_FILES.filter((p) => present(p) && !report.behind.includes(p));
@@ -141,7 +154,8 @@ export function classifyUpdate(plan: UpdatePlan, status: StatusResult | null): U
 	const r = empty();
 	const modified = modifiedPaths(status);
 	for (const f of plan.files) {
-		if (isRetiredInstructionFile(f.path) && f.action !== "delete") continue;
+		// Exact names: plan paths are the template's own, never re-cased.
+		if (RETIRED_INSTRUCTION_FILES.includes(f.path) && f.action !== "delete") continue;
 		switch (f.action) {
 			case "overwrite":
 			case "restore_missing":
