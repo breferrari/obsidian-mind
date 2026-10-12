@@ -16,6 +16,8 @@
  * supplies the hash of each file at the release the vault was cloned from.
  */
 
+import { RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
+
 /** ShardMind's `--json` envelope. */
 export type ShardmindEnvelope<T> =
 	| { readonly schemaVersion: number; readonly command: string; readonly ok: true; readonly result: T }
@@ -87,15 +89,13 @@ const empty = (): { -readonly [K in keyof UpgradeReport]: K extends "unchanged" 
 });
 
 /**
- * Instruction files a release retired (#321). AGENTS.md is the one instruction
- * file, and Claude Code reads a CLAUDE.md in its place, silently. So a
- * CLAUDE.md the user edited is neither "ahead" (keep it) nor a conflict to
- * merge: the user moves their additions out and deletes it. The classifiers
- * leave these paths out unless the update deletes the file cleanly, and
- * `withRetiredInstructionFiles` reports the ones still in the vault.
+ * A retired instruction file (#321) the user edited is neither "ahead" (keep
+ * it) nor a conflict to merge: Claude Code reads a CLAUDE.md in place of
+ * AGENTS.md, so the user moves their additions out and deletes it.
+ * `classifyUpdate` leaves these paths out unless the update deletes the file
+ * cleanly, and `withRetiredInstructionFiles` reports the ones still in the
+ * vault. Adopt plans never list them: the release has no such file.
  */
-export const RETIRED_INSTRUCTION_FILES: readonly string[] = ["CLAUDE.md"];
-
 const isRetired = (path: string): boolean => RETIRED_INSTRUCTION_FILES.includes(path);
 
 /**
@@ -168,7 +168,6 @@ export function classifyUpdate(plan: UpdatePlan, status: StatusResult | null): U
 export function classifyAdopt(plan: AdoptPlan, baseHash: (path: string) => string | null): UpgradeReport {
 	const r = empty();
 	for (const f of plan.files) {
-		if (isRetired(f.path)) continue;
 		if (f.classification === "matches") {
 			r.unchanged++;
 			continue;

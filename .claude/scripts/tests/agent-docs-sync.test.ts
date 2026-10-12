@@ -30,7 +30,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
  * byte 23,860 and byte 24,305 (#321); this leaves ~2 KB of margin under that,
  * and ~1 KB above the file as shipped for the template to grow into.
  */
-export const AGENTS_MD_MAX_BYTES = 22_000;
+const AGENTS_MD_MAX_BYTES = 22_000;
 
 describe("AGENTS.md is the one instruction file (#321)", () => {
 	const agentsPath = resolve(repoRoot, "AGENTS.md");

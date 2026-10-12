@@ -17,6 +17,7 @@ import {
 	toFingerprintKey,
 	pickMarkers,
 	findLatestOpenFingerprint,
+	compareFingerprintKeys,
 	bumpPluginJsonVersion,
 	bumpShardYamlVersion,
 	PLUGIN_JSON,
@@ -439,14 +440,6 @@ describe("version detection across the AGENTS.md release (#321)", () => {
 	const fingerprints = (
 		JSON.parse(readFileSync(join(repoRoot, "vault-manifest.json"), "utf-8")) as { version_fingerprints: Record<string, Fp> }
 	).version_fingerprints;
-	const order = (k: string) => k.replace(/^v/, "").split(".").map(Number);
-	const newer = (a: string, b: string) => {
-		const [pa, pb] = [order(a), order(b)];
-		for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-			if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
-		}
-		return false;
-	};
 	/** This repo's tree, with some paths forced present or absent. */
 	const vault = (overrides: Record<string, boolean>) => (p: string) =>
 		p in overrides ? overrides[p]! : existsSync(join(repoRoot, p));
@@ -454,7 +447,7 @@ describe("version detection across the AGENTS.md release (#321)", () => {
 		let best: string | null = null;
 		for (const [key, fp] of Object.entries(fingerprints)) {
 			if (!fp.exists.every(has) || (fp.missing ?? []).some(has)) continue;
-			if (best === null || newer(key, best)) best = key;
+			if (best === null || compareFingerprintKeys(key, best) > 0) best = key;
 		}
 		return best;
 	};

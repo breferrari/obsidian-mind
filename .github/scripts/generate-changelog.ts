@@ -318,26 +318,32 @@ type Fingerprint = {
 };
 
 /**
+ * Order fingerprint keys by numeric version components (v3.7 < v3.10, unlike
+ * string sort), a missing component counting as 0. Negative when `a` is older.
+ */
+export function compareFingerprintKeys(a: string, b: string): number {
+	const pa = a.replace(/^v/, "").split(".").map(Number);
+	const pb = b.replace(/^v/, "").split(".").map(Number);
+	const len = Math.max(pa.length, pb.length);
+	for (let i = 0; i < len; i++) {
+		const da = pa[i] ?? 0;
+		const db = pb[i] ?? 0;
+		if (da !== db) return da - db;
+	}
+	return 0;
+}
+
+/**
  * Find the latest fingerprint key that has no `missing` field — conceptually
  * "the currently-open-ended release." Returns null if the map is empty or
- * every entry already has a `missing`. Keys are sorted by numeric version
- * components (v3.7 < v3.10, unlike string sort) so the "latest" is the one
- * with the highest major/minor/patch.
+ * every entry already has a `missing`. Keys are sorted with
+ * `compareFingerprintKeys`, so the "latest" is the one with the highest
+ * major/minor/patch.
  */
 export function findLatestOpenFingerprint(
 	fingerprints: Readonly<Record<string, Fingerprint>>,
 ): string | null {
-	const sorted = Object.keys(fingerprints).sort((a, b) => {
-		const pa = a.replace(/^v/, "").split(".").map(Number);
-		const pb = b.replace(/^v/, "").split(".").map(Number);
-		const len = Math.max(pa.length, pb.length);
-		for (let i = 0; i < len; i++) {
-			const da = pa[i] ?? 0;
-			const db = pb[i] ?? 0;
-			if (da !== db) return da - db;
-		}
-		return 0;
-	});
+	const sorted = Object.keys(fingerprints).sort(compareFingerprintKeys);
 	for (let i = sorted.length - 1; i >= 0; i--) {
 		const key = sorted[i]!;
 		if (!fingerprints[key]!.missing) return key;

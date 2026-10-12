@@ -44,6 +44,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join } from "node:path";
+import { INSTRUCTION_FILE, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
 import { escapeRegex } from "./regex.ts";
 import { parsePromotedMarker, type PromotedRef } from "./memory-promoted.ts";
 import {
@@ -416,12 +417,14 @@ function findOversizedNotes(
 				// Root-level infrastructure docs (README + translations,
 				// AGENTS.md, …) are repo files, not vault notes — their bulk
 				// is not a split candidate.
-				if (relDir === "" && isInfraFilename(e.name, infraRootFilenames))
+				// A retired instruction file is not a note either, whatever the
+				// manifest lists: left over beside AGENTS.md it has its own flag,
+				// which says to move it out, not to split it (#321).
+				if (
+					relDir === "" &&
+					(isInfraFilename(e.name, infraRootFilenames) || RETIRED_INSTRUCTION_FILES.includes(e.name))
+				)
 					continue;
-				// A root CLAUDE.md is an instruction file whatever the manifest
-				// lists. Left over beside AGENTS.md it has its own flag, which
-				// says to move it out, not to split it (#321).
-				if (relDir === "" && e.name === "CLAUDE.md") continue;
 				try {
 					const size = statSync(join(root, rel)).size;
 					if (size >= MONOLITH_BYTES) {
@@ -664,7 +667,7 @@ export function scanActiveHygiene(
  * upgraded yet, and its CLAUDE.md is still the file that carries everything.
  */
 function hasLeftoverClaudeMd(root: string): boolean {
-	return existsSync(join(root, "CLAUDE.md")) && existsSync(join(root, "AGENTS.md"));
+	return existsSync(join(root, "CLAUDE.md")) && existsSync(join(root, INSTRUCTION_FILE));
 }
 
 /**
