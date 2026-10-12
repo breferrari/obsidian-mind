@@ -15,6 +15,7 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
+	withRetiredInstructionFiles,
 	type AdoptPlan,
 	type UpdatePlan,
 } from "../lib/upgrade-plan.ts";
@@ -105,16 +106,80 @@ describe("classifyAdopt — a vault cloned without ShardMind", () => {
 	});
 });
 
+describe("a CLAUDE.md left in the vault (#321)", () => {
+	// AGENTS.md is the one instruction file from the release that retires
+	// CLAUDE.md. A CLAUDE.md the user edited survives the update, and Claude
+	// Code then reads it and skips AGENTS.md, so the plan names it as a move:
+	// never as "ahead" (keep it) or as a conflict to merge.
+	const present = (paths: readonly string[]) => (p: string) => paths.includes(p);
+
+	test("managed: a CLAUDE.md the user changed is a move, not a conflict", () => {
+		const plan: UpdatePlan = {
+			dryRun: true,
+			files: [
+				{ path: "CLAUDE.md", action: "conflict" },
+				{ path: "AGENTS.md", action: "overwrite" },
+			],
+		};
+		const r = withRetiredInstructionFiles(classifyUpdate(plan, null), present(["CLAUDE.md", "AGENTS.md"]));
+		assert.deepEqual(r.move, ["CLAUDE.md"]);
+		assert.deepEqual(r.conflicts, []);
+		assert.deepEqual(r.behind, ["AGENTS.md"]);
+	});
+
+	test("managed: a modified CLAUDE.md the template no longer touches is a move, not 'ahead'", () => {
+		const plan: UpdatePlan = { dryRun: true, files: [{ path: "CLAUDE.md", action: "noop" }] };
+		const status = { installed: true, files: { modified: ["CLAUDE.md"] } };
+		const r = withRetiredInstructionFiles(classifyUpdate(plan, status), present(["CLAUDE.md"]));
+		assert.deepEqual(r.move, ["CLAUDE.md"]);
+		assert.deepEqual(r.ahead, []);
+		assert.equal(r.unchanged, 0);
+	});
+
+	test("managed: an untouched CLAUDE.md the update deletes is behind, not a move", () => {
+		const plan: UpdatePlan = { dryRun: true, files: [{ path: "CLAUDE.md", action: "delete" }] };
+		const r = withRetiredInstructionFiles(classifyUpdate(plan, null), present(["CLAUDE.md"]));
+		assert.deepEqual(r.behind, ["CLAUDE.md"]);
+		assert.deepEqual(r.move, []);
+	});
+
+	test("unmanaged: adopt never lists CLAUDE.md (the release has none), so its presence alone makes it a move", () => {
+		const plan: AdoptPlan = {
+			dryRun: true,
+			files: [{ path: "Home.md", classification: "matches", shardHash: "h", volatile: false }],
+		};
+		const r = withRetiredInstructionFiles(classifyAdopt(plan, () => null), present(["CLAUDE.md"]));
+		assert.deepEqual(r.move, ["CLAUDE.md"]);
+	});
+
+	test("no CLAUDE.md in the vault: nothing to move", () => {
+		const r = withRetiredInstructionFiles(classifyUpdate({ dryRun: true, files: [] }, null), present([]));
+		assert.deepEqual(r.move, []);
+	});
+
+	test("the report says what to do, and that nothing is merged automatically", () => {
+		const out = formatUpgradeReport(
+			{ behind: [], ahead: [], merged: [], conflicts: [], added: [], move: ["CLAUDE.md"], unchanged: 0 },
+			"v9.1.0",
+			"v10.0.0",
+		);
+		assert.match(out, /### Move out — retired instruction file \(1\)[\s\S]*- `CLAUDE\.md`/);
+		assert.match(out, /Claude Code reads CLAUDE\.md and skips AGENTS\.md/);
+		assert.match(out, /\.claude\/rules\/local\.md/);
+		assert.match(out, /Nothing is merged automatically/);
+	});
+});
+
 describe("formatUpgradeReport", () => {
 	test("names every file in full, by section, and skips empty sections", () => {
 		const out = formatUpgradeReport(
-			{ behind: ["a.md"], ahead: ["b.ts"], merged: [], conflicts: [], added: [], unchanged: 7 },
+			{ behind: ["a.md"], ahead: ["b.ts"], merged: [], conflicts: [], added: [], move: [], unchanged: 7 },
 			"v9.0.0",
 			"v9.0.1",
 		);
 		assert.match(out, /^## Upgrade plan: v9\.0\.0 → v9\.0\.1\n7 file\(s\) need no judgment\./);
 		assert.match(out, /### Behind \(1\)[\s\S]*- `a\.md`/);
 		assert.match(out, /### Ahead — keep, and consider upstreaming \(1\)[\s\S]*- `b\.ts`/);
-		assert.doesNotMatch(out, /Merged|Conflicts|New in the template/);
+		assert.doesNotMatch(out, /Merged|Conflicts|New in the template|Move out/);
 	});
 });

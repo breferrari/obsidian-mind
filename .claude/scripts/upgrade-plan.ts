@@ -12,6 +12,8 @@
  *   `shardmind adopt <source> --from-version <v> --dry-run --yes --json`,
  *   fetches that release to hash each file's base, and classifies with
  *   `classifyAdopt`.
+ * In both modes, a CLAUDE.md still in the vault is reported as a move (#321):
+ * Claude Code reads it in place of AGENTS.md.
  * Prints the report (or, with --json, `{ mode, from, to, report }`).
  *
  * --apply-behind (unmanaged clone only): writes the latest release's bytes
@@ -37,6 +39,7 @@ import {
 	classifyAdopt,
 	classifyUpdate,
 	formatUpgradeReport,
+	withRetiredInstructionFiles,
 	type AdoptPlan,
 	type ShardmindEnvelope,
 	type StatusResult,
@@ -182,6 +185,8 @@ function main(): void {
 			process.stderr.write(`upgrade-plan: wrote v${to} of ${report.behind.length} behind file(s)\n`);
 		}
 	}
+
+	report = withRetiredInstructionFiles(report, (p) => existsSync(join(vault, p)));
 
 	process.stdout.write(
 		asJson ? `${JSON.stringify({ mode, from, to, report }, null, 2)}\n` : `${formatUpgradeReport(report, `v${from}`, `v${to}`)}\n`,

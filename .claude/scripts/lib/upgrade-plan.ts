@@ -70,6 +70,8 @@ export type UpgradeReport = {
 	readonly conflicts: readonly string[];
 	/** New in the template. */
 	readonly added: readonly string[];
+	/** A retired instruction file still in the vault: the user moves their additions out, then deletes it. */
+	readonly move: readonly string[];
 	/** Nothing to judge: identical, volatile, or the user's own by design. */
 	readonly unchanged: number;
 };
@@ -80,8 +82,32 @@ const empty = (): { -readonly [K in keyof UpgradeReport]: K extends "unchanged" 
 	merged: [],
 	conflicts: [],
 	added: [],
+	move: [],
 	unchanged: 0,
 });
+
+/**
+ * Instruction files a release retired (#321). AGENTS.md is the one instruction
+ * file, and Claude Code reads a CLAUDE.md in its place, silently. So a
+ * CLAUDE.md the user edited is neither "ahead" (keep it) nor a conflict to
+ * merge: the user moves their additions out and deletes it. The classifiers
+ * leave these paths out unless the update deletes the file cleanly, and
+ * `withRetiredInstructionFiles` reports the ones still in the vault.
+ */
+export const RETIRED_INSTRUCTION_FILES: readonly string[] = ["CLAUDE.md"];
+
+const isRetired = (path: string): boolean => RETIRED_INSTRUCTION_FILES.includes(path);
+
+/**
+ * `report` with every retired instruction file still in the vault listed
+ * under `move`, unless the update removes it anyway (it is behind: the user
+ * never changed it). Adopt plans never list these paths, because the release
+ * has no such file, so presence in the vault is what decides.
+ */
+export function withRetiredInstructionFiles(report: UpgradeReport, present: (path: string) => boolean): UpgradeReport {
+	const move = RETIRED_INSTRUCTION_FILES.filter((p) => present(p) && !report.behind.includes(p));
+	return { ...report, move };
+}
 
 function modifiedPaths(status: StatusResult | null): Set<string> {
 	const list = status?.files?.modified ?? [];
@@ -100,6 +126,7 @@ export function classifyUpdate(plan: UpdatePlan, status: StatusResult | null): U
 	const r = empty();
 	const modified = modifiedPaths(status);
 	for (const f of plan.files) {
+		if (isRetired(f.path) && f.action !== "delete") continue;
 		switch (f.action) {
 			case "overwrite":
 			case "restore_missing":
@@ -141,6 +168,7 @@ export function classifyUpdate(plan: UpdatePlan, status: StatusResult | null): U
 export function classifyAdopt(plan: AdoptPlan, baseHash: (path: string) => string | null): UpgradeReport {
 	const r = empty();
 	for (const f of plan.files) {
+		if (isRetired(f.path)) continue;
 		if (f.classification === "matches") {
 			r.unchanged++;
 			continue;
@@ -171,6 +199,11 @@ export function formatUpgradeReport(r: UpgradeReport, from: string, to: string):
 		section("Behind", "The template changed these and you never did. Taking the new version loses nothing.", r.behind),
 		section("Ahead — keep, and consider upstreaming", "Changed only in this vault. Kept as yours.", r.ahead),
 		section("Merged — review", "Changed on both sides; merged without conflict.", r.merged),
+		section(
+			"Move out — retired instruction file",
+			"Claude Code reads CLAUDE.md and skips AGENTS.md while this file is here. Move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it), then delete the file. Nothing is merged automatically.",
+			r.move,
+		),
 		section("Conflicts — your decision", "Changed on both sides (or a new template file where you already have one).", r.conflicts),
 		section("New in the template", "Added as they are.", r.added),
 	]
