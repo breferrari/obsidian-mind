@@ -18,8 +18,9 @@ import { join } from "node:path";
 import { REFRESH_SWITCH } from "../lib/qmd-refresh.ts";
 
 // Every test process, direct run or not: no hook a test runs spawns the
-// detached qmd refresh (#337). `_run-tests.ts` also sets it for the run.
-process.env[REFRESH_SWITCH] ??= "off";
+// detached qmd refresh (#337). Forced, not defaulted, so an exported "on" or
+// "" cannot leak through. `_run-tests.ts` also sets it for the run.
+process.env[REFRESH_SWITCH] = "off";
 
 if (process.env["OM_QMD_ISOLATED"] === undefined) {
 	const isolated = mkdtempSync(join(tmpdir(), "om-test-qmd-"));

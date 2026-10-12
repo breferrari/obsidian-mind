@@ -13,6 +13,8 @@ import { join } from "node:path";
 import { killTree, listingCommand, listRefreshWorkers, parseProcessList } from "./_proc.ts";
 import { rmTemp, waitFor } from "./_helpers.ts";
 
+const fake = (r: Partial<SpawnSyncReturns<string>>) => () => r as SpawnSyncReturns<string>;
+
 describe("listingCommand", () => {
 	test("POSIX lists every process with its pid and untruncated arguments", () => {
 		const { cmd, args } = listingCommand("linux");
@@ -40,28 +42,61 @@ describe("parseProcessList", () => {
 });
 
 describe("listRefreshWorkers", () => {
-	const fake = (r: Partial<SpawnSyncReturns<string>>) => () => r as SpawnSyncReturns<string>;
-
-	test("a failed listing is null (not checked), never an empty 'none'", () => {
-		assert.equal(listRefreshWorkers(fake({ status: 1, stdout: "" })), null);
-		assert.equal(listRefreshWorkers(fake({ status: null, error: new Error("ENOENT"), stdout: "" })), null);
+	test("a failed listing says why, so the caller reports 'not checked', never an empty 'none'", () => {
+		const reason = (r: Partial<SpawnSyncReturns<string>>) => {
+			const out = listRefreshWorkers(fake(r));
+			assert.ok("failed" in out, "a failed listing must not read as a list");
+			return out.failed;
+		};
+		assert.match(reason({ status: 1, stdout: "" }), /exit 1/);
+		assert.match(reason({ status: null, error: new Error("spawn ps ENOENT"), stdout: "" }), /ENOENT/);
+		assert.match(reason({ status: null, signal: "SIGTERM", stdout: "" }), /killed by SIGTERM/);
 	});
 
 	test("keeps only qmd-refresh-run workers", () => {
 		const stdout = "1 node qmd-refresh-run.ts --trailing=x\n2 node other.ts\n";
-		assert.deepEqual(listRefreshWorkers(fake({ status: 0, stdout })), [{ pid: 1, cmd: "node qmd-refresh-run.ts --trailing=x" }]);
+		assert.deepEqual(listRefreshWorkers(fake({ status: 0, stdout })), {
+			workers: [{ pid: 1, cmd: "node qmd-refresh-run.ts --trailing=x" }],
+		});
 	});
 });
 
-describe("killTree", () => {
+describe("killTree — outcomes", () => {
+	test("Windows: taskkill's exit 128 (no such process) reads as already gone", () => {
+		assert.equal(killTree(42, "win32", fake({ status: 0 })), "stopped");
+		assert.equal(killTree(42, "win32", fake({ status: 128 })), "gone");
+		assert.equal(killTree(42, "win32", fake({ status: 1 })), "failed");
+	});
+
+	test("POSIX: the process group first, then the bare pid when the worker leads no group", () => {
+		const esrch = Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+		const calls: number[] = [];
+		const groupless = (pid: number) => {
+			calls.push(pid);
+			if (pid < 0) throw esrch;
+			return true;
+		};
+		assert.equal(killTree(42, "linux", undefined, groupless), "stopped");
+		assert.deepEqual(calls, [-42, 42]);
+		const gone = () => {
+			throw esrch;
+		};
+		assert.equal(killTree(42, "linux", undefined, gone), "gone");
+	});
+});
+
+describe("killTree — a real tree", () => {
 	// A detached parent that starts a long-lived child and records its pid,
-	// the shape of a refresh worker blocked in `qmd embed`.
+	// the shape of a refresh worker blocked in `qmd embed`. On Windows the
+	// child is itself detached: otherwise libuv's job object would end it
+	// with the parent and hide whether the kill reached it.
 	test("stops the worker and the child it started", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "proc-tree-"));
 		const childPidFile = join(dir, "child.pid");
+		const detachChild = process.platform === "win32";
 		const parentScript =
 			"const { spawn } = require('node:child_process'); const fs = require('node:fs');" +
-			"const c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });" +
+			`const c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', detached: ${detachChild}, windowsHide: true });` +
 			`fs.writeFileSync(${JSON.stringify(childPidFile)}, String(c.pid)); setInterval(() => {}, 1000);`;
 		const parent = spawn(process.execPath, ["-e", parentScript], { detached: true, stdio: "ignore", windowsHide: true });
 		const alive = (pid: number) => {

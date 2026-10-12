@@ -95,8 +95,9 @@ const run = spawnSync(
 // `qmd embed` has a live qmd child.
 const listed = listRefreshWorkers();
 const isolatedKey = norm(isolated);
-const survivors = (listed ?? []).filter(({ cmd }) => norm(cmd).includes(isolatedKey));
-for (const { pid } of survivors) killTree(pid);
+const survivors = ("workers" in listed ? listed.workers : [])
+	.filter(({ cmd }) => norm(cmd).includes(isolatedKey))
+	.map((w) => ({ ...w, outcome: killTree(w.pid) }));
 
 const added = watched.flatMap(({ dir, ext }, i) =>
 	[...listing(dir, ext)].filter((f) => !before[i]!.has(f)).sort().map((f) => join(dir, f)),
@@ -107,13 +108,15 @@ try {
 	/* a detached qmd may still hold a file; the OS cleans temp */
 }
 
-if (listed === null) {
-	process.stderr.write("\nrefresh-worker guard: couldn't list processes; surviving qmd-refresh-run workers were not checked.\n");
+if ("failed" in listed) {
+	process.stderr.write(
+		`\nrefresh-worker guard: couldn't list processes (${listed.failed}); surviving qmd-refresh-run workers were not checked.\n`,
+	);
 }
 if (survivors.length > 0) {
 	process.stderr.write(
-		`\nrefresh-worker guard: the test run left ${survivors.length} qmd-refresh-run worker(s) alive (now stopped):\n` +
-			survivors.map(({ pid, cmd }) => `  ${pid} ${cmd}`).join("\n") +
+		`\nrefresh-worker guard: the test run left ${survivors.length} qmd-refresh-run worker(s) alive:\n` +
+			survivors.map(({ pid, cmd, outcome }) => `  ${pid} (${outcome}) ${cmd}`).join("\n") +
 			"\nA hook ran without VAULT_QMD_REFRESH=off. Route its subprocess env through process.env (#337).\n",
 	);
 	process.exit(1);

@@ -33,6 +33,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { REFRESH_SWITCH } from "../lib/qmd-refresh.ts";
 
 const SENTINEL_DIR = mkdtempSync(join(tmpdir(), "om-test-sentinel-"));
 export const TEST_SENTINEL = join(SENTINEL_DIR, ".qmd-refresh-sentinel");
@@ -60,7 +61,9 @@ export function runScript(
 			: typeof stdin === "string"
 				? stdin
 				: JSON.stringify(stdin);
-	const env = { ...process.env, QMD_REFRESH_SENTINEL: TEST_SENTINEL, ...envOverrides };
+	// The switch before the caller's overrides: every hook a test runs gets it,
+	// whatever this process carries, and a test can still opt back in (#337).
+	const env = { ...process.env, [REFRESH_SWITCH]: "off", QMD_REFRESH_SENTINEL: TEST_SENTINEL, ...envOverrides };
 	if (env.QMD_REFRESH_SENTINEL === TEST_SENTINEL) writeFileSync(TEST_SENTINEL, "");
 	const proc = spawnSync(
 		process.execPath,

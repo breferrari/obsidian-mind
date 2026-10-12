@@ -13,6 +13,7 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 export type Proc = { readonly pid: number; readonly cmd: string };
 
 type Run = (cmd: string, args: readonly string[]) => SpawnSyncReturns<string>;
+type Kill = (pid: number, signal: NodeJS.Signals) => boolean;
 
 const run: Run = (cmd, args) =>
 	spawnSync(cmd, args as string[], { encoding: "utf8", timeout: 60_000, windowsHide: true });
@@ -48,30 +49,47 @@ export function parseProcessList(stdout: string): Proc[] {
 }
 
 /**
- * The running qmd-refresh-run workers, or null when the listing failed
- * (missing `ps` or PowerShell, an error, a non-zero exit): the caller then
- * says the check did not run, rather than reporting none.
+ * The running qmd-refresh-run workers, or why the listing failed (an error
+ * such as a missing `ps` or PowerShell, a killing signal, a non-zero exit),
+ * so the caller can say the check did not run rather than report none.
  */
-export function listRefreshWorkers(runner: Run = run, platform: NodeJS.Platform = process.platform): Proc[] | null {
+export function listRefreshWorkers(
+	runner: Run = run,
+	platform: NodeJS.Platform = process.platform,
+): { workers: Proc[] } | { failed: string } {
 	const { cmd, args } = listingCommand(platform);
 	const r = runner(cmd, args);
-	if (r.error !== undefined || r.status !== 0 || typeof r.stdout !== "string") return null;
-	return parseProcessList(r.stdout).filter((p) => p.pid !== process.pid && /qmd-refresh-run/.test(p.cmd));
+	if (r.error !== undefined) return { failed: `${cmd}: ${r.error.message}` };
+	if (r.signal) return { failed: `${cmd} killed by ${r.signal}` };
+	if (r.status !== 0 || typeof r.stdout !== "string") return { failed: `${cmd} exit ${r.status}` };
+	return { workers: parseProcessList(r.stdout).filter((p) => p.pid !== process.pid && /qmd-refresh-run/.test(p.cmd)) };
 }
 
-/** Stop `pid` and every process it started. Best effort: a process already gone is fine. */
-export function killTree(pid: number, platform: NodeJS.Platform = process.platform): void {
+const isEsrch = (err: unknown) => (err as NodeJS.ErrnoException)?.code === "ESRCH";
+
+/**
+ * Stop `pid` and every process it started. "gone" when it had already exited
+ * (taskkill's exit 128; ESRCH on POSIX), "failed" when the kill itself did.
+ * On POSIX the process group comes first; a worker that leads no group falls
+ * back to its own pid.
+ */
+export function killTree(
+	pid: number,
+	platform: NodeJS.Platform = process.platform,
+	runner: Run = run,
+	kill: Kill = process.kill,
+): "stopped" | "gone" | "failed" {
 	if (platform === "win32") {
-		run("taskkill", ["/T", "/F", "/PID", String(pid)]);
-		return;
+		const r = runner("taskkill", ["/T", "/F", "/PID", String(pid)]);
+		return r.status === 0 ? "stopped" : r.status === 128 ? "gone" : "failed";
 	}
-	try {
-		process.kill(-pid, "SIGKILL");
-	} catch {
+	for (const target of [-pid, pid]) {
 		try {
-			process.kill(pid, "SIGKILL");
-		} catch {
-			/* gone */
+			kill(target, "SIGKILL");
+			return "stopped";
+		} catch (err) {
+			if (!isEsrch(err)) return "failed";
 		}
 	}
+	return "gone";
 }
