@@ -119,7 +119,6 @@ if (survivors.length > 0) {
 			survivors.map(({ pid, cmd, outcome }) => `  ${pid} (${outcome}) ${cmd}`).join("\n") +
 			"\nA hook ran without VAULT_QMD_REFRESH=off. Route its subprocess env through process.env (#337).\n",
 	);
-	process.exit(1);
 }
 if (added.length > 0) {
 	process.stderr.write(
@@ -127,6 +126,7 @@ if (added.length > 0) {
 			added.map((f) => `  ${f}`).join("\n") +
 			"\nA test reached qmd with the user's environment. Route its subprocess env through process.env.\n",
 	);
-	process.exit(1);
 }
-process.exit(run.status ?? 1);
+// Both guards report before either fails the run, so one leak cannot hide
+// the other until the next run.
+process.exit(survivors.length > 0 || added.length > 0 ? 1 : (run.status ?? 1));

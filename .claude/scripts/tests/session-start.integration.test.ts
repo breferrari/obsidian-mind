@@ -37,7 +37,6 @@ import { tmpdir } from "node:os";
 import { HOOK_OUTPUT_MAX_CHARS } from "../lib/hook-io.ts";
 import { METER_HEADROOM } from "../lib/session-start.ts";
 import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
-import { resolveQmdEntry } from "../lib/qmd.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(SCRIPT_DIR, "../session-start.ts");
@@ -84,15 +83,13 @@ const REQUIRED_SECTIONS = [
 ];
 
 describe("session-start — no detached qmd refresh under the switch (#337)", () => {
-	// SessionStart spawns a detached `qmd update` (or the bootstrap, against a
-	// test's empty index) whenever qmd resolves. Under VAULT_QMD_REFRESH=off,
-	// which every test process carries, it must spawn nothing.
-	test("with qmd resolvable and the switch off, no detached qmd is spawned", (t) => {
-		if (resolveQmdEntry() === null) {
-			t.skip("qmd is not installed here; the hook never reaches the spawn");
-			return;
-		}
-		const { code, stderr } = spawnHook(SCRIPT, "", { CLAUDE_PROJECT_DIR: TMP_DIR, HOOK_DEBUG: "1", VAULT_QMD_REFRESH: "off" });
+	// SessionStart always reaches its detached spawn: a resolvable qmd runs
+	// `qmd update` (or the bootstrap, against a test's empty index), and
+	// without one it falls back to a shell `qmd update`. Under
+	// VAULT_QMD_REFRESH=off it must spawn nothing. The switch comes from
+	// runScript's default, the choke point every hook a test runs goes through.
+	test("under the switch, no detached qmd is spawned", () => {
+		const { code, stderr } = spawnHook(SCRIPT, "", { CLAUDE_PROJECT_DIR: TMP_DIR, HOOK_DEBUG: "1" });
 		assert.equal(code, 0);
 		assert.match(stderr, /session-start: qmd refresh off \(VAULT_QMD_REFRESH=off\); nothing spawned/);
 	});

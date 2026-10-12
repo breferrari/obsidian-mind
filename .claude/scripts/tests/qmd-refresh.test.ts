@@ -30,6 +30,7 @@ import {
 	shouldRefreshForPath,
 	triggerDebouncedRefresh,
 	REFRESH_SWITCH,
+	refreshDisabled,
 } from "../lib/qmd-refresh.ts";
 import { rmTemp, waitFor } from "./_helpers.ts";
 
@@ -151,12 +152,20 @@ describe("VAULT_QMD_REFRESH=off — no detached worker (#337)", () => {
 		return existsSync(path);
 	};
 
+	// How long a real spawn took to show its marker, measured by the control.
+	// The negative tests wait well past it, so a slow cold start cannot pass
+	// for "nothing spawned".
+	let spawnMs = 0;
+	const negativeWaitMs = () => Math.max(2_000, 3 * spawnMs);
+
 	test("control: with the switch unset the real worker runs, so the observation works", async () => {
 		await withSwitch(undefined, async () => {
 			const f = fixture();
 			try {
+				const start = Date.now();
 				f.fire();
-				assert.ok(await appears(f.marker, 5_000), "the fake worker never ran: the test cannot see a spawn");
+				assert.ok(await appears(f.marker, 10_000), "the fake worker never ran: the test cannot see a spawn");
+				spawnMs = Date.now() - start;
 			} finally {
 				rmTemp(f.dir);
 			}
@@ -169,7 +178,7 @@ describe("VAULT_QMD_REFRESH=off — no detached worker (#337)", () => {
 			try {
 				f.fire();
 				assert.ok(existsSync(f.sentinel), "the sentinel is still stamped");
-				assert.equal(await appears(f.marker, 1_500), false, "a worker ran with VAULT_QMD_REFRESH=off");
+				assert.equal(await appears(f.marker, negativeWaitMs()), false, "a worker ran with VAULT_QMD_REFRESH=off");
 			} finally {
 				rmTemp(f.dir);
 			}
@@ -187,11 +196,19 @@ describe("VAULT_QMD_REFRESH=off — no detached worker (#337)", () => {
 				utimesSync(f.sentinel, t, t);
 				f.fire();
 				assert.ok(existsSync(pendingPathFor(f.sentinel)), "the pending marker is still claimed");
-				assert.equal(await appears(f.marker, 1_500), false, "a worker ran with VAULT_QMD_REFRESH=off");
+				assert.equal(await appears(f.marker, negativeWaitMs()), false, "a worker ran with VAULT_QMD_REFRESH=off");
 			} finally {
 				rmTemp(f.dir);
 			}
 		});
+	});
+
+	test("the switch reads 'off' in any case and with stray spaces; other values leave the refresh on", async () => {
+		for (const [value, off] of [["off", true], ["OFF", true], [" Off ", true], ["on", false], ["", false], ["0", false]] as const) {
+			await withSwitch(value, async () => {
+				assert.equal(refreshDisabled(), off, JSON.stringify(value));
+			});
+		}
 	});
 
 	test("an explicit spawnWorker seam still runs when the switch is off", async () => {

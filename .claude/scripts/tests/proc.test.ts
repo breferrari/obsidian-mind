@@ -29,6 +29,14 @@ describe("listingCommand", () => {
 		assert.match(script, /CommandLine LIKE '%qmd-refresh-run%'/);
 		assert.doesNotMatch(script, /Name\s*=/);
 	});
+
+	test("Windows leaves out the listing's own PowerShell, whose command line holds the filter text", () => {
+		assert.match(listingCommand("win32").args.join(" "), /ProcessId -ne \$PID/);
+	});
+
+	test("Windows writes UTF-8, so a non-ASCII path in a command line still matches", () => {
+		assert.match(listingCommand("win32").args.join(" "), /\[Console\]::OutputEncoding = \[Text\.Encoding\]::UTF8/);
+	});
 });
 
 describe("parseProcessList", () => {

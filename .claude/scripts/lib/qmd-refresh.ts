@@ -284,9 +284,9 @@ function touchSentinel(sentinelPath: string): void {
  */
 export const REFRESH_SWITCH = "VAULT_QMD_REFRESH";
 
-/** Whether the detached qmd refresh is switched off for this process. */
+/** Whether the detached qmd refresh is switched off for this process: "off", in any case. */
 export function refreshDisabled(): boolean {
-	return process.env[REFRESH_SWITCH] === "off";
+	return process.env[REFRESH_SWITCH]?.trim().toLowerCase() === "off";
 }
 
 /**
