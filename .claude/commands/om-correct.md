@@ -84,4 +84,4 @@ For a sweep touching more than a handful of notes, invoke the `correction-sweep`
 
 - `/om-vault-audit` — structural health, periodic, whole-vault. Complementary: it checks shape, this checks truth.
 - `/om-tidy` — acts on hygiene flags. Also structural.
-- `CLAUDE.md` § Write-Correctness Laws — Laws 1, 2 and 5, which this implements.
+- `AGENTS.md` § Write-Correctness Laws — Laws 1, 2 and 5, which this implements.

@@ -46,6 +46,7 @@ It then prints every file needing judgment, sorted into:
 | **Merged** | Changed on both sides, merged cleanly | Show the user the result to review |
 | **Conflicts** | Changed on both sides, or a new template file where you already have one | The user decides per file |
 | **New in the template** | Added | Taken as is |
+| **Move out** | A retired instruction file (`CLAUDE.md`) still in the vault | Claude Code reads it and skips `AGENTS.md`. With the user, move what they added to `.claude/rules/local.md` (Claude Code only) or `AGENTS.md` (every agent), then delete it. Nothing is merged automatically |
 
 Show the report to the user. With `--dry-run`, stop here.
 
@@ -56,6 +57,8 @@ ShardMind executes only through its terminal UI (`--json` works with `--dry-run`
 **Managed vault:**
 - **No conflicts:** `CI=true shardmind update --yes < /dev/null`. `--yes` auto-keeps your version wherever both sides changed, so it is safe only once the plan shows no conflicts.
 - **Conflicts:** ask the user to run `! shardmind update` themselves and decide each conflicting file in the prompt, or in their editor.
+
+**Either way, a Move out file comes after the update**: ShardMind keeps a `CLAUDE.md` you changed, so do the move from U1 once the update is done.
 
 **Cloned without ShardMind:**
 1. Write the new release's bytes for the **behind** files only. Each is checked against adopt's plan before it is written, so nothing you changed is touched:
@@ -177,7 +180,7 @@ Transformations:
 **Conflict section** (if any):
 ```
 ⚠ Conflicts requiring your input:
-  - source has customized CLAUDE.md (will NOT copy — differences logged)
+  - source has a CLAUDE.md (will NOT copy — its additions are listed for .claude/rules/local.md or AGENTS.md)
   - source has .claude/commands/my-custom.md (will MERGE as user addition)
 ```
 
@@ -224,14 +227,14 @@ Migration complete.
 Offer next steps:
 - "Run `/om-vault-audit` for a full structural check"
 - "Review `thinking/migrate-review/` for uncategorized files"
-- "Check `brain/Migration Log.md` for the full receipt and CLAUDE.md diff"
+- "Check `brain/Migration Log.md` for the full receipt and the source CLAUDE.md's additions to fold in"
 
 ## Important
 
 - **The source vault is NEVER modified.** All operations are read-only on the source, write-only on the target.
 - **Plan-first, always.** Never skip the plan presentation step, even if the migration looks simple.
 - **Preserve user curation.** When rebuilding indexes, start from the source's version (which has the user's ordering and groupings), then append missing entries. Don't regenerate from scratch.
-- **CLAUDE.md is special.** Never copy it from the source. The template's CLAUDE.md is always authoritative. If the source has customizations, diff them and log the differences so the user can re-apply manually.
+- **CLAUDE.md is user content, and never copied as CLAUDE.md.** A `CLAUDE.md` at the vault root makes Claude Code skip `AGENTS.md`, the template's one instruction file. If the source has one, diff it against the template's `AGENTS.md` and `.claude/rules/`, and log what it adds so the user can fold each addition into `.claude/rules/local.md` (Claude Code only) or `AGENTS.md` (every agent). Nothing is merged automatically.
 - **Binary files matter.** Images, PDFs, and attachments embedded in notes must be copied or the embeds break.
 - **Wikilinks resolve by filename.** Most folder moves don't break links. Only renames and full-path links need fixing.
 - **Markdown links get converted.** Standard markdown links to local files (`[text](path.md)`) are converted to wikilinks (`[[name|text]]`). External URLs are left as-is.

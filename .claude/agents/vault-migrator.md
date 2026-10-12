@@ -259,7 +259,7 @@ target_version: "3.3.0"
 Body should include:
 - Summary statistics (files migrated by category, transformations applied, conflicts)
 - Content hash table (for idempotency on re-runs)
-- CLAUDE.md diff summary (if source had a customized CLAUDE.md, list the differences so the user knows what conventions to re-apply)
+- CLAUDE.md additions (if the source had a CLAUDE.md, list what it adds beyond the template's `AGENTS.md` and `.claude/rules/`, so the user can fold each into `.claude/rules/local.md` or `AGENTS.md`; never write it to the target as CLAUDE.md, which would make Claude Code skip `AGENTS.md`)
 - List of user additions copied (custom commands, agents, scripts)
 - Any files sent to `thinking/migrate-review/` for manual sorting
 
