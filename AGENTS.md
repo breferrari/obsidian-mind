@@ -32,7 +32,7 @@ Personal Obsidian vault -- an external brain for work notes, decisions, performa
 
 ## Obsidian CLI
 
-Need a CLI command? See **Obsidian CLI** in `README.md`, or run `obsidian help`.
+Need a CLI command? See `.claude/rules/obsidian-cli.md`, or run `obsidian help`.
 
 ## Commands
 
@@ -54,17 +54,17 @@ Commands live in `.claude/commands/` — agent-agnostic markdown with YAML front
 
 ### Starting a Substantial Session
 
-Run `/om-standup`. The manual steps are in `.claude/commands/om-standup.md`.
+Run `/om-standup`. The manual steps are in `.claude/rules/session-workflow.md`.
 
 ### Ending a Substantial Session
 
 **When the user says "wrap up", "let's wrap", "wrapping up", or similar -- invoke `/om-wrap-up` automatically.** This runs a full review of the session.
 
-Without it, the minimum checklist is in `.claude/commands/om-wrap-up.md`.
+Without it, the minimum checklist is in `.claude/rules/session-workflow.md`.
 
 ### Thinking Workflow
 
-Drafting before a final note? Read **Thinking Workflow** in `thinking/README.md`.
+Drafting before a final note? Read `.claude/rules/thinking.md`.
 
 ### Creating Notes
 
@@ -219,11 +219,11 @@ When asked to "remember" something:
 
 ### When to Consult Brain Topics
 
-Debugging, "how do we usually…", "why did we decide"? Read **When to Consult Brain Topics** in `brain/Skills.md` first.
+Debugging, "how do we usually…", "why did we decide"? Read `.claude/rules/brain-topics.md` first.
 
 ## Reaching the Vault From Another Repo
 
-Connecting this vault to another repo? Read **Reaching the Vault From Another Repo** in `ARCHITECTURE.md`.
+Connecting this vault to another repo? Read `.claude/rules/vault-from-another-repo.md`.
 
 ## Agent Guidelines
 
@@ -255,6 +255,10 @@ When capturing data from Slack, DMs, or meetings:
 - **Review prep** (peer selection, manager strategy, brag framing) -- goes to review-related notes in `perf/` or `work/`
 - **People dynamics** (feedback, relationships, career) -- goes to `org/people/` notes
 - **Personal conversations** -- only capture if review-relevant; otherwise skip
+
+## Hooks
+
+Which hook runs on which event, for each agent: `.claude/rules/hooks-per-agent.md`.
 
 ## Write-Correctness Laws
 

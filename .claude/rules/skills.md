@@ -1,13 +1,13 @@
 # Skills and Commands (Claude Code)
 
-Claude Code loads this file beside `AGENTS.md`, which holds every convention the other agents share.
+Claude-only: Claude Code loads this file beside `AGENTS.md` and the shared files in this folder, which hold every convention the other agents share.
 
 ## Skills & Capabilities
 
 This vault has [obsidian-skills](https://github.com/kepano/obsidian-skills) installed in `.claude/skills/`. Follow these skill conventions:
 
 - **obsidian-markdown**: Obsidian-flavored markdown -- wikilinks, embeds, callouts, properties. See `references/` for callout types, embed syntax, and property specs. Always prefer `[[wikilinks]]` over markdown links.
-- **obsidian-cli**: CLI commands for vault operations when Obsidian is running. See **Obsidian CLI** in `README.md`.
+- **obsidian-cli**: CLI commands for vault operations when Obsidian is running. See `.claude/rules/obsidian-cli.md`.
 - **json-canvas**: Create `.canvas` files with nodes, edges, and visual layouts. See `references/EXAMPLES.md`.
 - **obsidian-bases**: Create `.base` files with views, filters, and formulas. Bases core plugin is enabled. See `references/FUNCTIONS_REFERENCE.md`.
 - **defuddle**: Extract clean markdown from web pages via `defuddle parse <url> --md`.

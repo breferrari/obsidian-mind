@@ -1,10 +1,10 @@
 # Hooks and the obsidian-mind Mod (Claude Code)
 
-Claude Code loads this file beside `AGENTS.md`, which holds every convention the other agents share.
+Claude-only: Claude Code loads this file beside `AGENTS.md` and the shared files in this folder, which hold every convention the other agents share.
 
 | Folder | Purpose | Key Files |
 |--------|---------|-----------|
-| `.claude/scripts/` | Hook scripts + the MCP server | `session-start.ts`, `classify-message.ts`, `validate-write.ts`, `pre-compact.ts`, `stop-checklist.ts`, `charcount.ts`, `om-mcp.mjs` (see **Reaching the Vault From Another Repo** in `ARCHITECTURE.md`) |
+| `.claude/scripts/` | Hook scripts + the MCP server | `session-start.ts`, `classify-message.ts`, `validate-write.ts`, `pre-compact.ts`, `stop-checklist.ts`, `charcount.ts`, `om-mcp.mjs` (see `.claude/rules/vault-from-another-repo.md`) |
 
 ## Hooks
 

@@ -127,7 +127,7 @@ Or use it as a **GitHub template**. Skip the wizard, get the bare template. Then
 QMD is where most of the agent's retrieval intelligence comes from. Optional in the strict sense — the vault falls back to grep + the Obsidian CLI — but the experience is meaningfully better with it:
 
 - **Semantic recall.** Find "what did we decide about caching" even when the note is titled "Redis Migration ADR."
-- **Brain topics available on demand.** Your agent is instructed (via `AGENTS.md`, which points to `brain/Memories.md`) to consult `brain/` guidance through QMD when the conversation touches a listed topic.
+- **Brain topics available on demand.** Your agent is instructed (via `AGENTS.md`, which points to `.claude/rules/brain-topics.md`) to consult `brain/` guidance through QMD when the conversation touches a listed topic.
 - **Subagents get sharper context.** `context-loader`, `review-prep`, `brag-spotter`, and friends consult QMD first, then fall back to grep.
 - **Native agent tools via MCP.** Registered as a [Model Context Protocol](https://modelcontextprotocol.io) server in `.mcp.json` — when QMD is installed, `mcp__qmd__query`, `mcp__qmd__get`, and `mcp__qmd__multi_get` appear in the agent's tool menu alongside Read and Edit. Subagents, slash commands, and the main conversation all call the same typed contract. Add another MCP-aware tool later (a database, a ticketing system, a calendar) and it plugs in the same way.
 
@@ -246,7 +246,7 @@ SessionStart loads **lightweight context** — small excerpts from key files, fi
 
 ### 🌐 Using with Other Agents
 
-obsidian-mind works with Claude Code, Codex CLI, Gemini CLI, Antigravity and Grok. Every agent reads one instruction file, `AGENTS.md`. The hook scripts in `.claude/scripts/` and the commands in `.claude/commands/` are agent-agnostic — pure Markdown, TypeScript, and shell with no SDK dependencies. Guidance only Claude Code can use (its skills, subagents, auto-memory index, hooks and mod) lives in `.claude/rules/`, which Claude Code loads beside `AGENTS.md`.
+obsidian-mind works with Claude Code, Codex CLI, Gemini CLI, Antigravity and Grok. Every agent reads one instruction file, `AGENTS.md`. The hook scripts in `.claude/scripts/` and the commands in `.claude/commands/` are agent-agnostic — pure Markdown, TypeScript, and shell with no SDK dependencies. `.claude/rules/` holds guidance only Claude Code can use (its skills, subagents, auto-memory index, hooks and mod), and the sections `AGENTS.md` moved out to stay under its size cap. Claude Code and Grok load every file there at session start, so Claude keeps the whole manual; the other agents read a moved section when `AGENTS.md` points them to it.
 
 | Agent | Reads `AGENTS.md` | From a vault subfolder | Also loads | Known gaps |
 |---|---|---|---|---|
@@ -269,7 +269,7 @@ Observed with scratch vaults as of 2026-10-06 (Claude Code 2.1.291, Codex CLI 0.
 **Other agents** (Cursor, Windsurf, GitHub Copilot, JetBrains AI) — read `AGENTS.md` for vault conventions. Hook support varies by agent.
 
 > [!NOTE]
-> Hooks, commands, subagent prompts, and vault memory (`brain/`) are all agent-agnostic. Only the `~/.claude/` auto-memory loader and the `obsidian-mind` mod are Claude Code-specific. `ARCHITECTURE.md` → **Multi-Agent Portability** maps each hook to each agent's event.
+> Hooks, commands, subagent prompts, and vault memory (`brain/`) are all agent-agnostic. Only the `~/.claude/` auto-memory loader and the `obsidian-mind` mod are Claude Code-specific. `.claude/rules/hooks-per-agent.md` maps each hook to each agent's event.
 
 ---
 
@@ -440,27 +440,6 @@ Defined in `.claude/commands/`. Run them in Claude Code, Codex CLI, or Gemini CL
 | `/om-meeting` | Prep for any meeting by topic — subject-forward briefing with open items and considerations |
 | `/om-intake` | Process meeting notes inbox — classify and route to the right vault notes |
 | `/om-project-archive` | Move a completed project from active/ to archive/, update indexes |
-
----
-
-## Obsidian CLI
-
-When Obsidian is running, prefer CLI over raw filesystem — it provides vault-aware search, backlink discovery, and property management. **On macOS, open Obsidian before invoking the CLI**: the first `obsidian` call launches the Electron app (visible window flash) if no instance is running; subsequent calls forward args silently. In non-interactive contexts where you can't guarantee Obsidian is open (background hooks, automation), prefer filesystem reads instead.
-
-```bash
-obsidian read file="Note Name"                    # Read a note
-obsidian create name="Name" content="..." silent   # Create without opening
-obsidian append file="Name" content="..."          # Append to note
-obsidian search query="text" limit=10              # Vault-aware search
-obsidian backlinks file="Name"                     # Discover connections
-obsidian tags sort=count counts                    # List all tags
-obsidian tasks daily todo                          # Open tasks
-obsidian daily:read                                # Today's daily note
-obsidian property:set name="status" value="done" file="Name"
-obsidian orphans                                   # Unlinked notes
-```
-
-`file=` resolves like a wikilink (by name). `path=` for exact path from root. Use `silent` to prevent files from opening. Run `obsidian help` for full reference.
 
 ---
 

@@ -119,15 +119,6 @@ If QMD is installed (`npm install -g @tobilu/qmd`), the vault has semantic searc
 
 SessionStart hook runs `qmd --index <name> update` automatically, reading the index name from the manifest. First-time setup on a fresh clone: `node --experimental-strip-types .scripts/qmd-bootstrap.ts`. See `.claude/skills/qmd/SKILL.md` for full reference, and [[Memories]] for the topics QMD is most often asked to find across the vault.
 
-## When to Consult Brain Topics
-
-The SessionStart hook injects a **Brain Topics (read on demand)** index listing each `brain/` topic note with its description and an `(empty)` marker for stub notes. Treat that index as a menu:
-
-- When the user's message touches a topic from the index (debugging → Gotchas, "how do we usually…" → Patterns, "why did we decide" → Key Decisions, "which command / slash" → Skills), query QMD **first** before answering — call `mcp__qmd__query` with a `query` argument describing the topic (or fall back to `qmd --index <name> query "<topic>"` if MCP is unavailable). The search covers the whole vault, so filter or prioritize results whose `file` path is under `brain/`. Do not assume the topic name alone scopes the search.
-- If QMD is unavailable, read the specific `brain/` note directly with the Read tool. Don't load all of `brain/` — only the one(s) matching the topic.
-- Skip notes marked `(empty)` in the index — they're stubs with no substantive content.
-- After answering, if the conversation produced durable knowledge, update the relevant brain note (see the "remember" workflow in `AGENTS.md` → **Memory System**).
-
 ## The `om` MCP Server (reaching this vault from another repo)
 
 `.claude/scripts/om-mcp.mjs` exposes this vault over MCP so a session in **another repository** can use it. Registered in the *consuming* project's `.mcp.json`, never in this vault's own — the server refuses a memory write from a session running inside the vault, because such a memory would be scoped to the vault-as-a-project and reach only sessions that already read every note directly.
@@ -150,7 +141,7 @@ Two prompts you invoke yourself from the `/` menu: `recall_topic`, `prior_art`. 
 
 **Two guards worth knowing:** memories are never served as ordinary notes (they carry their own declared scope), and a memory that would reach nobody is refused rather than silently widened to `general`.
 
-Full setup, which notes the server serves, the required repo-side snippet, and how the whole layer works — the four MCP surfaces, the identity handshake, a `search` call end to end, memory-visibility evaluation, the write path: `ARCHITECTURE.md` § *Reaching the Vault From Another Repo*.
+Full setup, which notes the server serves, and the required repo-side snippet: `.claude/rules/vault-from-another-repo.md`. How the whole layer works — the four MCP surfaces, the identity handshake, a `search` call end to end, memory-visibility evaluation, the write path: `ARCHITECTURE.md` § *Reaching the Vault From Another Repo*.
 
 ## Workflow: Weekly Review
 

@@ -149,7 +149,12 @@ modules:
   claude:
     label: "Claude (Anthropic) agent — .claude/rules, .claude/agents, .claude/skills, .claude/commands, .claude-plugin"
     paths:
-      - ".claude/rules/"
+      # Claude-only rules. The shared ones AGENTS.md points to stay core
+      # (claimed by no module), so every agent selection installs them.
+      - ".claude/rules/skills.md"
+      - ".claude/rules/subagents.md"
+      - ".claude/rules/memory.md"
+      - ".claude/rules/hooks-and-mod.md"
       - ".claude/agents/"
       - ".claude/skills/"
       - ".claude/commands/"

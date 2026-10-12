@@ -1,6 +1,6 @@
 # Auto-Memory Index (Claude Code)
 
-Claude Code loads this file beside `AGENTS.md`, which holds every convention the other agents share.
+Claude-only: Claude Code loads this file beside `AGENTS.md` and the shared files in this folder, which hold every convention the other agents share.
 
 **All project memories live in the vault.** The `~/.claude/` MEMORY.md is an auto-loaded index that points to vault locations. The `~/.claude/` MEMORY.md is the only file that should exist there -- it is an auto-loaded index. Never create additional memory files in that directory.
 

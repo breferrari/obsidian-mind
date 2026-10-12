@@ -1,6 +1,6 @@
 # Subagents (Claude Code)
 
-Claude Code loads this file beside `AGENTS.md`, which holds every convention the other agents share.
+Claude-only: Claude Code loads this file beside `AGENTS.md` and the shared files in this folder, which hold every convention the other agents share.
 
 | Folder | Purpose | Key Files |
 |--------|---------|-----------|
