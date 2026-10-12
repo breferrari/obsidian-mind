@@ -65,6 +65,7 @@ import { HANDOFF_DIR, pruneHandoffs, writeHandoff } from "./lib/stop-handoff.ts"
 import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, MOD_PREFACE, stopSummary } from "./lib/stop-report.ts";
 import {
 	formatActiveHygiene,
+	HYGIENE_VOLATILE_FIELDS,
 	hygieneClaims,
 	parseMemoryRoot,
 	parseOpenLoopConfig,
@@ -158,12 +159,6 @@ const message =
 		? "\n\nVault Hygiene (drift detected):\n" + hygieneLines.join("\n")
 		: "");
 
-// Numbers that move with no new drift to act on: a note growing past the
-// threshold, an item a day older. They stay in the message but not in the
-// report's identity, and neither does the order they sort findings into
-// (lib/report-key.ts), or a note the agent keeps appending to would re-show
-// the report every turn — the #252 repeat by another route.
-const VOLATILE_FIELDS = new Set(["sizeKb", "ageDays", "oldestDays"]);
 
 // SessionEnd (and any input without a recognisable event, the safe default)
 // always reports. Stop reports when the findings differ from the last report
@@ -173,7 +168,7 @@ const VOLATILE_FIELDS = new Set(["sizeKb", "ageDays", "oldestDays"]);
 const sessionId = input?.session_id;
 const isStop = input?.hook_event_name === "Stop";
 const hasSession = typeof sessionId === "string" && sessionId !== "";
-const key = reportKey({ checklist, report }, VOLATILE_FIELDS);
+const key = reportKey({ checklist, report }, HYGIENE_VOLATILE_FIELDS);
 const claims = hygieneClaims(report);
 
 if (omMod === "report") {

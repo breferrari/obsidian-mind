@@ -693,7 +693,7 @@ Your old vault is **never modified**. Use `--dry-run` to preview the plan withou
 
 **Claude Code ignores the vault's conventions.** Claude Code reads a `CLAUDE.md` in place of `AGENTS.md` and skips `AGENTS.md` without saying so. Two ways that happens:
 
-- **A leftover `CLAUDE.md` in the vault.** An update keeps a `CLAUDE.md` you edited. The session hygiene flags say `CLAUDE.md present beside AGENTS.md`, and `/om-vault-upgrade` lists it under **Move out**. Move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping `AGENTS.md` under ~22 KB: Antigravity stops reading it at ~24,000 bytes), then delete `CLAUDE.md`. Nothing is merged automatically.
+- **A leftover `CLAUDE.md` in the vault.** An update keeps a `CLAUDE.md` you edited. The session hygiene flags say `CLAUDE.md present beside AGENTS.md`, and `/om-vault-upgrade` lists it under **Move out**. Move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping `AGENTS.md` under 23 KB, where the hygiene flags start: Antigravity stops reading it at ~24,000 bytes), then delete `CLAUDE.md`. Nothing is merged automatically.
 - **A `CLAUDE.md` in a folder above the vault.** Claude Code reads that one too, and `AGENTS.md` is skipped. The hygiene flag cannot see it, because it checks the vault root only. Move the vault out from under that folder, or move that file's content somewhere it applies only where you want it.
 
 **Gemini CLI loads no instructions when started in a vault subfolder.** Gemini's context search walks up the folders, but its settings lookup does not, so a session started in a subfolder never reads the vault's `.gemini/settings.json` and never learns to look for `AGENTS.md`. Start Gemini from the vault root.

@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
 	HYGIENE_LIST_CAP,
+	HYGIENE_VOLATILE_FIELDS,
 	MONOLITH_BYTES,
 	OPEN_LOOP_DAYS,
 	countOpenLoops,
@@ -683,7 +684,7 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 
 	test("editing an AGENTS.md that is already flagged is not a new finding (#252)", () => {
 		const keyAt = (bytes: number) =>
-			withScan(bytes, (report) => reportKey({ report }, new Set(["sizeKb", "ageDays", "oldestDays"])));
+			withScan(bytes, (report) => reportKey({ report }, HYGIENE_VOLATILE_FIELDS));
 		const withScan = <T,>(bytes: number, run: (r: ReturnType<typeof scanActiveHygiene>) => T): T => {
 			let out!: T;
 			withFiles([], (root) => {

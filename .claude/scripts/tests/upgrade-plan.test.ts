@@ -195,15 +195,33 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		assert.equal(instructionFileReady(agents("differs"), report([])), false);
 	});
 
-	test("while AGENTS.md is ahead or a conflict, CLAUDE.md is a move even when the update would delete it", () => {
-		// The vault's AGENTS.md may still be the old one that only says "read
-		// CLAUDE.md": deleting CLAUDE.md first would point every agent at nothing.
+	test("a CLAUDE.md the update deletes stays behind, whatever AGENTS.md is: the report says what the update does", () => {
+		// ShardMind deletes an untouched CLAUDE.md on update regardless of this
+		// report, so listing it anywhere but Behind would hide a deletion.
 		for (const where of ["ahead", "conflicts"] as const) {
 			const base = { behind: ["CLAUDE.md"], ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 };
 			const r = withRetiredInstructionFiles({ ...base, [where]: ["AGENTS.md"] }, present(["CLAUDE.md", "AGENTS.md"]));
-			assert.deepEqual(r.move, ["CLAUDE.md"], where);
-			assert.deepEqual(r.behind, [], where);
+			assert.deepEqual(r.behind, ["CLAUDE.md"], where);
+			assert.deepEqual(r.move, [], where);
 		}
+	});
+
+	test("while AGENTS.md is ahead or a conflict and CLAUDE.md is retiring, the report says to settle AGENTS.md first", () => {
+		// The vault's AGENTS.md may be the old one that only says "read
+		// CLAUDE.md": once CLAUDE.md is gone, every agent is left with nothing.
+		const empty = { behind: [], ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 };
+		for (const report of [
+			{ ...empty, behind: ["CLAUDE.md"], conflicts: ["AGENTS.md"] },
+			{ ...empty, move: ["CLAUDE.md"], ahead: ["AGENTS.md"] },
+		]) {
+			const out = formatUpgradeReport(report, "v9.1.0", "v10.0.0");
+			assert.match(out, /### Settle AGENTS\.md first/);
+			assert.match(out, /only points at CLAUDE\.md/);
+			// First, before any section that acts on CLAUDE.md.
+			assert.ok(out.indexOf("Settle AGENTS.md first") < out.indexOf("`CLAUDE.md`"));
+		}
+		assert.doesNotMatch(formatUpgradeReport({ ...empty, behind: ["CLAUDE.md"] }, "v9.1.0", "v10.0.0"), /Settle AGENTS\.md first/);
+		assert.doesNotMatch(formatUpgradeReport({ ...empty, conflicts: ["AGENTS.md"] }, "v9.1.0", "v10.0.0"), /Settle AGENTS\.md first/);
 	});
 
 	test("the Move out text covers an untouched CLAUDE.md and an AGENTS.md that is not the new one yet", () => {
@@ -213,7 +231,7 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 			"v10.0.0",
 		);
 		assert.match(out, /If you never edited it, just delete it/);
-		assert.match(out, /take the new `AGENTS\.md` first/);
+		assert.match(out, /Settle `AGENTS\.md` first if this report says so/);
 	});
 
 	test("no CLAUDE.md in the vault: nothing to move", () => {

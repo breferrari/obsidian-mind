@@ -85,6 +85,15 @@ function titleTokens(filename: string): string[] {
 		.filter((t) => t.length >= 4 && !/^\d+$/.test(t) && !STOPWORDS.has(t));
 }
 
+/**
+ * Numbers in the report that move with no new drift to act on: a note growing
+ * past the threshold, an item a day older. They stay in the message but not
+ * in the report's identity, and neither does the order they sort findings
+ * into (lib/report-key.ts), or a note the agent keeps appending to would
+ * re-show the Stop report every turn — the #252 repeat by another route.
+ */
+export const HYGIENE_VOLATILE_FIELDS: ReadonlySet<string> = new Set(["sizeKb", "ageDays", "oldestDays"]);
+
 export type TopicCluster = {
 	readonly token: string;
 	readonly files: readonly string[]; // root-level filenames
@@ -424,7 +433,8 @@ function findOversizedNotes(
 				// which says to move it out, not to split it (#321).
 				if (
 					relDir === "" &&
-					(isInfraFilename(e.name, infraRootFilenames) || loadsAsRetiredInstructionFile(root, e.name))
+					(isInfraFilename(e.name, infraRootFilenames) ||
+						loadsAsRetiredInstructionFile(root, e.name, entries))
 				)
 					continue;
 				try {
@@ -669,24 +679,14 @@ export function scanActiveHygiene(
  * A root file an agent loads as a retired instruction file: the exact name,
  * or another casing that the filesystem resolves to that same file (Windows,
  * macOS). On a case-sensitive filesystem a `claude.md` is a plain note, even
- * beside a real CLAUDE.md, which is a different file there.
+ * beside a real CLAUDE.md, which is a different file there. Decided from the
+ * root listing, not inode numbers, which some filesystems report as 0: an
+ * alias is a retired name that is not an entry of its own, yet resolves.
  */
-function loadsAsRetiredInstructionFile(root: string, name: string): boolean {
+function loadsAsRetiredInstructionFile(root: string, name: string, rootEntries: readonly Dirent[]): boolean {
 	if (!isRetiredInstructionFile(name)) return false;
 	if (RETIRED_INSTRUCTION_FILES.includes(name)) return true;
-	try {
-		const entry = statSync(join(root, name));
-		return RETIRED_INSTRUCTION_FILES.some((f) => {
-			try {
-				const retired = statSync(join(root, f));
-				return retired.ino === entry.ino && retired.dev === entry.dev;
-			} catch {
-				return false;
-			}
-		});
-	} catch {
-		return false;
-	}
+	return RETIRED_INSTRUCTION_FILES.some((f) => !rootEntries.some((e) => e.name === f) && existsSync(join(root, f)));
 }
 
 /**
@@ -806,7 +806,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 	if (agentsMd !== null) {
 		if (lines.length > 0) lines.push("");
 		lines.push(
-			`⚠️  ${claims.agentsMd(agentsMd.sizeKb)} — Antigravity stopped reading it at ~24,000 bytes, silently (Antigravity 1.3.0, measured 2026-10-06, #321). Move a section an agent can safely skip to a file it reads on demand, word for word, and leave a one-line pointer; Claude Code-only additions go to .claude/rules/.`,
+			`⚠️  ${claims.agentsMd(agentsMd.sizeKb)} — Antigravity stopped reading it at ~24,000 bytes, silently, and Codex at ~32 KiB (Antigravity 1.3.0, Codex CLI 0.160.0, measured 2026-10-06, #321). Keep it under 23KB. Move a section an agent can safely skip to a file it reads on demand, word for word, and leave a one-line pointer; Claude Code-only additions go to .claude/rules/.`,
 		);
 	}
 

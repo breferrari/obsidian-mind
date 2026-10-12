@@ -18,4 +18,4 @@ The hook scripts in `.claude/scripts/` are agent-agnostic TypeScript and shell, 
 | `pre-compact.ts` | Back up transcript before compaction | PreCompact | — | PreCompress |
 | `stop-checklist.ts` | Wrap-up checklist and vault-hygiene drift findings (Claude Code and Codex: per response, deduped; Gemini: once, at shutdown) | Stop | Stop | SessionEnd |
 
-Grok, once the vault is trusted, runs the project `.claude/settings.json` hooks, so it gets the Claude Code column (its own layer is #323).
+Grok, once the vault is trusted, loads the project `.claude/settings.json` hooks (observed for #321); how each event behaves under Grok is not verified (TBC), and its own layer is #323.

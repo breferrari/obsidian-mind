@@ -110,10 +110,21 @@ describe("AGENTS.md is the one instruction file (#321)", () => {
 		const pathsOf = (m: string): string[] => {
 			const flow = /\n    paths: \[([^\]]*)\]/.exec(m);
 			if (flow) return [...flow[1]!.matchAll(/"([^"]+)"/g)].map((x) => x[1]!);
-			const block = /\n    paths:\n((?:      - "[^"]+"\n|      #[^\n]*\n)+)/.exec(m);
-			return block ? [...block[1]!.matchAll(/- "([^"]+)"/g)].map((x) => x[1]!) : [];
+			const at = m.indexOf("\n    paths:\n");
+			if (at < 0) return [];
+			const items: string[] = [];
+			// Every deeper-indented line until the next key; a trailing comment
+			// or an unquoted item must not end the list early.
+			for (const line of m.slice(at + "\n    paths:\n".length).split("\n")) {
+				if (!line.startsWith("      ")) break;
+				const item = /^\s+-\s+("([^"]*)"|'([^']*)'|([^\s#]+))/.exec(line);
+				if (item) items.push(item[2] ?? item[3] ?? item[4]!);
+			}
+			return items;
 		};
 		assert.ok(pathsOf(modules.find((m) => m.startsWith("brain:"))!).includes("brain/"), "pathsOf misreads a flow-style list");
+		const claudeList = pathsOf(modules.find((m) => m.startsWith("claude:"))!);
+		assert.ok(claudeList.includes(".claude/agents/") && claudeList.includes(".claude-plugin/"), "pathsOf misreads a block list");
 		const removablePaths = modules.filter((m) => /\n    removable: true\b/.test(m)).flatMap(pathsOf);
 		assert.ok(modules.length > 0, "found no modules in shard-schema.yaml");
 		const claims = (path: string, claim: string) => (claim.endsWith("/") ? path.startsWith(claim) : path === claim);

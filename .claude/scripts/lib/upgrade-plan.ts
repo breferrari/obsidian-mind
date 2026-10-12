@@ -133,12 +133,8 @@ export function instructionFileReady(plan: AdoptPlan, report: UpgradeReport): bo
  * so presence in the vault is what decides.
  */
 export function withRetiredInstructionFiles(report: UpgradeReport, present: (path: string) => boolean): UpgradeReport {
-	// While the vault keeps its own AGENTS.md, it may be the old one that only
-	// says "read CLAUDE.md", so a retired file is a move even if it is behind:
-	// deleting it first would point every agent at nothing.
-	const agentsKept = report.ahead.includes(INSTRUCTION_FILE) || report.conflicts.includes(INSTRUCTION_FILE);
-	const move = RETIRED_INSTRUCTION_FILES.filter((p) => present(p) && (agentsKept || !report.behind.includes(p)));
-	return { ...report, behind: report.behind.filter((p) => !move.includes(p)), move };
+	const move = RETIRED_INSTRUCTION_FILES.filter((p) => present(p) && !report.behind.includes(p));
+	return { ...report, move };
 }
 
 function modifiedPaths(status: StatusResult | null): Set<string> {
@@ -221,6 +217,20 @@ export function classifyAdopt(plan: AdoptPlan, baseHash: (path: string) => strin
 	return r;
 }
 
+/**
+ * The vault keeps its own AGENTS.md (ahead, or a conflict) while a retired
+ * instruction file leaves (behind or a move). That AGENTS.md may be the old
+ * one that only points at CLAUDE.md, so it has to be settled first: the
+ * update deletes an untouched CLAUDE.md whatever this report says.
+ */
+function mustSettleAgentsMd(r: UpgradeReport): boolean {
+	const kept = r.ahead.includes(INSTRUCTION_FILE) || r.conflicts.includes(INSTRUCTION_FILE);
+	return kept && RETIRED_INSTRUCTION_FILES.some((p) => r.behind.includes(p) || r.move.includes(p));
+}
+
+const SETTLE_AGENTS_MD =
+	"\n### Settle AGENTS.md first\nYour AGENTS.md differs from the release's, and CLAUDE.md is being retired. The old AGENTS.md only points at CLAUDE.md, so once CLAUDE.md is gone every agent is left without the vault's conventions. Take the release's AGENTS.md (then re-add your own changes to it, or to `.claude/rules/local.md`) before or as part of this update.\n";
+
 /** The report as markdown, for the user. Every list in full: a cut list would hide a decision. */
 export function formatUpgradeReport(r: UpgradeReport, from: string, to: string): string {
 	const section = (title: string, what: string, paths: readonly string[]): string =>
@@ -228,12 +238,13 @@ export function formatUpgradeReport(r: UpgradeReport, from: string, to: string):
 	return [
 		`## Upgrade plan: ${from} → ${to}`,
 		`${r.unchanged} file(s) need no judgment.`,
+		mustSettleAgentsMd(r) ? SETTLE_AGENTS_MD : "",
 		section("Behind", "The template changed these and you never did. Taking the new version loses nothing.", r.behind),
 		section("Ahead — keep, and consider upstreaming", "Changed only in this vault. Kept as yours.", r.ahead),
 		section("Merged — review", "Changed on both sides; merged without conflict.", r.merged),
 		section(
 			"Move out — retired instruction file",
-			"Claude Code reads CLAUDE.md and skips AGENTS.md while this file is here. If `AGENTS.md` is listed as ahead or a conflict in this report, take the new `AGENTS.md` first: yours may still be the old one that only points here. Then move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping it under ~22 KB), and delete the file. If you never edited it, just delete it. Nothing is merged automatically.",
+			"Claude Code reads CLAUDE.md and skips AGENTS.md while this file is here. Settle `AGENTS.md` first if this report says so. Then move what you added to `.claude/rules/local.md` (or into `AGENTS.md` if every agent needs it, keeping it under 23 KB), and delete the file. If you never edited it, just delete it. Nothing is merged automatically.",
 			r.move,
 		),
 		section("Conflicts — your decision", "Changed on both sides (or a new template file where you already have one).", r.conflicts),
