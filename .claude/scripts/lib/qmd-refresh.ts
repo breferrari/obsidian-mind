@@ -277,24 +277,25 @@ function touchSentinel(sentinelPath: string): void {
 }
 
 /**
+ * The switch that stops the detached qmd refresh: this trigger's worker, and
+ * session-start's update. Every test process carries it, so a suite leaves
+ * no qmd work behind (#337); wiki-mind's vendored copy uses the same name
+ * (wiki-mind #93).
+ */
+export const REFRESH_SWITCH = "VAULT_QMD_REFRESH";
+
+/** Whether the detached qmd refresh is switched off for this process. */
+export function refreshDisabled(): boolean {
+	return process.env[REFRESH_SWITCH] === "off";
+}
+
+/**
  * Spawn the detached worker. `stdio: 'ignore'` + `.unref()` + `detached`
  * survive parent exit without leaving file descriptors open, and
  * `windowsHide: true` suppresses the transient console window that a
  * naked `spawn` creates on Windows. Errors are logged under HOOK_DEBUG
  * only — production is silent per the hook protocol.
  */
-/**
- * The switch that stops the trigger from spawning its detached worker. The
- * test runner sets it, so a suite leaves no qmd-refresh-run process behind;
- * wiki-mind's vendored copy uses the same name (wiki-mind #93).
- */
-export const REFRESH_SWITCH = "VAULT_QMD_REFRESH";
-
-/** Whether the detached refresh worker is switched off for this process. */
-export function refreshDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
-	return env[REFRESH_SWITCH] === "off";
-}
-
 function spawnDetachedWorker(
 	workerPath: string,
 	logPrefix: string,

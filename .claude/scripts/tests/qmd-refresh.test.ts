@@ -29,8 +29,9 @@ import {
 	resolveVaultRoot,
 	shouldRefreshForPath,
 	triggerDebouncedRefresh,
+	REFRESH_SWITCH,
 } from "../lib/qmd-refresh.ts";
-import { rmTemp } from "./_helpers.ts";
+import { rmTemp, waitFor } from "./_helpers.ts";
 
 /**
  * The debounce used to fire on the leading edge only: a note written inside
@@ -137,19 +138,16 @@ describe("VAULT_QMD_REFRESH=off — no detached worker (#337)", () => {
 	}
 	/** Run `body` with VAULT_QMD_REFRESH set to `value` (or removed), restoring it after. */
 	function withSwitch(value: string | undefined, body: () => Promise<void>): Promise<void> {
-		const before = process.env["VAULT_QMD_REFRESH"];
-		if (value === undefined) delete process.env["VAULT_QMD_REFRESH"];
-		else process.env["VAULT_QMD_REFRESH"] = value;
+		const before = process.env[REFRESH_SWITCH];
+		if (value === undefined) delete process.env[REFRESH_SWITCH];
+		else process.env[REFRESH_SWITCH] = value;
 		return body().finally(() => {
-			if (before === undefined) delete process.env["VAULT_QMD_REFRESH"];
-			else process.env["VAULT_QMD_REFRESH"] = before;
+			if (before === undefined) delete process.env[REFRESH_SWITCH];
+			else process.env[REFRESH_SWITCH] = before;
 		});
 	}
 	const appears = async (path: string, ms: number) => {
-		for (const end = Date.now() + ms; Date.now() < end; ) {
-			if (existsSync(path)) return true;
-			await new Promise((r) => setTimeout(r, 50));
-		}
+		await waitFor(() => existsSync(path), ms);
 		return existsSync(path);
 	};
 

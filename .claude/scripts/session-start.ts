@@ -83,7 +83,8 @@ import {
 	scanActiveHygiene,
 } from "./lib/active-hygiene.ts";
 
-import { fitWithMeter, HOOK_OUTPUT_LIMIT, type OutputLimit, readStdinJson } from "./lib/hook-io.ts";
+import { debug, fitWithMeter, HOOK_OUTPUT_LIMIT, type OutputLimit, readStdinJson } from "./lib/hook-io.ts";
+import { REFRESH_SWITCH, refreshDisabled } from "./lib/qmd-refresh.ts";
 import { readOmMod } from "./lib/om-mod.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
@@ -272,17 +273,25 @@ const qmdUpdate = bootstrapNeeded
 // of the vault (or a test cleanup) never races a stale qmd handle on
 // Windows.
 const qmdCwd = bootstrapNeeded ? cwd : tmpdir();
-const qmdChild = spawn(qmdUpdate.cmd, qmdUpdate.args as string[], {
-	stdio: "ignore",
-	shell: qmdUpdate.shell,
-	detached: true,
-	windowsHide: true,
-	cwd: qmdCwd,
-});
-// Silence the spawn-error event so a missing qmd doesn't crash the hook;
-// qmd is optional and the hook already degrades when it's not installed.
-qmdChild.on("error", () => undefined);
-qmdChild.unref();
+// VAULT_QMD_REFRESH=off (every test process carries it) stops this detached
+// update too, the same as the write-time refresh worker (#337): a test's
+// session-start would otherwise leave a qmd update or bootstrap running
+// against its temp vault after the run.
+if (refreshDisabled()) {
+	debug(`session-start: qmd refresh off (${REFRESH_SWITCH}=off); nothing spawned`);
+} else {
+	const qmdChild = spawn(qmdUpdate.cmd, qmdUpdate.args as string[], {
+		stdio: "ignore",
+		shell: qmdUpdate.shell,
+		detached: true,
+		windowsHide: true,
+		cwd: qmdCwd,
+	});
+	// Silence the spawn-error event so a missing qmd doesn't crash the hook;
+	// qmd is optional and the hook already degrades when it's not installed.
+	qmdChild.on("error", () => undefined);
+	qmdChild.unref();
+}
 
 type CmdResult =
 	| { readonly kind: "ok"; readonly stdout: string }

@@ -38,6 +38,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { REFRESH_SWITCH } from "../lib/qmd-refresh.ts";
+import { killTree, listRefreshWorkers } from "./_proc.ts";
 
 const env = process.env;
 const watched: readonly { readonly dir: string; readonly ext: string }[] = [
@@ -54,33 +56,6 @@ function listing(dir: string, ext: string): Set<string> {
 	} catch {
 		return new Set();
 	}
-}
-
-/**
- * Every running process as `{ pid, cmd }`, or null when the listing itself
- * fails (no PowerShell or `ps`): the guard below then warns instead of
- * failing, since it cannot tell.
- */
-function processes(): { pid: number; cmd: string }[] | null {
-	const r =
-		process.platform === "win32"
-			? spawnSync(
-					"powershell",
-					[
-						"-NoProfile",
-						"-NonInteractive",
-						"-Command",
-						'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId)`t$($_.CommandLine)" }',
-					],
-					{ encoding: "utf8", timeout: 60_000, windowsHide: true },
-				)
-			: spawnSync("ps", ["-ax", "-o", "pid=,args="], { encoding: "utf8", timeout: 60_000 });
-	if (r.status !== 0 || typeof r.stdout !== "string") return null;
-	return r.stdout
-		.split(/\r?\n/)
-		.map((line) => /^\s*(\d+)\s+(.*)$/.exec(line))
-		.filter((m): m is RegExpExecArray => m !== null)
-		.map((m) => ({ pid: Number(m[1]), cmd: m[2]! }));
 }
 
 /** Comparable form of a path inside a command line: forward slashes, lower case. */
@@ -103,7 +78,7 @@ const run = spawnSync(
 			OM_QMD_ISOLATED: isolated,
 			// No detached qmd-refresh-run worker from any hook a test runs
 			// (#337): each one outlived the run by ~30 s and made a qmd call.
-			VAULT_QMD_REFRESH: "off",
+			[REFRESH_SWITCH]: "off",
 			// Temp folders inside the isolated one, so any process a test leaves
 			// behind names it, and the guard below can attribute it to this run.
 			TMP: isolatedTmp,
@@ -116,18 +91,12 @@ const run = spawnSync(
 // A refresh worker still alive from this run means some hook ran without the
 // switch (a test that built its env from scratch, or the switch no longer
 // honoured). Every one is stopped before reporting, so a red run leaves
-// nothing behind either.
-const listed = processes();
-const survivors = (listed ?? []).filter(
-	({ pid, cmd }) => pid !== process.pid && /qmd-refresh-run/.test(cmd) && norm(cmd).includes(norm(isolated)),
-);
-for (const { pid } of survivors) {
-	try {
-		process.kill(pid);
-	} catch {
-		/* already gone */
-	}
-}
+// nothing behind either: each one's whole tree, since a worker blocked in
+// `qmd embed` has a live qmd child.
+const listed = listRefreshWorkers();
+const isolatedKey = norm(isolated);
+const survivors = (listed ?? []).filter(({ cmd }) => norm(cmd).includes(isolatedKey));
+for (const { pid } of survivors) killTree(pid);
 
 const added = watched.flatMap(({ dir, ext }, i) =>
 	[...listing(dir, ext)].filter((f) => !before[i]!.has(f)).sort().map((f) => join(dir, f)),
@@ -139,7 +108,7 @@ try {
 }
 
 if (listed === null) {
-	process.stderr.write("\nrefresh-worker guard: could not list processes; surviving qmd-refresh-run workers were not checked.\n");
+	process.stderr.write("\nrefresh-worker guard: couldn't list processes; surviving qmd-refresh-run workers were not checked.\n");
 }
 if (survivors.length > 0) {
 	process.stderr.write(

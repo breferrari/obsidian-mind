@@ -21,9 +21,12 @@
  *
  * Every hook that writes or stops refreshes QMD through a debounce sentinel
  * beside the scripts. A test that names no sentinel of its own gets
- * TEST_SENTINEL instead, touched before each spawn: the real one is never
- * written, and a sentinel that fresh keeps the refresh debounced, so no test
- * starts a real index update of the checkout it runs in.
+ * TEST_SENTINEL instead, touched before each spawn, so the real one is never
+ * written. A fresh sentinel does NOT stop the refresh: it sends the trigger
+ * down its trailing path, which schedules a detached worker. What stops it
+ * is VAULT_QMD_REFRESH=off, which every test process carries (set by
+ * `_run-tests.ts` and `_qmd-cache-guard.ts`), so no test starts a real
+ * index update or leaves a worker behind (#337).
  */
 
 import { spawnSync } from "node:child_process";
