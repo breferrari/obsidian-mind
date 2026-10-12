@@ -47,7 +47,7 @@ It then prints every file needing judgment, sorted into:
 | **Conflicts** | Changed on both sides, or a new template file where you already have one | The user decides per file |
 | **New in the template** | Added | Taken as is |
 | **Move out** | A retired instruction file (`CLAUDE.md`) still in the vault | Claude Code reads it and skips `AGENTS.md`. With the user, move what they added to `.claude/rules/local.md` (Claude Code only) or `AGENTS.md` (every agent; keep it under 23 KB, where the hygiene scan flags it: Antigravity stops reading at ~24,000 bytes), then delete it. Nothing is merged automatically |
-| **Settle AGENTS.md first** | Shown above the lists when the vault's `AGENTS.md` is ahead or a conflict while `CLAUDE.md` is retiring | The old `AGENTS.md` only points at `CLAUDE.md`. Before or as part of the update, take the release's `AGENTS.md` and re-add the user's changes; otherwise the update can delete `CLAUDE.md` and leave every agent without conventions |
+| **Settle AGENTS.md first** | Shown above the lists when the vault's `AGENTS.md` is a conflict while `CLAUDE.md` is retiring (`settleAgentsMdFirst` in `--json`) | The old `AGENTS.md` only points at `CLAUDE.md`. Resolve it to the release's `AGENTS.md` and re-add the user's changes; otherwise a managed update deletes an untouched `CLAUDE.md` and leaves every agent without conventions |
 
 Show the report to the user. With `--dry-run`, stop here.
 
@@ -59,7 +59,7 @@ ShardMind executes only through its terminal UI (`--json` works with `--dry-run`
 - **No conflicts:** `CI=true shardmind update --yes < /dev/null`. `--yes` auto-keeps your version wherever both sides changed, so it is safe only once the plan shows no conflicts.
 - **Conflicts:** ask the user to run `! shardmind update` themselves and decide each conflicting file in the prompt, or in their editor.
 
-**Order:** if the plan says *Settle AGENTS.md first*, resolve `AGENTS.md` to the release's version (re-adding the user's changes) in the same update, since the update deletes an untouched `CLAUDE.md` regardless. A Move out file comes after the update: ShardMind keeps a `CLAUDE.md` you changed, so do the move from U1 once the update is done.
+**Order:** if the plan says *Settle AGENTS.md first*, `AGENTS.md` is a conflict, so the update runs through the user's own `! shardmind update` (or `decide-per-file` adopt): resolve `AGENTS.md` there to the release's version, re-adding the user's changes. A managed update deletes an untouched `CLAUDE.md` in that same run; an unmanaged clone keeps it until `AGENTS.md` is settled. A Move out file comes after the update: ShardMind keeps a `CLAUDE.md` you changed, so do the move from U1 once the update is done.
 
 **Cloned without ShardMind:**
 1. Write the new release's bytes for the **behind** files only. Each is checked against adopt's plan before it is written, so nothing you changed is touched. A `CLAUDE.md` listed as behind is one you never edited, and this step **deletes** it, after the new `AGENTS.md` is written: name it to the user and get their yes before running it:

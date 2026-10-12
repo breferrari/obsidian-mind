@@ -42,7 +42,7 @@
  * topic.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import { AGENTS_MD_FLAG_BYTES, INSTRUCTION_FILE, isRetiredInstructionFile, RETIRED_INSTRUCTION_FILES } from "./instruction-files.ts";
 import { escapeRegex } from "./regex.ts";
@@ -434,7 +434,7 @@ function findOversizedNotes(
 				if (
 					relDir === "" &&
 					(isInfraFilename(e.name, infraRootFilenames) ||
-						loadsAsRetiredInstructionFile(root, e.name, entries))
+						loadsAsRetiredInstructionFile(root, e.name))
 				)
 					continue;
 				try {
@@ -679,14 +679,26 @@ export function scanActiveHygiene(
  * A root file an agent loads as a retired instruction file: the exact name,
  * or another casing that the filesystem resolves to that same file (Windows,
  * macOS). On a case-sensitive filesystem a `claude.md` is a plain note, even
- * beside a real CLAUDE.md, which is a different file there. Decided from the
- * root listing, not inode numbers, which some filesystems report as 0: an
- * alias is a retired name that is not an entry of its own, yet resolves.
+ * beside a real CLAUDE.md, which is a different file there. Same file means
+ * the same real path, which also covers a CLAUDE.md symlinked to it; inode
+ * numbers are not used, as some filesystems report them as 0.
  */
-function loadsAsRetiredInstructionFile(root: string, name: string, rootEntries: readonly Dirent[]): boolean {
+function loadsAsRetiredInstructionFile(root: string, name: string): boolean {
 	if (!isRetiredInstructionFile(name)) return false;
 	if (RETIRED_INSTRUCTION_FILES.includes(name)) return true;
-	return RETIRED_INSTRUCTION_FILES.some((f) => !rootEntries.some((e) => e.name === f) && existsSync(join(root, f)));
+	const real = realPath(join(root, name));
+	return (
+		real !== null &&
+		RETIRED_INSTRUCTION_FILES.some((f) => f.toLowerCase() === name.toLowerCase() && realPath(join(root, f)) === real)
+	);
+}
+
+function realPath(path: string): string | null {
+	try {
+		return realpathSync.native(path);
+	} catch {
+		return null;
+	}
 }
 
 /**

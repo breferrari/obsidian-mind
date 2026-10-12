@@ -16,7 +16,8 @@
  * Claude Code reads it in place of AGENTS.md. In an unmanaged clone, one whose
  * bytes are the release it was cloned from is behind instead, and
  * --apply-behind deletes it.
- * Prints the report (or, with --json, `{ mode, from, to, report }`).
+ * Prints the report (or, with --json, `{ mode, from, to, report,
+ * settleAgentsMdFirst }`).
  *
  * --apply-behind (unmanaged clone only): writes the latest release's bytes
  * for every BEHIND file — one the user never changed — after checking each
@@ -42,6 +43,7 @@ import {
 	classifyUpdate,
 	formatUpgradeReport,
 	instructionFileReady,
+	mustSettleAgentsMd,
 	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
 	type AdoptPlan,
@@ -206,7 +208,9 @@ function main(): void {
 	report = withRetiredInstructionFiles(report, (p) => existsSync(join(vault, p)));
 
 	process.stdout.write(
-		asJson ? `${JSON.stringify({ mode, from, to, report }, null, 2)}\n` : `${formatUpgradeReport(report, `v${from}`, `v${to}`)}\n`,
+		asJson
+			? `${JSON.stringify({ mode, from, to, report, settleAgentsMdFirst: mustSettleAgentsMd(report) }, null, 2)}\n`
+			: `${formatUpgradeReport(report, `v${from}`, `v${to}`)}\n`,
 	);
 }
 

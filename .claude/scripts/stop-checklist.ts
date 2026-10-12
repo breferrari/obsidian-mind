@@ -159,7 +159,6 @@ const message =
 		? "\n\nVault Hygiene (drift detected):\n" + hygieneLines.join("\n")
 		: "");
 
-
 // SessionEnd (and any input without a recognisable event, the safe default)
 // always reports. Stop reports when the findings differ from the last report
 // this session was shown: the first Stop, and any change since, including

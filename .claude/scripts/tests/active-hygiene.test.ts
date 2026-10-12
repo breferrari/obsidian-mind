@@ -13,6 +13,7 @@ import {
 	readdirSync,
 	mkdtempSync,
 	rmSync,
+	symlinkSync,
 	utimesSync,
 	writeFileSync,
 } from "node:fs";
@@ -695,6 +696,20 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		};
 		assert.equal(keyAt(AGENTS_MD_FLAG_BYTES + 10), keyAt(AGENTS_MD_FLAG_BYTES + 900));
 		assert.notEqual(keyAt(AGENTS_MD_FLAG_BYTES - 1), keyAt(AGENTS_MD_FLAG_BYTES + 10));
+	});
+
+	test("a CLAUDE.md symlinked to a large claude.md is the leftover flag only, never a note to SPLIT", () => {
+		withFiles(["AGENTS.md"], (root) => {
+			writeFileSync(join(root, "claude.md"), "x".repeat(MONOLITH_BYTES + 1000));
+			try {
+				symlinkSync("claude.md", join(root, "CLAUDE.md"));
+			} catch {
+				return; // no symlink rights (Windows without developer mode), or the name is taken (case-insensitive)
+			}
+			const report = scanActiveHygiene(root, NOW, DEFAULTS, ["AGENTS.md"]);
+			assert.equal(report.leftoverClaudeMd, true);
+			assert.deepEqual(report.oversizedNotes, []);
+		});
 	});
 
 	test("on a case-sensitive filesystem, a claude.md beside a real CLAUDE.md is still a note that can be oversized", () => {

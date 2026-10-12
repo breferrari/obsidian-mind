@@ -16,6 +16,7 @@ import {
 	classifyUpdate,
 	formatUpgradeReport,
 	instructionFileReady,
+	mustSettleAgentsMd,
 	untouchedRetiredFiles,
 	withRetiredInstructionFiles,
 	type AdoptPlan,
@@ -212,8 +213,9 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		const empty = { behind: [], ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 };
 		for (const report of [
 			{ ...empty, behind: ["CLAUDE.md"], conflicts: ["AGENTS.md"] },
-			{ ...empty, move: ["CLAUDE.md"], ahead: ["AGENTS.md"] },
+			{ ...empty, move: ["CLAUDE.md"], conflicts: ["AGENTS.md"] },
 		]) {
+			assert.equal(mustSettleAgentsMd(report), true);
 			const out = formatUpgradeReport(report, "v9.1.0", "v10.0.0");
 			assert.match(out, /### Settle AGENTS\.md first/);
 			assert.match(out, /only points at CLAUDE\.md/);
@@ -222,6 +224,15 @@ describe("a CLAUDE.md left in the vault (#321)", () => {
 		}
 		assert.doesNotMatch(formatUpgradeReport({ ...empty, behind: ["CLAUDE.md"] }, "v9.1.0", "v10.0.0"), /Settle AGENTS\.md first/);
 		assert.doesNotMatch(formatUpgradeReport({ ...empty, conflicts: ["AGENTS.md"] }, "v9.1.0", "v10.0.0"), /Settle AGENTS\.md first/);
+	});
+
+	test("an ahead AGENTS.md is the user's edit of the current release, never the old pointer: no settle warning", () => {
+		// Ahead means the template did not change AGENTS.md between the two
+		// releases, and the release that retires CLAUDE.md does change it.
+		const empty = { behind: [], ahead: [], merged: [], conflicts: [], added: [], move: [], unchanged: 0 };
+		const report = { ...empty, move: ["CLAUDE.md"], ahead: ["AGENTS.md"] };
+		assert.equal(mustSettleAgentsMd(report), false);
+		assert.doesNotMatch(formatUpgradeReport(report, "v10.0.0", "v10.1.0"), /Settle AGENTS\.md first/);
 	});
 
 	test("the Move out text covers an untouched CLAUDE.md and an AGENTS.md that is not the new one yet", () => {

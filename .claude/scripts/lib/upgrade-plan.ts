@@ -218,18 +218,23 @@ export function classifyAdopt(plan: AdoptPlan, baseHash: (path: string) => strin
 }
 
 /**
- * The vault keeps its own AGENTS.md (ahead, or a conflict) while a retired
- * instruction file leaves (behind or a move). That AGENTS.md may be the old
- * one that only points at CLAUDE.md, so it has to be settled first: the
- * update deletes an untouched CLAUDE.md whatever this report says.
+ * The vault's AGENTS.md is a conflict (both sides changed it) while a retired
+ * instruction file leaves (behind or a move). Changed by the user on top of
+ * the old release, it may be the old one that only points at CLAUDE.md, so it
+ * has to be settled first. Ahead never qualifies: ahead means the template
+ * did not change AGENTS.md between the two releases, and the release that
+ * retires CLAUDE.md does change it, so an ahead AGENTS.md is the user's edit
+ * of the current one.
  */
-function mustSettleAgentsMd(r: UpgradeReport): boolean {
-	const kept = r.ahead.includes(INSTRUCTION_FILE) || r.conflicts.includes(INSTRUCTION_FILE);
-	return kept && RETIRED_INSTRUCTION_FILES.some((p) => r.behind.includes(p) || r.move.includes(p));
+export function mustSettleAgentsMd(r: UpgradeReport): boolean {
+	return (
+		r.conflicts.includes(INSTRUCTION_FILE) &&
+		RETIRED_INSTRUCTION_FILES.some((p) => r.behind.includes(p) || r.move.includes(p))
+	);
 }
 
 const SETTLE_AGENTS_MD =
-	"\n### Settle AGENTS.md first\nYour AGENTS.md differs from the release's, and CLAUDE.md is being retired. The old AGENTS.md only points at CLAUDE.md, so once CLAUDE.md is gone every agent is left without the vault's conventions. Take the release's AGENTS.md (then re-add your own changes to it, or to `.claude/rules/local.md`) before or as part of this update.\n";
+	"\n### Settle AGENTS.md first\nYour AGENTS.md conflicts with the release's, and CLAUDE.md is being retired. The old AGENTS.md only points at CLAUDE.md, so once CLAUDE.md is gone every agent is left without the vault's conventions. Resolve AGENTS.md to the release's version (then re-add your own changes to it, or to `.claude/rules/local.md`). A managed update deletes an untouched CLAUDE.md in the same run, so resolve it there; in an unmanaged clone, CLAUDE.md stays until AGENTS.md is settled.\n";
 
 /** The report as markdown, for the user. Every list in full: a cut list would hide a decision. */
 export function formatUpgradeReport(r: UpgradeReport, from: string, to: string): string {

@@ -113,12 +113,13 @@ describe("AGENTS.md is the one instruction file (#321)", () => {
 			const at = m.indexOf("\n    paths:\n");
 			if (at < 0) return [];
 			const items: string[] = [];
-			// Every deeper-indented line until the next key; a trailing comment
-			// or an unquoted item must not end the list early.
+			// Every line until the next key at module level or above; blank
+			// lines, comments, a trailing comment or an unquoted item (spaces
+			// and all) must not end the list early or cut an item short.
 			for (const line of m.slice(at + "\n    paths:\n".length).split("\n")) {
-				if (!line.startsWith("      ")) break;
-				const item = /^\s+-\s+("([^"]*)"|'([^']*)'|([^\s#]+))/.exec(line);
-				if (item) items.push(item[2] ?? item[3] ?? item[4]!);
+				if (/^ {0,4}[^\s#]/.test(line)) break;
+				const item = /^\s+-\s+(?:"([^"]*)"|'([^']*)'|(.*?))\s*(?:#.*)?$/.exec(line);
+				if (item) items.push(item[1] ?? item[2] ?? item[3]!);
 			}
 			return items;
 		};
