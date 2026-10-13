@@ -245,6 +245,12 @@ obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAU
 
 **Codex CLI** — `AGENTS.md`를 네이티브로 읽습니다. `.codex/hooks.json`의 훅 설정이 Claude Code와 동일한 훅 스크립트를 연결합니다 — 세션 컨텍스트, 메시지 분류, 쓰기 검증이 자동으로 작동합니다.
 
+Codex가 프로젝트의 훅을 실행하려면 두 가지 신뢰가 필요합니다(Codex CLI 0.160.0으로 확인, 2026-10-13 기준, [#345](https://github.com/breferrari/obsidian-mind/issues/345)).
+- **볼트 폴더가 신뢰되어 있어야 합니다.** Codex는 이를 `~/.codex/config.toml`의 `[projects.'<path>']`에 기록합니다. Windows에서는 키가 `\\?\` 접두사가 붙은 경로입니다(예: `[projects.'\\?\C:\path\to\vault']`).
+- **각 훅이 승인되어 있어야 합니다.** 대화형 `codex` 세션에서 승인하세요. Codex는 각 승인을 `[hooks.state]` 아래 `trusted_hash`로 저장합니다.
+
+둘 다 갖춰지기 전에는 Codex가 어떤 훅도 실행하지 않으며, 세션에 볼트 컨텍스트가 전달되지 않습니다.
+
 **Gemini CLI** — `GEMINI.md`를 네이티브로 읽습니다. `.gemini/settings.json`의 훅 설정이 Gemini의 이벤트 이름을 공유 훅 스크립트에 매핑합니다.
 
 **기타 에이전트** (Cursor, Windsurf, GitHub Copilot, JetBrains AI) — `AGENTS.md`로 볼트 규약을 읽습니다. 훅 지원은 에이전트마다 다릅니다.

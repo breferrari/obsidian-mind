@@ -245,6 +245,12 @@ obsidian-mind 支持 Claude Code、Codex CLI 和 Gemini CLI。`CLAUDE.md` 中的
 
 **Codex CLI** — 原生读取 `AGENTS.md`。`.codex/hooks.json` 中的钩子配置连接了与 Claude Code 相同的钩子脚本 — 会话上下文、消息分类和写入验证自动工作。
 
+Codex 只有在两种信任都具备时才会运行项目的钩子（使用 Codex CLI 0.160.0 观察，截至 2026-10-13，[#345](https://github.com/breferrari/obsidian-mind/issues/345)）：
+- **vault 文件夹已被信任。** Codex 将其记录在 `~/.codex/config.toml` 的 `[projects.'<path>']` 下。在 Windows 上，键是带 `\\?\` 前缀的路径，例如 `[projects.'\\?\C:\path\to\vault']`。
+- **每个钩子已被批准。** 在交互式 `codex` 会话中批准。Codex 将每次批准作为 `trusted_hash` 存储在 `[hooks.state]` 下。
+
+两者都具备之前，Codex 不会运行任何钩子，会话也得不到 vault 上下文。
+
 **Gemini CLI** — 原生读取 `GEMINI.md`。`.gemini/settings.json` 中的钩子配置将 Gemini 的事件名称映射到共享钩子脚本。
 
 **其他 Agent**（Cursor、Windsurf、GitHub Copilot、JetBrains AI）— 通过 `AGENTS.md` 读取 vault 规约。钩子支持因 Agent 而异。

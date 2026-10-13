@@ -245,6 +245,12 @@ obsidian-mindはClaude Code、Codex CLI、Gemini CLIで動作します。`CLAUDE
 
 **Codex CLI** — `AGENTS.md`をネイティブに読み込みます。`.codex/hooks.json`のフック設定がClaude Codeと同じフックスクリプトを接続 — セッションコンテキスト、メッセージ分類、書き込み検証が自動的に動作します。
 
+Codex がプロジェクトのフックを実行するには、2 つの信頼が必要です（Codex CLI 0.160.0 で確認、2026-10-13 時点、[#345](https://github.com/breferrari/obsidian-mind/issues/345)）。
+- **ボールトのフォルダーが信頼されていること。** Codex は `~/.codex/config.toml` の `[projects.'<path>']` に記録します。Windows ではキーが `\\?\` 付きのパスになります（例: `[projects.'\\?\C:\path\to\vault']`）。
+- **各フックが承認されていること。** 対話型の `codex` セッションで承認します。Codex は各承認を `[hooks.state]` の `trusted_hash` として保存します。
+
+両方が揃うまで Codex はフックを一切実行せず、セッションにボールトのコンテキストは届きません。
+
 **Gemini CLI** — `GEMINI.md`をネイティブに読み込みます。`.gemini/settings.json`のフック設定がGeminiのイベント名を共有フックスクリプトにマッピングします。
 
 **その他のエージェント**（Cursor、Windsurf、GitHub Copilot、JetBrains AI）— `AGENTS.md`でボールト規約を読み取ります。フックサポートはエージェントにより異なります。

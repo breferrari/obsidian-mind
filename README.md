@@ -262,6 +262,12 @@ Observed with scratch vaults as of 2026-10-06 (Claude Code 2.1.291, Codex CLI 0.
 
 **Codex CLI** — hook config at `.codex/hooks.json` wires the same hook scripts Claude Code uses — session context, message classification, and write validation work automatically. Commands work as regular prompts (e.g. type `om-standup` without the `/` prefix).
 
+Codex runs a project's hooks only once two kinds of trust are in place (observed with Codex CLI 0.160.0 as of 2026-10-13, [#345](https://github.com/breferrari/obsidian-mind/issues/345)):
+- **The vault folder is trusted.** Codex records this in `~/.codex/config.toml` under `[projects.'<path>']`. On Windows the key is the `\\?\`-prefixed path, e.g. `[projects.'\\?\C:\path\to\vault']`.
+- **Each hook is approved.** Approve them in an interactive `codex` session. Codex stores each approval as a `trusted_hash` under `[hooks.state]`.
+
+Until both are in place, Codex runs no hook, and the session gets no vault context.
+
 **Gemini CLI** — hook config at `.gemini/settings.json` maps Gemini's event names to the shared hook scripts, and its `context.fileName` setting points Gemini at `AGENTS.md`.
 
 **Antigravity** and **Grok** — read `AGENTS.md` for vault conventions. Their hook, skill and command layers are tracked in [#322](https://github.com/breferrari/obsidian-mind/issues/322) and [#323](https://github.com/breferrari/obsidian-mind/issues/323).
