@@ -22,10 +22,14 @@ import { debug, readStdinJson } from "./lib/hook-io.ts";
 import { isMainModule } from "./lib/main-guard.ts";
 import { sentinelPathFrom, triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
+import { markReinject, schedulesReinject } from "./lib/reinject.ts";
+import { HANDOFF_DIR } from "./lib/stop-handoff.ts";
 
 type HookInput = {
 	readonly transcript_path?: unknown;
 	readonly trigger?: unknown;
+	readonly hook_event_name?: unknown;
+	readonly session_id?: unknown;
 };
 
 const BACKUP_RETAIN = 30;
@@ -78,6 +82,17 @@ if (isMainModule(import.meta.url)) {
 			debounceMs: 30_000,
 			logPrefix: "pre-compact",
 		});
+	}
+
+	// Gemini fires no SessionStart after compressing, so mark the session for
+	// the next BeforeAgent to re-inject the context (lib/reinject.ts, #357).
+	// Before the backup, which can exit early.
+	if (schedulesReinject(input)) {
+		try {
+			markReinject(HANDOFF_DIR, input.session_id as string);
+		} catch (err) {
+			debug(`pre-compact: could not mark the re-injection: ${(err as Error).message}`);
+		}
 	}
 
 	const transcriptPath =
