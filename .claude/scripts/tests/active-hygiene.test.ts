@@ -34,6 +34,7 @@ import {
 	parseMemoryRoot,
 	parseOpenLoopConfig,
 	scanActiveHygiene,
+	stripJsonComments,
 	walkMarkdown,
 } from "../lib/active-hygiene.ts";
 
@@ -850,5 +851,33 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		withFiles(["CLAUDE.md"], (root) => {
 			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles.includes("CLAUDE.md"), false);
 		});
+	});
+});
+
+/**
+ * stripJsonComments matches strip-json-comments 3.1.1, the version gemini-cli
+ * pins, character for character (#380), not only in whether JSON.parse then
+ * accepts the result. Expected outputs are 3.1.1's own, as of 2026-10-13.
+ */
+describe("stripJsonComments, as strip-json-comments 3.1.1", () => {
+	test("an unterminated string runs to the end: a // after it is string, not comment", () => {
+		assert.equal(stripJsonComments('{ "a": "unterminated // x'), '{ "a": "unterminated // x');
+	});
+
+	test("comments become spaces, line breaks kept, CRLF included", () => {
+		assert.equal(stripJsonComments('{ // c\r\n"a": 1 /* b */ }'), '{     \r\n"a": 1         }');
+		assert.equal(stripJsonComments('{ "a": 1 } /* open'), '{ "a": 1 }        ');
+	});
+
+	test("a quote after an odd run of backslashes doesn't end the string", () => {
+		assert.equal(stripJsonComments(String.raw`{ "a": "12\" // in" }`), String.raw`{ "a": "12\" // in" }`);
+		assert.equal(stripJsonComments(String.raw`{ "a": "x\\" // out` + "\n}"), String.raw`{ "a": "x\\"       ` + "\n}");
+	});
+
+	test("one pass: an unterminated string of escaped quotes stays linear", () => {
+		const text = '{ "a": "' + '\\"'.repeat(20_000);
+		const start = performance.now();
+		assert.equal(stripJsonComments(text), text);
+		assert.ok(performance.now() - start < 200, "the regex form took ~60 ms at 8,000 and grows quadratically");
 	});
 });
