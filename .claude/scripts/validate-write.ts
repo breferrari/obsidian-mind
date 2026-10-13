@@ -38,7 +38,7 @@ import {
 	sentinelPathFrom,
 	triggerDebouncedRefresh,
 } from "./lib/qmd-refresh.ts";
-import { resolveProjectDir } from "./lib/project-dir.ts";
+import { isInsideVault, resolveProjectDir } from "./lib/project-dir.ts";
 import { refreshTargets, writeTargets } from "./lib/write-targets.ts";
 
 type HookInput = {
@@ -156,7 +156,7 @@ function checkFile(filePath: string): FileFindings {
 	// Vault-root skip AFTER the memory guard (which must inspect outside-vault
 	// paths): files outside the vault are not vault notes — no validation.
 	const filePathFwd = filePath.replaceAll("\\", "/");
-	if (filePathFwd !== vaultRoot && !filePathFwd.startsWith(vaultRoot + "/")) {
+	if (!isInsideVault(filePathFwd, vaultRoot)) {
 		debug(`validate: skipped (outside vault root) ${filePath}`);
 		return { blocks, policyResults };
 	}
@@ -175,9 +175,8 @@ function checkFile(filePath: string): FileFindings {
 		debug(`validate: could not read ${filePath}`);
 		return { blocks, policyResults };
 	}
-	const relPath = filePathFwd.startsWith(vaultRoot + "/")
-		? filePathFwd.slice(vaultRoot.length + 1)
-		: filePathFwd;
+	// Inside the vault by now (the skip above), whatever the case of its drive.
+	const relPath = filePathFwd.slice(vaultRoot.length + 1);
 	const warnings = validateContent(content, {
 		required: parseFrontmatterRequired(loadManifest()),
 		relPath,

@@ -48,6 +48,23 @@ const holdsMarker = (dir: string): boolean => {
 	}
 };
 
+/**
+ * Whether `path` is the vault root or inside it. Boundary-safe ("/vault" does
+ * not contain "/vaulting/…"), with either slash. On Windows the comparison
+ * ignores case, since the hook's vault root (from the environment or the cwd)
+ * and a tool's file path can spell the drive and folders differently, and the
+ * filesystem treats them as the same.
+ */
+export function isInsideVault(path: string, vaultRoot: string, platform: string = process.platform): boolean {
+	const fold = (s: string): string => {
+		const fwd = s.replaceAll("\\", "/").replace(/\/+$/, "");
+		return platform === "win32" ? fwd.toLowerCase() : fwd;
+	};
+	const p = fold(path);
+	const root = fold(vaultRoot);
+	return p === root || p.startsWith(root + "/");
+}
+
 export function resolveProjectDir(fallback: string, env: NodeJS.ProcessEnv = process.env): string {
 	const named = PROJECT_DIR_VARS.map((name) => env[name]).find(Boolean) ?? fallback;
 	return nearestVaultRoot(named) ?? named;

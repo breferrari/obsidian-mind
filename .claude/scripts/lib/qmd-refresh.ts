@@ -20,6 +20,7 @@ import { join, resolve as resolvePath } from "node:path";
 import { buildQmdCommand, REFRESH_SWITCH, refreshDisabled, resolveQmdEntry } from "./qmd.ts";
 import { envPath } from "./env-path.ts";
 import { debug } from "./hook-io.ts";
+import { isInsideVault } from "./project-dir.ts";
 import { qmdArgsWithIndex } from "./session-start.ts";
 
 /**
@@ -77,10 +78,8 @@ export function shouldRefreshForPath(filePath: unknown): boolean {
  * ladder: "/vault" does not contain "/vaulting/…". In-vault paths that ladder
  * skips (templates, root docs) still refresh: they are indexed all the same.
  */
-export function refreshesVaultIndex(filePath: unknown, vaultRoot: string): boolean {
-	if (!shouldRefreshForPath(filePath)) return false;
-	const fwd = (filePath as string).replaceAll("\\", "/");
-	return fwd === vaultRoot || fwd.startsWith(vaultRoot + "/");
+export function refreshesVaultIndex(filePath: unknown, vaultRoot: string, platform: string = process.platform): boolean {
+	return shouldRefreshForPath(filePath) && isInsideVault(filePath as string, vaultRoot, platform);
 }
 
 /**
