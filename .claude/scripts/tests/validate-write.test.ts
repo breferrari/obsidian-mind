@@ -301,6 +301,18 @@ describe("validate-write — under Gemini's AfterTool (#353)", () => {
 	});
 });
 
+// With HOOK_DEBUG=1 the refresh trigger logs "refresh requested" before it
+// branches, so whether a write asked for a refresh shows with or without qmd
+// installed; a sentinel appears only where qmd resolves, and the leg without
+// qmd failed on it. Each sentinel is touched first, so the request is
+// debounced and no worker spawns.
+const refreshEnv = (name: string): Record<string, string> => {
+	const sentinel = join(TMP_DIR, `${name}.sentinel`);
+	writeFileSync(sentinel, "");
+	return { HOOK_DEBUG: "1", QMD_REFRESH_SENTINEL: sentinel };
+};
+const refreshed = (stderr: string) => stderr.includes("validate-write: refresh requested");
+
 describe("validate-write — Codex apply_patch, whose payload names no file_path (#354)", () => {
 	// openai/codex core/src/tools/handlers/apply_patch.rs: tool_input is
 	// { command: <raw patch> }, and the request carries an absolute cwd
@@ -346,21 +358,17 @@ describe("validate-write — Codex apply_patch, whose payload names no file_path
 	});
 
 	test("a patch that writes a vault note triggers the refresh (the control for the case below)", () => {
-		const sentinel = join(TMP_DIR, "md.sentinel");
 		makeMd("---\ndate: 2026-10-13\n---\n" + "x".repeat(300), "codex-refresh.md");
-		applyPatch("*** Begin Patch\n*** Add File: codex-refresh.md\n+x\n*** End Patch\n", { QMD_REFRESH_SENTINEL: sentinel });
-		assert.ok(existsSync(sentinel), "the refresh touched its sentinel");
+		const { stderr } = applyPatch("*** Begin Patch\n*** Add File: codex-refresh.md\n+x\n*** End Patch\n", refreshEnv("md"));
+		assert.ok(refreshed(stderr), "the refresh was requested");
 	});
 
 	test("a patch touching only non-.md files warns nothing and triggers no refresh", () => {
-		const sentinel = join(TMP_DIR, "nomd.sentinel");
 		writeFileSync(join(TMP_DIR, "code.ts"), "export {};\n");
-		const { stdout, code } = applyPatch("*** Begin Patch\n*** Add File: code.ts\n+export {};\n*** End Patch\n", {
-			QMD_REFRESH_SENTINEL: sentinel,
-		});
+		const { stdout, stderr, code } = applyPatch("*** Begin Patch\n*** Add File: code.ts\n+export {};\n*** End Patch\n", refreshEnv("nomd"));
 		assert.equal(code, 0);
 		assert.equal(stdout, "");
-		assert.ok(!existsSync(sentinel), "no refresh was triggered");
+		assert.equal(refreshed(stderr), false, "no refresh was requested");
 	});
 
 	test("a patch touching only a note outside the vault warns nothing, as a single-file write does", () => {
@@ -386,10 +394,9 @@ describe("validate-write — apply_patch review follow-ups (#354)", () => {
 		);
 
 	test("a patch that only deletes a note still refreshes the index, which would otherwise serve it", () => {
-		const sentinel = join(TMP_DIR, "delete.sentinel");
-		const { stdout } = applyPatch("*** Begin Patch\n*** Delete File: gone.md\n*** End Patch\n", { QMD_REFRESH_SENTINEL: sentinel });
+		const { stdout, stderr } = applyPatch("*** Begin Patch\n*** Delete File: gone.md\n*** End Patch\n", refreshEnv("delete"));
 		assert.equal(stdout, "", "nothing to validate");
-		assert.ok(existsSync(sentinel), "the refresh touched its sentinel");
+		assert.ok(refreshed(stderr), "the refresh was requested");
 	});
 
 	test("three new notes joining one cluster give its hint once, not once per note", () => {
