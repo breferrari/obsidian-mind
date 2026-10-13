@@ -330,15 +330,26 @@ describe("validate-write — Codex apply_patch, whose payload names no file_path
 			"*** Begin Patch\n*** Add File: codex-one.md\n+a\n*** Update File: codex-two.md\n@@\n+b\n*** End Patch\n",
 		);
 		const out = context(stdout);
-		assert.match(out.additionalContext, /codex-one\.md/);
-		assert.match(out.additionalContext, /codex-two\.md/);
+		assert.match(out.additionalContext, /Vault hygiene warnings for `codex-one\.md`/);
+		assert.match(out.additionalContext, /Vault hygiene warnings for `codex-two\.md`/);
 	});
 
-	test("a misplaced memory file in a patch is flagged", () => {
+	test("a misplaced memory file in a patch is flagged, with its policy result", () => {
 		const { stdout } = applyPatch(
 			"*** Begin Patch\n*** Add File: /Users/foo/.claude/projects/-Users-foo-dev-bar/memory/feedback_x.md\n+x\n*** End Patch\n",
 		);
-		assert.match(context(stdout).additionalContext, /Memory location violation/);
+		const out = JSON.parse(stdout) as {
+			hookSpecificOutput: { additionalContext: string; policyResults?: Array<{ policy_id: string }> };
+		};
+		assert.match(out.hookSpecificOutput.additionalContext, /Memory location violation/);
+		assert.deepEqual(out.hookSpecificOutput.policyResults?.map((p) => p.policy_id), ["memory-location"]);
+	});
+
+	test("a patch that writes a vault note triggers the refresh (the control for the case below)", () => {
+		const sentinel = join(TMP_DIR, "md.sentinel");
+		makeMd("---\ndate: 2026-10-13\n---\n" + "x".repeat(300), "codex-refresh.md");
+		applyPatch("*** Begin Patch\n*** Add File: codex-refresh.md\n+x\n*** End Patch\n", { QMD_REFRESH_SENTINEL: sentinel });
+		assert.ok(existsSync(sentinel), "the refresh touched its sentinel");
 	});
 
 	test("a patch touching only non-.md files warns nothing and triggers no refresh", () => {

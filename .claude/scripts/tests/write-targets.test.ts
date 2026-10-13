@@ -78,6 +78,12 @@ describe("writeTargets — Codex apply_patch (#354)", () => {
 		assert.deepEqual(writeTargets({ tool_name: "apply_patch", tool_input: { command: 42 } }, PROJECT), []);
 	});
 
+	test("a header naming no file, or a move with no update before it, gives no target", () => {
+		assert.deepEqual(writeTargets(applyPatch(patch("*** Add File: ", "+1")), PROJECT), []);
+		assert.deepEqual(writeTargets(applyPatch(patch("*** Move to: stray.md")), PROJECT), []);
+		assert.deepEqual(writeTargets(applyPatch("*** Begin Patch\n*** Add File: cut.md"), PROJECT), [join(CWD, "cut.md")]);
+	});
+
 	test("a file line inside a hunk's body is content, not a target", () => {
 		const input = applyPatch(patch("*** Add File: a.md", "+*** Add File: not-a-target.md"));
 		assert.deepEqual(writeTargets(input, PROJECT), [join(CWD, "a.md")]);

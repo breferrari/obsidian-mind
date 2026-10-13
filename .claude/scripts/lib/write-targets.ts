@@ -17,6 +17,13 @@ const ADD_FILE = "*** Add File: ";
 const UPDATE_FILE = "*** Update File: ";
 const MOVE_TO = "*** Move to: ";
 
+/** The path after `marker` on a header line, or null when the line is not that header or names nothing. */
+function matchHeader(line: string, marker: string): string | null {
+	if (!line.startsWith(marker)) return null;
+	const path = line.slice(marker.length).trim();
+	return path === "" ? null : path;
+}
+
 /** The paths a patch adds, updates, or moves a file to, in patch order. */
 function patchTargets(patch: string): string[] {
 	const out: string[] = [];
@@ -25,16 +32,19 @@ function patchTargets(patch: string): string[] {
 		// Hunk bodies start with "+", "-", " " or "@@", so a header line is never
 		// content; a body line that happens to read like one is prefixed.
 		const line = raw.trimEnd();
-		const header = (marker: string) => (line.startsWith(marker) ? line.slice(marker.length).trim() : "");
 		const wasUpdate = afterUpdate;
 		afterUpdate = false;
-		if (header(ADD_FILE)) out.push(header(ADD_FILE));
-		else if (header(UPDATE_FILE)) {
-			out.push(header(UPDATE_FILE));
+		const added = matchHeader(line, ADD_FILE);
+		const updated = added === null ? matchHeader(line, UPDATE_FILE) : null;
+		const movedTo = wasUpdate ? matchHeader(line, MOVE_TO) : null;
+		if (added !== null) out.push(added);
+		else if (updated !== null) {
+			out.push(updated);
 			afterUpdate = true;
-		} else if (wasUpdate && header(MOVE_TO)) {
-			// The file now lives at the new path: that is what gets validated.
-			out[out.length - 1] = header(MOVE_TO);
+		} else if (movedTo !== null) {
+			// The file now lives at the new path, and the old one is gone: the
+			// new path is what gets validated.
+			out[out.length - 1] = movedTo;
 		}
 	}
 	return out;
