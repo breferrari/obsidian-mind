@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { REFRESH_SWITCH } from "../lib/qmd-refresh.ts";
-import { rmTemp, runScript } from "./_helpers.ts";
+import { assertNotKilled, rmTemp, runScript, SCRIPT_TIMEOUT_MS } from "./_helpers.ts";
 
 const testsDir = dirname(fileURLToPath(import.meta.url));
 
@@ -46,8 +46,9 @@ test("the preload forces the switch off, even over an exported 'on' or ''", () =
 				"-e",
 				`process.stdout.write(String(process.env.${REFRESH_SWITCH}))`,
 			],
-			{ encoding: "utf8", timeout: 30_000, env: { ...process.env, [REFRESH_SWITCH]: exported } },
+			{ encoding: "utf8", timeout: SCRIPT_TIMEOUT_MS, env: { ...process.env, [REFRESH_SWITCH]: exported } },
 		);
+		assertNotKilled(r, "the preload probe", SCRIPT_TIMEOUT_MS);
 		assert.equal(r.stdout, "off", `with ${REFRESH_SWITCH}=${JSON.stringify(exported)} exported`);
 	}
 });

@@ -62,9 +62,26 @@ export const hookContext = (stdout: string): string => parseHookContext(stdout, 
 /**
  * How long a hook spawn may take before it is killed. One session-start spawn
  * takes 5-12 s on Windows CI (#349), so the old 10 s left under a second of
- * margin and failed a run on runner variance alone (#348).
+ * margin and failed a run on runner variance alone (#348). It also bounds what
+ * a hung hook costs: each spawn that hangs takes this long, one at a time.
  */
 export const SCRIPT_TIMEOUT_MS = 30_000;
+
+/**
+ * Throw if `proc` was killed by its timeout. A killed run has no output to
+ * judge: say so, rather than hand the caller empty stdout to fail on as
+ * something else (#348).
+ */
+export function assertNotKilled(
+	proc: { readonly signal: NodeJS.Signals | null; readonly stderr?: string | null },
+	label: string,
+	timeoutMs: number,
+): void {
+	if (proc.signal === null) return;
+	const tail = (proc.stderr ?? "").trimEnd().split("\n").slice(-5).join("\n");
+	const detail = tail ? `: ${tail}` : "";
+	throw new Error(`${label} was killed after ${timeoutMs / 1000} s (${proc.signal})${detail}`);
+}
 
 export function runScript(
 	scriptPath: string,
@@ -97,12 +114,7 @@ export function runScript(
 			env,
 		},
 	);
-	// A killed run has no output to judge: say it was killed, rather than hand
-	// the caller empty stdout to fail on as something else (#348).
-	if (proc.signal !== null) {
-		const tail = (proc.stderr ?? "").trimEnd().split("\n").slice(-5).join("\n");
-		throw new Error(`${basename(scriptPath)} was killed after ${timeoutMs / 1000} s (${proc.signal})${tail ? `: ${tail}` : ""}`);
-	}
+	assertNotKilled(proc, basename(scriptPath), timeoutMs);
 	return {
 		stdout: proc.stdout ?? "",
 		stderr: proc.stderr ?? "",

@@ -20,7 +20,7 @@ import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { rmTemp } from "./_helpers.ts";
+import { assertNotKilled, rmTemp, SCRIPT_TIMEOUT_MS } from "./_helpers.ts";
 import { projectSlug } from "../tidy-fix.ts";
 
 const SCRIPT = resolve(
@@ -42,6 +42,7 @@ function run(
 		["--disable-warning=ExperimentalWarning", "--experimental-strip-types", SCRIPT, ...args],
 		{
 			encoding: "utf-8",
+			timeout: SCRIPT_TIMEOUT_MS,
 			env: {
 				...process.env,
 				CLAUDE_PROJECT_DIR: root,
@@ -50,6 +51,7 @@ function run(
 			},
 		},
 	);
+	assertNotKilled(r, "tidy-fix", SCRIPT_TIMEOUT_MS);
 	return { stdout: r.stdout ?? "", code: r.status ?? -1 };
 }
 

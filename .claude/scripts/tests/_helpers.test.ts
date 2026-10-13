@@ -137,25 +137,28 @@ describe("runScript", () => {
 	// A spawn killed by the timeout used to come back as empty stdout and exit
 	// -1, so the test failed on whatever it parsed next: "hook stdout is not one
 	// JSON object" on Windows CI, where nothing said a timeout had fired (#348).
-	test("a script that outlives the timeout is reported as killed, not as empty output", () => {
-		const dir = mkdtempSync(join(tmpdir(), "run-script-timeout-"));
+	/** Run `fn` on a script named `name` holding `body`, in a temp folder removed after. */
+	const withScript = (name: string, body: string, fn: (script: string) => void) => {
+		const dir = mkdtempSync(join(tmpdir(), "run-script-"));
 		try {
-			const script = join(dir, "sleeps.ts");
-			writeFileSync(script, "setTimeout(() => {}, 5_000);\n");
-			assert.throws(() => runScript(script, null, {}, { timeoutMs: 300 }), /sleeps\.ts was killed after 0\.3 s/);
+			const script = join(dir, name);
+			writeFileSync(script, body);
+			fn(script);
 		} finally {
 			rmTemp(dir);
 		}
+	};
+
+	test("a script that outlives the timeout is reported as killed, not as empty output", () => {
+		// It would sleep a minute; the kill makes that free, and no slow runner finishes it in time.
+		withScript("sleeps.ts", "setTimeout(() => {}, 60_000);\n", (script) =>
+			assert.throws(() => runScript(script, null, {}, { timeoutMs: 300 }), /sleeps\.ts was killed after 0\.3 s/),
+		);
 	});
 
-	test("a script that finishes in time returns its output", () => {
-		const dir = mkdtempSync(join(tmpdir(), "run-script-ok-"));
-		try {
-			const script = join(dir, "prints.ts");
-			writeFileSync(script, 'process.stdout.write("done");\n');
-			assert.deepEqual(runScript(script, null, {}, { timeoutMs: 10_000 }).stdout, "done");
-		} finally {
-			rmTemp(dir);
-		}
+	test("a script that finishes in time returns its output (the control)", () => {
+		withScript("prints.ts", 'process.stdout.write("done");\n', (script) =>
+			assert.equal(runScript(script, null, {}, { timeoutMs: 10_000 }).stdout, "done"),
+		);
 	});
 });
