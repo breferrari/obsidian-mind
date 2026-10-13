@@ -57,6 +57,10 @@ function harness(vaultRoot: string): { remember: (at: Date, args: Record<string,
 
 const recorded = (reply: string): string => /^Recorded: (.+)$/m.exec(reply)?.[1] ?? "";
 
+/** Rescope a written memory to the harbor project, out of the atlas caller's reach. */
+const scopeToHarbor = (file: string): void =>
+	writeFileSync(file, readFileSync(file, "utf8").replace(/^scope: .*$/m, "scope: project").replace(/^projects: .*$/m, 'projects: ["harbor"]'));
+
 describe("remember marks every memory a shared title names", () => {
 	test("a third same-title correction retires the live wrong one, and the chain reaches only where its end does", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "sup-chain-"));
@@ -134,7 +138,7 @@ describe("remember marks every memory a shared title names", () => {
 			const { remember } = harness(dir);
 			const theirs = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
 			const full = join(dir, theirs);
-			writeFileSync(full, readFileSync(full, "utf8").replace(/^scope: .*$/m, "scope: project").replace(/^projects: .*$/m, 'projects: ["harbor"]'));
+			scopeToHarbor(full);
 			const reply = await remember(new Date(2026, 6, 1), { scope: "general", supersedes: [TITLE] });
 
 			assert.ok(!reply.includes(theirs), "the reply does not name a memory outside the caller's reach");
@@ -171,7 +175,7 @@ describe("remember marks every memory a shared title names", () => {
 			const withheld = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
 			const harborFix = recorded(await remember(new Date(2026, 5, 2), { scope: "general", title: "tokens expire after one hour (harbor)" }));
 			const fixFull = join(dir, harborFix);
-			writeFileSync(fixFull, readFileSync(fixFull, "utf8").replace(/^scope: .*$/m, "scope: project").replace(/^projects: .*$/m, 'projects: ["harbor"]'));
+			scopeToHarbor(fixFull);
 			const full = join(dir, withheld);
 			writeFileSync(full, readFileSync(full, "utf8").replace(/^scope: general$/m, 'scope: general\nsuperseded_by: ["tokens expire after one hour (harbor)"]'));
 
@@ -197,7 +201,7 @@ describe("remember's near-duplicate check stays in reach", () => {
 			const { remember } = harness(dir);
 			const theirs = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
 			const full = join(dir, theirs);
-			writeFileSync(full, readFileSync(full, "utf8").replace(/^scope: .*$/m, "scope: project").replace(/^projects: .*$/m, 'projects: ["harbor"]'));
+			scopeToHarbor(full);
 
 			const reply = await remember(new Date(2026, 6, 1), { scope: "general", force: false });
 			assert.ok(!reply.includes(theirs), "the reply does not name a memory outside the caller's reach");

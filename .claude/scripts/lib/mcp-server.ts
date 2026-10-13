@@ -533,31 +533,28 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		// comparison; every OTHER memory stays in it, so a correction that also
 		// duplicates a third note is still refused, which is the check working.
 		//
-		// Only what recall serves this caller (#364). A title can name a memory
-		// scoped to another project, or one recall already withholds; marking it
-		// would withhold it from its own project's callers, whose only replacement
-		// is out of their reach, and naming its file here would show this caller a
-		// memory recall never would. Nor is it counted: a count would say whether
-		// another project holds that title, so a claim with no match in reach is
-		// simply not matched, which is the truth from where the caller stands.
+		// Both checks below see only what recall serves this caller (#364, #375).
+		// A memory scoped to another project, or one recall already withholds, is
+		// never marked, never this caller's duplicate, and never named: naming its
+		// file would show this caller a memory recall never would. Nor is it
+		// counted: a count would say whether another project holds that title, so
+		// a claim with no match in reach is simply not matched, which is the truth
+		// from where the caller stands. Building `served` itself needs every
+		// memory, since a stale copy's replacement may be out of reach.
 		const served = servedAfterSupersession(
 			digests.map((d) => ({ rel: d.rel, full: d.full, title: d.title, body: d.body, facets: d })),
 			who,
 		);
-		const supers = resolveSupersedes(
-			args.supersedes,
-			digests.filter((d) => served.has(d.rel)),
-		);
+		const inReach = digests.filter((d) => served.has(d.rel));
+		const supers = resolveSupersedes(args.supersedes, inReach);
 		const superseded = new Set(supers.matched.map((m) => m.rel));
 
 		// Near-duplicate suppression, facet-gated so two projects can each hold
-		// their own copy of the same lesson. Only against what recall serves this
-		// caller (#375): another project's copy isn't this caller's duplicate, and
-		// a refusal naming it would show a memory recall never would.
+		// their own copy of the same lesson.
 		if (args.force !== true) {
 			const { duplicates } = findSimilar(
 				v.value,
-				digests.filter((d) => served.has(d.rel) && !superseded.has(d.rel)),
+				inReach.filter((d) => !superseded.has(d.rel)),
 			);
 			if (duplicates.length) {
 				const d = duplicates[0]!;
