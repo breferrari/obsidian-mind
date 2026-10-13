@@ -497,8 +497,8 @@ describe("hook config — write validation fires on each agent's own file tools 
 		{ label: "Claude Code", path: ".claude/settings.json", event: "PostToolUse", tools: ["Write", "Edit"] },
 		// Codex: "For file edits through apply_patch, matcher values can use
 		// apply_patch, Edit, or Write" (developers.openai.com/codex/hooks, as of
-		// 2026-10-13). The payload is a separate gap (#354).
-		{ label: "Codex CLI", path: ".codex/hooks.json", event: "PostToolUse", tools: ["Write", "Edit"] },
+		// 2026-10-13). An apply_patch payload names its files in the patch (#354).
+		{ label: "Codex CLI", path: ".codex/hooks.json", event: "PostToolUse", tools: ["Write", "Edit", "apply_patch"] },
 		// Gemini: write_file and replace (gemini-cli
 		// tools/definitions/base-declarations.ts, as of 2026-10-13); tool-event
 		// matchers are regexes (hooks/hookPlanner.ts).
