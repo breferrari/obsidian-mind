@@ -20,6 +20,8 @@
 ## Checklist
 
 - [ ] PR title follows `type: description` format
+- [ ] Links an issue assigned to me, or is a trivial typo fix in documentation
+- [ ] A code change comes with a test that fails on `main` and passes with it
 - [ ] Tests pass (`cd .claude/scripts && npm test`)
 - [ ] Any NEW guard, check, or config constraint has demonstrated a red — broken deliberately, seen to fire, reverted. Say which, in one line
 - [ ] Doc tables updated if adding commands/agents (AGENTS.md, README, Skills.md, translations)

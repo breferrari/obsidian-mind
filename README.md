@@ -712,7 +712,7 @@ Your old vault is **never modified**. Use `--dry-run` to preview the plan withou
 
 ## 🗺️ Roadmap
 
-**Issues and bug reports welcome.** Code contributions go through assignment: comment on an issue to ask for it, and open a PR once it's assigned to you. A PR for an unassigned issue is closed without review. See [CONTRIBUTING.md](CONTRIBUTING.md).
+**Issues and bug reports welcome.** Code contributions go through assignment: comment on an issue to ask for it, and open a PR once it's assigned to you. A PR for an issue not assigned to you is closed without review. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
