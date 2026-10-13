@@ -598,6 +598,15 @@ describe("a correction that keeps the corrected memory's title (#364)", () => {
 		assert.deepEqual(recallFrom([OLD, undated], beta).map((m) => m.rel), []);
 	});
 
+	// `date` is the writer's local day and `session` its UTC time: across time
+	// zones the local day can run ahead of a later write's, so the timestamp,
+	// where both have one, decides.
+	test("a later write from a time zone whose local day runs behind is still newer", () => {
+		const old = dated({ scope: "general", date: "2026-10-14", session: "2026-10-13T16:00:00Z", superseded_by: [TITLE] }, "tokyo");
+		const fix = dated({ scope: "project", projects: ["atlas"], date: "2026-10-13", session: "2026-10-13T17:00:00Z" }, "seattle");
+		assert.deepEqual(recallFrom([old, fix], beta).map((m) => m.rel), []);
+	});
+
 	test("explain names supersession, not scope, for the withheld old copy", () => {
 		const { withheld } = recallFrom([OLD, NEW], beta, { explain: true });
 		assert.ok(withheld.find((m) => m.rel === OLD.rel)?.why?.startsWith(SUPERSEDED_OUT_OF_REACH));

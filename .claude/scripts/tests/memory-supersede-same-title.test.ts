@@ -15,7 +15,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -87,6 +87,60 @@ describe("remember marks every memory a shared title names", () => {
 			assert.ok(reply.includes(second), `the reply names ${second}`);
 			const marked = recall(dir, { project: "atlas", platforms: [] }).filter((m) => m.facets.superseded_by.length > 0);
 			assert.deepEqual(marked.map((m) => m.rel).sort(), [first, second].sort());
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a dry run names each file the claim would mark, before anything is marked", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "sup-dry-"));
+		try {
+			const { remember } = harness(dir);
+			const first = recorded(await remember(new Date(2026, 5, 1), { scope: "general", body: `${BODY} About sessions.` }));
+			const second = recorded(await remember(new Date(2026, 5, 2), { scope: "general", body: `${BODY} About API keys.` }));
+			const preview = await remember(new Date(2026, 6, 1), { scope: "general", supersedes: [TITLE], dry_run: true });
+
+			assert.ok(preview.includes(first) && preview.includes(second), "the preview names both files");
+			const marked = recall(dir, { project: "atlas", platforms: [] }).filter((m) => m.facets.superseded_by.length > 0);
+			assert.deepEqual(marked, [], "a dry run marks nothing");
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a match the server may not mark is named in the reply, not dropped", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "sup-refused-"));
+		try {
+			const { remember } = harness(dir);
+			const handFiled = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
+			const full = join(dir, handFiled);
+			writeFileSync(full, readFileSync(full, "utf8").replace(/^source: .*$/m, "source: hand-filed"));
+			const reply = await remember(new Date(2026, 6, 1), { scope: "general", supersedes: [TITLE] });
+
+			assert.match(reply, /not marked/i);
+			assert.ok(reply.includes(handFiled), `the reply names ${handFiled}`);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	// A correction reaches only what its writer can see. Marking another
+	// project's memory would withhold it from that project's own callers, whose
+	// only replacement is out of their reach, and naming its file would show this
+	// caller a memory recall never would.
+	test("a match the caller cannot see is left alone and counted, not named", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "sup-unseen-"));
+		try {
+			const { remember } = harness(dir);
+			const theirs = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
+			const full = join(dir, theirs);
+			writeFileSync(full, readFileSync(full, "utf8").replace(/^scope: .*$/m, "scope: project").replace(/^projects: .*$/m, 'projects: ["harbor"]'));
+			const reply = await remember(new Date(2026, 6, 1), { scope: "general", supersedes: [TITLE] });
+
+			assert.ok(!reply.includes(theirs), "the reply does not name a memory outside the caller's reach");
+			assert.match(reply, /1 memory .*outside your reach/i);
+			const harbor = recall(dir, { project: "harbor", platforms: [] });
+			assert.deepEqual(harbor.find((m) => m.rel === theirs)?.facets.superseded_by, [], "harbor's memory is not marked");
 		} finally {
 			rmTemp(dir);
 		}
