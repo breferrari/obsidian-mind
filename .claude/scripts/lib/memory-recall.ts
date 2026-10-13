@@ -303,16 +303,18 @@ export function supersededOutOfReach(
 }
 
 /**
- * Whether `a` was provably written before `b`: by date, then by the write's
- * session timestamp within a day. A side with no date, or a same-day pair
- * missing a timestamp, is not provably older, so it is never ruled out.
- * The order is `rankMemories`' recency order; it differs only in treating a
- * missing value as unknown, where ranking sorts it oldest.
+ * Whether `a` was provably written before `b`: by the write's session
+ * timestamp where both have one, else by date. A side with neither, or a
+ * same-day pair missing a timestamp, is not provably older, so it is never
+ * ruled out. `session` is UTC and `date` the writer's local day, which across
+ * time zones can run ahead of a later write's, hence the timestamp first.
+ * `rankMemories` orders recency by date, then session; the two agree except
+ * across time zones and where a value is missing, which ranking sorts oldest.
  */
 function olderThan(a: Facets, b: Facets): boolean {
+	if (a.session && b.session) return a.session < b.session;
 	if (!a.date || !b.date) return false;
-	if (a.date !== b.date) return a.date < b.date;
-	return !!a.session && !!b.session && a.session < b.session;
+	return a.date < b.date;
 }
 
 /**

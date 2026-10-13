@@ -33,7 +33,7 @@ import { callerPlatforms, digestsFrom, resolvableNames, resolvableTargets } from
 import { captureNote, describeToolMarkup, toolMarkupRefusal } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
-import { recallFrom, readMemories, type MemoryEntry } from "./memory-recall.ts";
+import { isVisibleTo, recallFrom, readMemories, type MemoryEntry } from "./memory-recall.ts";
 import {
 	resolvePromotedRef,
 	auditPromotions,
@@ -543,7 +543,18 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		}
 
 		const { resolved, dropped } = resolveLinks(args.links, resolvable);
-		const supers = resolveSupersedes(args.supersedes, digests);
+		// Only what this caller can see (#364). A title can name a memory scoped
+		// to another project; marking it would withhold it from that project's own
+		// callers, whose only replacement is out of their reach, and naming its
+		// file here would show this caller a memory recall never would. Such a
+		// match is counted, not named.
+		const everyMatch = resolveSupersedes(args.supersedes, digests);
+		const supers = { ...everyMatch, matched: everyMatch.matched.filter((d) => isVisibleTo(d, who)) };
+		const unseen = everyMatch.matched.length - supers.matched.length;
+		const unseenNote = unseen
+			? [`${unseen} memor${unseen === 1 ? "y" : "ies"} with that title ${unseen === 1 ? "is" : "are"} outside your reach and left alone.`]
+			: [];
+		const named = (m: { title: string; rel: string }) => `${m.title} (${m.rel})`;
 
 		if (args.dry_run === true) {
 			return [
@@ -552,6 +563,8 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				renderMemory(v.value, resolved),
 				...(dropped.length ? ["", `Links dropped as unresolvable: ${dropped.join(", ")}`] : []),
 				...(unlinked.length ? [`Dangling wikilinks were unlinked: ${unlinked.join(", ")}`] : []),
+				...(supers.matched.length ? [`Would supersede: ${supers.matched.map(named).join("; ")}`] : []),
+				...unseenNote,
 				...(supers.unmatched.length ? [`Supersedes not matched: ${supers.unmatched.join(", ")}`] : []),
 				...(v.warnings.length ? ["", "Warnings:", ...v.warnings.map((w) => `- ${w}`)] : []),
 			].join("\n");
@@ -563,17 +576,19 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		// previous parse of a path a collision loop just reused.
 		memoryIndex.invalidate(written.rel);
 
+		// The file, not just the title: a title can name several memories (#364),
+		// and every one in reach is marked, so a caller who meant one of two that
+		// share a title by coincidence sees both, rather than one being retired
+		// silently. A match the server may not modify is named with its reason.
 		const retired: string[] = [];
+		const notMarked: string[] = [];
 		for (const m of supers.matched) {
-			if (markSuperseded(ctx.vaultRoot, m.rel, v.value.title).ok) {
-				// The file, not just the title: a title can name several memories
-				// (#364), and every one is marked, so a caller who meant one of two
-				// that share a title by coincidence sees both, rather than one being
-				// retired silently.
-				retired.push(`${m.title} (${m.rel})`);
+			const r = markSuperseded(ctx.vaultRoot, m.rel, v.value.title);
+			if (r.ok) {
+				retired.push(named(m));
 				// Rewritten in place, and the new frontmatter is what makes it sink.
 				memoryIndex.invalidate(m.rel);
-			}
+			} else notMarked.push(`${named(m)}: ${r.reason}`);
 		}
 
 		const indexed = reindex();
@@ -583,6 +598,8 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			`Recorded: ${written.rel}`,
 			`Scope: ${v.value.scope}${v.value.projects.length ? ` → ${v.value.projects.join(", ")}` : ""}`,
 			...(retired.length ? [`Superseded: ${retired.join("; ")} (kept and back-linked)`] : []),
+			...(notMarked.length ? [`Matched but not marked: ${notMarked.join("; ")}`] : []),
+			...unseenNote,
 			...(supers.unmatched.length ? [`Supersedes NOT matched: ${supers.unmatched.join(", ")}`] : []),
 			...(dropped.length ? [`Links dropped as unresolvable: ${dropped.join(", ")}`] : []),
 			...(unlinked.length ? [`Dangling wikilinks were unlinked: ${unlinked.join(", ")}`] : []),
