@@ -655,15 +655,89 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		});
 	});
 
-	test("Gemini settings with comments or a BOM, which Gemini accepts, are still read", () => {
+	/**
+	 * Gemini reads its settings as `JSON.parse(stripJsonComments(content))`
+	 * after a plain utf-8 read (gemini-cli packages/cli/src/config/settings.ts,
+	 * strip-json-comments 3.1.1, as of 51617c1, 2026-10-12), and a file that
+	 * fails is a fatal error: the CLI does not start. So comments are fine, a
+	 * comment is whitespace, and a BOM or a trailing comma is not (#374).
+	 */
+	const rawSettings = (root: string, text: string): void => {
+		mkdirSync(join(root, ".gemini"), { recursive: true });
+		writeFileSync(join(root, ".gemini/settings.json"), text);
+	};
+	const scanWith = (text: string) => {
+		let report: ReturnType<typeof scanActiveHygiene> | undefined;
 		withFiles(["AGENTS.md", "GEMINI.md"], (root) => {
-			mkdirSync(join(root, ".gemini"), { recursive: true });
-			writeFileSync(
-				join(root, ".gemini/settings.json"),
-				'﻿{\n  // where Gemini looks\n  "context": { "fileName": ["AGENTS.md"] },\n  /* hooks */ "hooks": {}\n}\n',
-			);
-			assert.deepEqual(scanActiveHygiene(root, NOW, DEFAULTS).leftoverInstructionFiles, ["GEMINI.md"]);
+			rawSettings(root, text);
+			report = scanActiveHygiene(root, NOW, DEFAULTS);
 		});
+		return report!;
+	};
+
+	test("Gemini settings with comments and CRLF, which Gemini accepts, are still read", () => {
+		const report = scanWith('{\r\n  // where Gemini looks\r\n  "context": { "fileName": ["AGENTS.md"] },\r\n  /* hooks */ "hooks": {}\r\n}\r\n');
+		assert.deepEqual(report.leftoverInstructionFiles, ["GEMINI.md"]);
+		assert.equal(report.geminiSettingsBroken, false);
+	});
+
+	for (const [name, text] of [
+		["a BOM", '﻿{ "context": { "fileName": "AGENTS.md" } }'],
+		["a missing brace", '{ "context": { "fileName": "AGENTS.md" }'],
+		["a trailing comma", '{ "context": { "fileName": "AGENTS.md", }, }'],
+		["a comment inside a token, which is whitespace", '{ "debug": tr/**/ue, "context": { "fileName": "AGENTS.md" } }'],
+		["an unterminated block comment swallowing the closing brace", '{ "context": { "fileName": "AGENTS.md" } /* never closed'],
+		["a JSON value that is not an object", '["AGENTS.md"]'],
+	] as const) {
+		test(`settings Gemini cannot load (${name}) name nothing, and are reported as broken`, () => {
+			const report = scanWith(text);
+			assert.deepEqual(report.leftoverInstructionFiles, [], "GEMINI.md is not retired by a file Gemini never applies");
+			assert.equal(report.geminiSettingsBroken, true);
+		});
+	}
+
+	test("a broken settings file says to fix it and keep GEMINI.md, never to delete GEMINI.md", () => {
+		const text = formatActiveHygiene(scanWith('{ "context": { "fileName": "AGENTS.md", } }')).join("\n");
+		assert.match(text, /\.gemini\/settings\.json doesn't parse — Gemini refuses to start until it does/);
+		assert.match(text, /keep GEMINI\.md/);
+		assert.doesNotMatch(text, /delete it/);
+	});
+
+	test("an unterminated block comment after a complete object still parses", () => {
+		const report = scanWith('{ "context": { "fileName": "AGENTS.md" } } /* never closed');
+		assert.deepEqual(report.leftoverInstructionFiles, ["GEMINI.md"]);
+	});
+
+	test("a commented-out fileName doesn't count, and a // inside a string is no comment", () => {
+		assert.deepEqual(
+			scanWith('{\n  // was: "fileName": "AGENTS.md"\n  /* "context": { "fileName": ["AGENTS.md"] } */\n  "context": { "fileName": "GEMINI.md" }\n}\n').leftoverInstructionFiles,
+			[],
+		);
+		assert.deepEqual(
+			scanWith('{ "$schema": "https://example.com/s.json", "context": { "fileName": "AGENTS.md" } }').leftoverInstructionFiles,
+			["GEMINI.md"],
+		);
+	});
+
+	test("only the top-level context counts, and the v1 contextFileName where context.fileName is absent", () => {
+		assert.deepEqual(scanWith('{ "mcpServers": { "x": { "context": { "fileName": "AGENTS.md" } } } }').leftoverInstructionFiles, []);
+		assert.deepEqual(scanWith('{ "contextFileName": "AGENTS.md" }').leftoverInstructionFiles, ["GEMINI.md"]);
+		assert.deepEqual(
+			scanWith('{ "contextFileName": "AGENTS.md", "context": { "fileName": "GEMINI.md" } }').leftoverInstructionFiles,
+			[],
+			"context.fileName wins over the v1 key",
+		);
+	});
+
+	test("no broken flag without AGENTS.md: a vault that hasn't upgraded gets no instruction-file findings", () => {
+		const root = mkdtempSync(join(tmpdir(), "gemini-no-agents-"));
+		try {
+			writeFileSync(join(root, "GEMINI.md"), "# Vault\n");
+			rawSettings(root, "{ broken");
+			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).geminiSettingsBroken, false);
+		} finally {
+			rmTemp(root);
+		}
 	});
 
 	test("silent with AGENTS.md alone", () => {
