@@ -128,7 +128,8 @@ describe("session-start — the hook path prints one JSON envelope (#340)", () =
 			assert.equal(code, 0);
 			assert.match(lastLine(stdout), /^_context injected: /);
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			// rmTemp: a Windows handle can outlive the hook by a moment (#235).
+			rmTemp(dir);
 		}
 	});
 
