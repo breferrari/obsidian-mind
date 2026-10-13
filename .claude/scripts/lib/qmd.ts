@@ -94,14 +94,22 @@ function localQmdEntry(): string | null {
 	}
 }
 
-/** What `npmGlobalRoot` reads, injectable so tests need no real npm install. */
+/** What `npmGlobalRoot` reads; each defaults to this process, so tests need no real npm install. */
 export interface NpmLocation {
-	readonly env: Readonly<Record<string, string | undefined>>;
-	readonly platform: string;
-	readonly execPath: string;
-	readonly home: string;
+	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly platform?: string;
+	readonly execPath?: string;
+	readonly home?: string;
 	/** A file's text, or null when it can't be read. */
-	readonly readText: (path: string) => string | null;
+	readonly readText?: (path: string) => string | null;
+}
+
+function readTextOrNull(path: string): string | null {
+	try {
+		return readFileSync(path, "utf8");
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -114,50 +122,51 @@ export interface NpmLocation {
  * can't shadow the configured one. Packages sit in `<prefix>\node_modules` on
  * Windows and `<prefix>/lib/node_modules` elsewhere.
  */
-export function npmGlobalRoot(at: NpmLocation): string {
-	const win = at.platform === "win32";
-	const env = (key: string): string | undefined => at.env[key] || at.env[key.toUpperCase()] || undefined;
-	const expand = (value: string): string => value.replace(/\$\{([^}]+)\}/g, (_, name: string) => at.env[name] ?? "");
+export function npmGlobalRoot(at: NpmLocation = {}): string {
+	const vars = at.env ?? process.env;
+	const win = (at.platform ?? process.platform) === "win32";
+	const execPath = at.execPath ?? process.execPath;
+	const home = at.home ?? homedir();
+	const readText = at.readText ?? readTextOrNull;
+	const env = (key: string): string | undefined => vars[key] || vars[key.toUpperCase()] || undefined;
+	// As npm reads a path setting: `${VAR}` from the environment, and a leading `~` as home.
+	const expand = (value: string): string =>
+		value.replace(/\$\{([^}]+)\}/g, (_, name: string) => vars[name] ?? "").replace(/^~(?=$|[\\/])/, home);
 	const prefixIn = (file: string): string | undefined => {
-		const text = at.readText(file);
-		const line = text?.split(/\r?\n/).find((l) => /^\s*prefix\s*=/.test(l));
+		const line = readText(file)?.split(/\r?\n/).find((l) => /^\s*prefix\s*=/.test(l));
 		const value = line?.slice(line.indexOf("=") + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
 		return value ? expand(value) : undefined;
 	};
-	const nodePrefix = win ? dirname(at.execPath) : dirname(dirname(at.execPath));
-	const builtin = prefixIn(
-		win ? join(nodePrefix, "node_modules", "npm", "npmrc") : join(nodePrefix, "lib", "node_modules", "npm", "npmrc"),
-	);
+	const nodePrefix = win ? dirname(execPath) : dirname(dirname(execPath));
+	// Read only when the chain reaches it, or to find the global npmrc.
+	let builtinRead = false;
+	let builtinValue: string | undefined;
+	const builtin = (): string | undefined => {
+		if (!builtinRead) {
+			builtinRead = true;
+			builtinValue = prefixIn(join(win ? nodePrefix : join(nodePrefix, "lib"), "node_modules", "npm", "npmrc"));
+		}
+		return builtinValue;
+	};
 	const prefix =
 		env("npm_config_prefix") ??
-		prefixIn(env("npm_config_userconfig") ?? join(at.home, ".npmrc")) ??
-		prefixIn(env("npm_config_globalconfig") ?? join(builtin ?? nodePrefix, "etc", "npmrc")) ??
-		builtin ??
+		prefixIn(env("npm_config_userconfig") ?? join(home, ".npmrc")) ??
+		prefixIn(env("npm_config_globalconfig") ?? join(builtin() ?? nodePrefix, "etc", "npmrc")) ??
+		builtin() ??
 		nodePrefix;
 	return win ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules");
 }
 
-const QMD_ENTRY_IN_ROOT = ["@tobilu", "qmd", "dist", "cli", "qmd.js"] as const;
+/** @tobilu/qmd's entry under a global root, when it is there. */
+function qmdEntryUnder(root: string): string | null {
+	const entry = join(root, "@tobilu", "qmd", "dist", "cli", "qmd.js");
+	return existsSync(entry) ? entry : null;
+}
 
 function globalQmdEntry(): string | null {
 	// Where npm would put a global install, without spawning npm (#349).
-	const known = join(
-		npmGlobalRoot({
-			env: process.env,
-			platform: process.platform,
-			execPath: process.execPath,
-			home: homedir(),
-			readText: (path) => {
-				try {
-					return readFileSync(path, "utf8");
-				} catch {
-					return null;
-				}
-			},
-		}),
-		...QMD_ENTRY_IN_ROOT,
-	);
-	if (existsSync(known)) return known;
+	const known = qmdEntryUnder(npmGlobalRoot());
+	if (known !== null) return known;
 
 	// Fallback for global npm installs that aren't on this package's resolution
 	// path — ask npm directly where global packages live. Bounded timeout so a
@@ -179,9 +188,7 @@ function globalQmdEntry(): string | null {
 
 	const root = (npmRoot.stdout ?? "").trim();
 	if (root === "" || !isAbsolute(root)) return null;
-
-	const entry = join(root, "@tobilu", "qmd", "dist", "cli", "qmd.js");
-	return existsSync(entry) ? entry : null;
+	return qmdEntryUnder(root);
 }
 
 /**

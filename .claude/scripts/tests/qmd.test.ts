@@ -10,8 +10,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
 import {
@@ -222,6 +222,13 @@ describe("qmdVersionAtLeast", () => {
  * of the resolver run the same cases; the last asks the real npm on this
  * machine and must agree with it.
  */
+/** The real npm's answer on this machine, asked once for both copies; null without npm. */
+const npmAnswer = ((): string | null => {
+	const npm = spawnSync("npm root -g", { shell: true, encoding: "utf8", timeout: 15_000 });
+	const asked = (npm.stdout ?? "").trim();
+	return npm.status === 0 && asked !== "" ? asked : null;
+})();
+
 for (const [label, npmGlobalRoot] of [
 	["lib/qmd.ts", npmGlobalRootTs],
 	["qmd-mcp.mjs", npmGlobalRootMjs],
@@ -274,24 +281,13 @@ for (const [label, npmGlobalRoot] of [
 			assert.equal(posix({ NPM_CONFIG_PREFIX: env }, npmrc), join(env, "lib", "node_modules"));
 		});
 
+		test("a leading ~ in an npmrc prefix is home, as npm reads it", () => {
+			assert.equal(posix({}, { [join(home, ".npmrc")]: "prefix=~/.npm-global" }), join(home, ".npm-global", "lib", "node_modules"));
+		});
+
 		test("agrees with `npm root -g` on this machine", (t) => {
-			const npm = spawnSync("npm root -g", { shell: true, encoding: "utf8", timeout: 15_000 });
-			const asked = (npm.stdout ?? "").trim();
-			if (npm.status !== 0 || asked === "") return t.skip("npm is not available here");
-			const worked = npmGlobalRoot({
-				env: process.env,
-				platform: process.platform,
-				execPath: process.execPath,
-				home: homedir(),
-				readText: (path) => {
-					try {
-						return readFileSync(path, "utf8");
-					} catch {
-						return null;
-					}
-				},
-			});
-			assert.equal(resolve(worked).toLowerCase(), resolve(asked).toLowerCase());
+			if (npmAnswer === null) return t.skip("npm is not available here");
+			assert.equal(resolve(npmGlobalRoot()).toLowerCase(), resolve(npmAnswer).toLowerCase());
 		});
 	});
 }
