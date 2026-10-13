@@ -224,7 +224,7 @@ export const TOOLS: readonly ToolDef[] = [
 				force: {
 					type: "boolean",
 					description:
-						"Write even if a near-identical memory already exists. Default false — you will be told what it collided with.",
+						"Write even if a near-identical memory already exists. Default false — you will be told what it collided with, or, if that memory is outside what recall serves you, only that one exists.",
 				},
 				dry_run: { type: "boolean", description: "Preview without writing (default false)." },
 			},

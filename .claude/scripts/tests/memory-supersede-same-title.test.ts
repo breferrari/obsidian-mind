@@ -28,7 +28,11 @@ import { rmTemp } from "./_helpers.ts";
 const TITLE = "tokens expire after one hour";
 const BODY = "A body written for a session that will not have this context, long enough to clear the minimum.";
 
-function harness(vaultRoot: string): { remember: (at: Date, args: Record<string, unknown>) => Promise<string> } {
+function harness(vaultRoot: string): {
+	remember: (at: Date, args: Record<string, unknown>) => Promise<string>;
+	audited: Array<{ action: string; detail: Record<string, unknown> }>;
+} {
+	const audited: Array<{ action: string; detail: Record<string, unknown> }> = [];
 	let clock = new Date(2026, 5, 1);
 	const session = {
 		roots: [{ uri: "file:///elsewhere/atlas", name: "atlas" }],
@@ -41,7 +45,7 @@ function harness(vaultRoot: string): { remember: (at: Date, args: Record<string,
 		policy: { roots: ["brain"], never_expose: [] },
 		session,
 		qmd: () => ({}),
-		audit: () => {},
+		audit: (action: string, detail: Record<string, unknown> = {}) => audited.push({ action, detail }),
 		reindex: () => true,
 		now: () => clock,
 	} as never);
@@ -53,7 +57,7 @@ function harness(vaultRoot: string): { remember: (at: Date, args: Record<string,
 		})) as { content: { text: string }[] };
 		return r.content[0]!.text;
 	};
-	return { remember };
+	return { remember, audited };
 }
 
 const recorded = (reply: string): string => /^Recorded: (.+)$/m.exec(reply)?.[1] ?? "";
@@ -234,17 +238,20 @@ describe("remember's near-duplicate check: compared where it would be read, name
 		const dir = mkdtempSync(join(tmpdir(), "neardup-retired-"));
 		try {
 			const { remember } = harness(dir);
-			// A, general, corrected by a harbor-only memory: withheld from atlas.
+			// A, general, corrected by a harbor-only memory: withheld from atlas. The
+			// correction shares no wording with the restatement, so only A can match.
+			const FIX_TITLE = "session keys rotate on a fixed weekly schedule";
 			const retired = recorded(await remember(new Date(2026, 5, 1), { scope: "general", body: RESTATED }));
 			const fix = recorded(
-				await remember(new Date(2026, 5, 2), { scope: "general", title: "tokens expire after one hour (harbor)" }),
+				await remember(new Date(2026, 5, 2), {
+					scope: "general",
+					title: FIX_TITLE,
+					body: "Rotation runs every Monday from the scheduler, so a key older than seven days is a scheduler fault to investigate.",
+				}),
 			);
 			scopeToHarbor(join(dir, fix));
 			const full = join(dir, retired);
-			writeFileSync(
-				full,
-				readFileSync(full, "utf8").replace(/^scope: general$/m, 'scope: general\nsuperseded_by: ["tokens expire after one hour (harbor)"]'),
-			);
+			writeFileSync(full, readFileSync(full, "utf8").replace(/^scope: general$/m, `scope: general\nsuperseded_by: ["${FIX_TITLE}"]`));
 
 			const reply = await remember(new Date(2026, 6, 1), { scope: "general", body: RESTATED, force: false });
 			assert.match(reply, /^Not recorded: a near-identical memory already exists where this one would be read/m);
@@ -276,6 +283,53 @@ describe("remember's near-duplicate check: compared where it would be read, name
 			const reply = await remember(new Date(2026, 6, 1), { scope: "general", force: false });
 			assert.match(reply, /near-identical/);
 			assert.ok(reply.includes(mine), "a memory in reach is named");
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("the generic refusal is audited, and keeps the note that supersedes matched nothing", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "neardup-audit-"));
+		try {
+			const { remember, audited } = harness(dir);
+			const theirs = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
+			scopeToHarbor(join(dir, theirs));
+
+			const reply = await remember(new Date(2026, 6, 1), { scope: "general", supersedes: ["no such title"], force: false });
+			assert.match(reply, /where this one would be read/);
+			assert.match(reply, /Supersedes did not match any memory: no such title/);
+			assert.ok(audited.some((a) => a.action === "refused" && a.detail["reason"] === "near-duplicate out of reach"));
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a named refusal also says when a near-identical memory out of reach matches", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "neardup-mixed-"));
+		try {
+			const { remember } = harness(dir);
+			const theirs = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
+			scopeToHarbor(join(dir, theirs));
+			const mine = recorded(await remember(new Date(2026, 5, 2), { scope: "general", force: true }));
+
+			const reply = await remember(new Date(2026, 6, 1), { scope: "general", force: false });
+			assert.ok(reply.includes(mine), "the one in reach is named");
+			assert.ok(!reply.includes(theirs), "the other is not");
+			assert.match(reply, /Another near-identical memory, outside what recall serves you, also matches/);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a same-title correction chain records each correction without force", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "neardup-chain-"));
+		try {
+			const { remember } = harness(dir);
+			await remember(new Date(2026, 5, 1), { scope: "general" });
+			const second = await remember(new Date(2026, 6, 1), { scope: "general", supersedes: [TITLE], force: false });
+			assert.match(second, /^Recorded: /m, second);
+			const third = await remember(new Date(2026, 7, 1), { scope: "general", supersedes: [TITLE], force: false });
+			assert.match(third, /^Recorded: /m, third);
 		} finally {
 			rmTemp(dir);
 		}
