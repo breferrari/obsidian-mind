@@ -25,21 +25,19 @@ function patchTargets(patch: string): string[] {
 		// Hunk bodies start with "+", "-", " " or "@@", so a header line is never
 		// content; a body line that happens to read like one is prefixed.
 		const line = raw.trimEnd();
-		if (line.startsWith(ADD_FILE)) {
-			out.push(line.slice(ADD_FILE.length));
-			afterUpdate = false;
-		} else if (line.startsWith(UPDATE_FILE)) {
-			out.push(line.slice(UPDATE_FILE.length));
+		const header = (marker: string) => (line.startsWith(marker) ? line.slice(marker.length).trim() : "");
+		const wasUpdate = afterUpdate;
+		afterUpdate = false;
+		if (header(ADD_FILE)) out.push(header(ADD_FILE));
+		else if (header(UPDATE_FILE)) {
+			out.push(header(UPDATE_FILE));
 			afterUpdate = true;
-		} else if (afterUpdate && line.startsWith(MOVE_TO)) {
+		} else if (wasUpdate && header(MOVE_TO)) {
 			// The file now lives at the new path: that is what gets validated.
-			out[out.length - 1] = line.slice(MOVE_TO.length);
-			afterUpdate = false;
-		} else {
-			afterUpdate = false;
+			out[out.length - 1] = header(MOVE_TO);
 		}
 	}
-	return out.map((p) => p.trim()).filter((p) => p !== "");
+	return out;
 }
 
 /**

@@ -39,9 +39,6 @@ import { resolveProjectDir } from "./lib/project-dir.ts";
 import { writeTargets } from "./lib/write-targets.ts";
 
 type HookInput = {
-	readonly tool_input?: unknown;
-	readonly tool_name?: unknown;
-	readonly cwd?: unknown;
 	readonly hook_event_name?: unknown;
 };
 
@@ -84,16 +81,20 @@ if (targets.some(shouldRefreshForPath)) {
 	});
 }
 
-
 // The required fields come from the manifest's frontmatter_required, the
 // same declaration the docs point at; an unreadable manifest falls back to
-// the three global fields. Read once for every file this call validates.
-let manifest: unknown = null;
-try {
-	manifest = JSON.parse(readFileSync(join(vaultRoot, "vault-manifest.json"), "utf-8"));
-} catch {
-	/* defaults */
-}
+// the three global fields. Read lazily, once per call: a write the skip
+// ladder discards never pays for it, and a patch's files share it.
+let manifest: unknown;
+const loadManifest = (): unknown => {
+	if (manifest !== undefined) return manifest;
+	try {
+		manifest = JSON.parse(readFileSync(join(vaultRoot, "vault-manifest.json"), "utf-8"));
+	} catch {
+		manifest = null;
+	}
+	return manifest;
+};
 
 /** What one written file adds to the call's single envelope. */
 type FileFindings = { readonly blocks: string[]; readonly policyResults: PolicyResult[] };
@@ -173,7 +174,7 @@ function checkFile(filePath: string): FileFindings {
 		? filePathFwd.slice(vaultRoot.length + 1)
 		: filePathFwd;
 	const warnings = validateContent(content, {
-		required: parseFrontmatterRequired(manifest),
+		required: parseFrontmatterRequired(loadManifest()),
 		relPath,
 	});
 	debug(`validate: ${filePath} — ${warnings.length} warning(s)`);
