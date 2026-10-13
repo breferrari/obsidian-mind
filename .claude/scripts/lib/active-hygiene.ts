@@ -782,14 +782,54 @@ function geminiContextFiles(root: string): string[] | "broken" {
 
 /**
  * strip-json-comments 3.1.1 with its default `whitespace: true`, the version
- * gemini-cli pins: a line comment to the end of its line and a block comment
- * become spaces (line breaks kept), a string (where a backslash escapes the
- * next character) is left alone, and an unterminated block comment runs to the
- * end. Where the two differ, on an unterminated string, JSON.parse fails
- * either way.
+ * gemini-cli pins, ported as its one-pass scan so the output matches
+ * character for character (#380): a line comment to the end of its line and
+ * a block comment become spaces (line breaks kept), a quote not escaped by an
+ * odd run of backslashes toggles a string, an unterminated string runs to the
+ * end, and so does an unterminated block comment.
  */
 export function stripJsonComments(text: string): string {
-	return text.replace(/"(?:\\.|[^"\\])*"|\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/g, (m) => (m.startsWith('"') ? m : m.replace(/\S/g, " ")));
+	const blank = (from: number, to?: number): string => text.slice(from, to).replace(/\S/g, " ");
+	const escaped = (quote: number): boolean => {
+		let run = 0;
+		for (let i = quote - 1; text[i] === "\\"; i--) run++;
+		return run % 2 === 1;
+	};
+	let inString = false;
+	let comment: "line" | "block" | null = null;
+	let offset = 0;
+	let out = "";
+	for (let i = 0; i < text.length; i++) {
+		const pair = text.slice(i, i + 2);
+		if (comment === null && text[i] === '"' && !escaped(i)) inString = !inString;
+		if (inString) continue;
+		if (comment === null && pair === "//") {
+			out += text.slice(offset, i);
+			offset = i;
+			comment = "line";
+			i++;
+		} else if (comment === "line" && pair === "\r\n") {
+			i++;
+			comment = null;
+			out += blank(offset, i);
+			offset = i;
+		} else if (comment === "line" && text[i] === "\n") {
+			comment = null;
+			out += blank(offset, i);
+			offset = i;
+		} else if (comment === null && pair === "/*") {
+			out += text.slice(offset, i);
+			offset = i;
+			comment = "block";
+			i++;
+		} else if (comment === "block" && pair === "*/") {
+			i++;
+			comment = null;
+			out += blank(offset, i + 1);
+			offset = i + 1;
+		}
+	}
+	return out + (comment === null ? text.slice(offset) : blank(offset));
 }
 
 /** What each retired file does wrong while it stays, and what to do about it. */
