@@ -720,6 +720,11 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 			scanWith('{ "$schema": "https://example.com/s.json", "context": { "fileName": "AGENTS.md" } }').leftoverInstructionFiles,
 			["GEMINI.md"],
 		);
+		// An escaped quote doesn't end the string, so the // after it is still inside it.
+		assert.deepEqual(
+			scanWith(String.raw`{ "note": "say \"hi\" // not a comment", "context": { "fileName": "AGENTS.md" } }`).leftoverInstructionFiles,
+			["GEMINI.md"],
+		);
 	});
 
 	test("only the top-level context counts, and the v1 contextFileName where context.fileName is absent", () => {
