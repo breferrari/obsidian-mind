@@ -42,3 +42,20 @@ test("probe #349: session-start spawn breakdown", (t) => {
 		rmSync(vault, { recursive: true, force: true });
 	}
 });
+
+test("probe #349: qmd directly, with no timeout cutting it", (t) => {
+	const root = (spawnSync("npm root -g", { shell: true, encoding: "utf8" }).stdout ?? "").trim();
+	const entry = join(root, "@tobilu", "qmd", "dist", "cli", "qmd.js");
+	const run = (label: string, args: string[], env: NodeJS.ProcessEnv = process.env) => {
+		const s = performance.now();
+		const r = spawnSync(process.execPath, [entry, ...args], { encoding: "utf8", timeout: 60_000, env });
+		t.diagnostic(`${label}: ${(performance.now() - s).toFixed(0)}ms status=${r.status} signal=${r.signal} error=${r.error?.message ?? "-"}`);
+		const tail = `${r.stdout ?? ""}\n${r.stderr ?? ""}`.trim().split("\n").slice(-6);
+		for (const l of tail) t.diagnostic(`    | ${l.slice(0, 160)}`);
+	};
+	run("qmd --version", ["--version"]);
+	run("qmd --index probe-direct status", ["--index", "probe-direct", "status"]);
+	run("qmd --index probe-direct status (again)", ["--index", "probe-direct", "status"]);
+	run("qmd status with QMD_FORCE_CPU=1", ["--index", "probe-cpu", "status"], { ...process.env, QMD_FORCE_CPU: "1" });
+	t.diagnostic(`env XDG_CACHE_HOME=${process.env["XDG_CACHE_HOME"] ?? "-"} QMD_CONFIG_DIR=${process.env["QMD_CONFIG_DIR"] ?? "-"}`);
+});
