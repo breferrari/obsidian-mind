@@ -243,6 +243,12 @@ describe("topHeadlines", () => {
 	test("null when not one fits", () => {
 		assert.equal(topHeadlines(heads, (b) => bytes(b) <= 5), null);
 	});
+	// Showing every headline is the `headlines` level, tried before this one,
+	// so this level starts one short of all of them, even when all would fit (#371).
+	test("one short of all, even when every headline fits", () => {
+		assert.equal(topHeadlines(heads, () => true), `${renderHeadlines(["one", "two"])}\n_(+1 more goals in brain/North Star.md)_`);
+		assert.equal(topHeadlines(["only"], () => true), null);
+	});
 });
 
 describe("session-start — #304's fixture on the hook path", () => {

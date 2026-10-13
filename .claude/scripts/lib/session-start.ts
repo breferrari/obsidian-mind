@@ -1055,8 +1055,9 @@ export function renderHeadlines(headlines: readonly string[]): string {
 
 /**
  * The first N headlines that `fits` accepts, with a line saying how many
- * more there are. Null when not even one fits, or when all of them do (that
- * is the `headlines` level, not this one).
+ * more there are. N starts one short of all of them, even when all would fit:
+ * showing every headline is the `headlines` level, tried before this one.
+ * Null when not even one fits, so a single headline always gives null.
  */
 export function topHeadlines(headlines: readonly string[], fits: (body: string) => boolean): string | null {
 	for (let n = headlines.length - 1; n >= 1; n--) {
