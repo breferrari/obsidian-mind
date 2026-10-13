@@ -658,13 +658,8 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		});
 	});
 
-	/**
-	 * Gemini reads its settings as `JSON.parse(stripJsonComments(content))`
-	 * after a plain utf-8 read (gemini-cli packages/cli/src/config/settings.ts,
-	 * strip-json-comments 3.1.1, as of 51617c1, 2026-10-12), and a file that
-	 * fails is a fatal error: the CLI does not start. So comments are fine, a
-	 * comment is whitespace, and a BOM or a trailing comma is not (#374).
-	 */
+	// As Gemini loads its settings (geminiContextFiles cites the source): comments
+	// are fine and count as whitespace; a BOM or a trailing comma is fatal (#374).
 	const rawSettings = (root: string, text: string): void => {
 		mkdirSync(join(root, ".gemini"), { recursive: true });
 		writeFileSync(join(root, ".gemini/settings.json"), text);
@@ -738,14 +733,10 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 	});
 
 	test("no broken flag without AGENTS.md: a vault that hasn't upgraded gets no instruction-file findings", () => {
-		const root = mkdtempSync(join(tmpdir(), "gemini-no-agents-"));
-		try {
-			writeFileSync(join(root, "GEMINI.md"), "# Vault\n");
+		withFiles(["GEMINI.md"], (root) => {
 			rawSettings(root, "{ broken");
 			assert.equal(scanActiveHygiene(root, NOW, DEFAULTS).geminiSettingsBroken, false);
-		} finally {
-			rmTemp(root);
-		}
+		});
 	});
 
 	test("silent with AGENTS.md alone", () => {

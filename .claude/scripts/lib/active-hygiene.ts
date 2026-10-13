@@ -686,8 +686,7 @@ export function scanActiveHygiene(
 		openLoops: findOpenLoops(root, nowMs, openLoopConfig),
 		inboxPressure: findInboxPressure(root, nowMs),
 		memoryInbox: findMemoryInbox(root, memoryRoot, nowMs),
-		leftoverInstructionFiles: findLeftoverInstructionFiles(root),
-		geminiSettingsBroken: existsSync(join(root, INSTRUCTION_FILE)) && geminiSettings(root) === "broken",
+		...instructionFileFindings(root),
 		agentsMd: agentsMdPastFlag(root),
 	};
 }
@@ -739,98 +738,58 @@ function agentsMdPastFlag(root: string): { sizeKb: number } | null {
  * AGENTS.md: before that, Gemini still reads GEMINI.md, and deleting it would
  * cut Gemini off.
  */
-function findLeftoverInstructionFiles(root: string): string[] {
-	if (!existsSync(join(root, INSTRUCTION_FILE))) return [];
-	return RETIRED_INSTRUCTION_FILES.filter(
-		(f) => existsSync(join(root, f)) && (f !== GEMINI_MD || geminiReadsAgentsMd(root)),
-	);
-}
-
-/** Whether .gemini/settings.json lists AGENTS.md in context.fileName. */
-function geminiReadsAgentsMd(root: string): boolean {
-	const settings = geminiSettings(root);
-	if (settings === null || settings === "broken") return false;
-	const names = contextFileNames(settings);
-	return names.includes(INSTRUCTION_FILE) && !names.includes(GEMINI_MD);
+function instructionFileFindings(root: string): Pick<ActiveHygieneReport, "leftoverInstructionFiles" | "geminiSettingsBroken"> {
+	if (!existsSync(join(root, INSTRUCTION_FILE))) return { leftoverInstructionFiles: [], geminiSettingsBroken: false };
+	// Read once, so the broken flag and the GEMINI.md verdict come from one parse.
+	const gemini = geminiContextFiles(root);
+	const readsAgentsMd = gemini !== "broken" && gemini.includes(INSTRUCTION_FILE) && !gemini.includes(GEMINI_MD);
+	return {
+		leftoverInstructionFiles: RETIRED_INSTRUCTION_FILES.filter(
+			(f) => existsSync(join(root, f)) && (f !== GEMINI_MD || readsAgentsMd),
+		),
+		geminiSettingsBroken: gemini === "broken",
+	};
 }
 
 /**
- * .gemini/settings.json as Gemini loads it: null when there is none, "broken"
- * when Gemini cannot load it. Gemini reads the file as plain utf-8 and runs
- * JSON.parse(stripJsonComments(text)), and a failure, or a value that is not
- * an object, is fatal: the CLI does not start (gemini-cli
- * packages/cli/src/config/settings.ts, strip-json-comments 3.1.1, as of
- * 51617c1, #374). So comments are fine, and a BOM or a trailing comma is not.
+ * The context files .gemini/settings.json names, as Gemini loads it: the
+ * top-level context.fileName, else the v1 contextFileName, a string or a list;
+ * [] when there is no file, and "broken" when Gemini cannot load it. Gemini
+ * reads the file as plain utf-8 and runs JSON.parse(stripJsonComments(text)),
+ * and a failure, or a value that is not an object, is fatal: the CLI does not
+ * start (gemini-cli packages/cli/src/config/settings.ts, strip-json-comments
+ * 3.1.1, as of 51617c1, #374). So comments are fine, and a BOM or a trailing
+ * comma is not.
  */
-function geminiSettings(root: string): Record<string, unknown> | "broken" | null {
+function geminiContextFiles(root: string): string[] | "broken" {
 	let text: string;
 	try {
 		text = readFileSync(join(root, GEMINI_SETTINGS), "utf8");
 	} catch {
-		return null;
+		return [];
 	}
+	let settings: unknown;
 	try {
-		const value: unknown = JSON.parse(stripJsonComments(text));
-		return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : "broken";
+		settings = JSON.parse(stripJsonComments(text));
 	} catch {
 		return "broken";
 	}
-}
-
-/** The context files settings name: context.fileName, else the v1 contextFileName; a string or a list. */
-function contextFileNames(settings: Record<string, unknown>): string[] {
-	const context = settings["context"];
-	const fromContext = context !== null && typeof context === "object" ? (context as { fileName?: unknown }).fileName : undefined;
-	const names = fromContext ?? settings["contextFileName"];
+	if (settings === null || typeof settings !== "object" || Array.isArray(settings)) return "broken";
+	const { context, contextFileName } = settings as { context?: { fileName?: unknown }; contextFileName?: unknown };
+	const names = (context !== null && typeof context === "object" ? context.fileName : undefined) ?? contextFileName;
 	return (Array.isArray(names) ? names : [names]).filter((n): n is string => typeof n === "string");
 }
 
 /**
  * strip-json-comments 3.1.1 with its default `whitespace: true`, the version
  * gemini-cli pins: a line comment to the end of its line and a block comment
- * become spaces (line breaks kept), a quote not escaped by an odd run of
- * backslashes toggles a string, and an unterminated block comment runs to the
- * end.
+ * become spaces (line breaks kept), a string (where a backslash escapes the
+ * next character) is left alone, and an unterminated block comment runs to the
+ * end. Where the two differ, on an unterminated string, JSON.parse fails
+ * either way.
  */
 function stripJsonComments(text: string): string {
-	const blank = (s: string): string => s.replace(/\S/g, " ");
-	let out = "";
-	let i = 0;
-	let inString = false;
-	while (i < text.length) {
-		const c = text[i]!;
-		if (inString) {
-			out += c;
-			if (c === '"' && !escaped(text, i)) inString = false;
-			i++;
-		} else if (c === '"') {
-			inString = true;
-			out += c;
-			i++;
-		} else if (text.startsWith("//", i)) {
-			// A CR before the newline is whitespace either way, so it may be blanked.
-			const nl = text.indexOf("\n", i);
-			const stop = nl === -1 ? text.length : nl;
-			out += blank(text.slice(i, stop));
-			i = stop;
-		} else if (text.startsWith("/*", i)) {
-			const close = text.indexOf("*/", i + 2);
-			const stop = close === -1 ? text.length : close + 2;
-			out += blank(text.slice(i, stop));
-			i = stop;
-		} else {
-			out += c;
-			i++;
-		}
-	}
-	return out;
-}
-
-/** Whether the quote at `at` follows an odd run of backslashes. */
-function escaped(text: string, at: number): boolean {
-	let n = 0;
-	for (let j = at - 1; j >= 0 && text[j] === "\\"; j--) n++;
-	return n % 2 === 1;
+	return text.replace(/"(?:\\.|[^"\\])*"|\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/g, (m) => (m.startsWith('"') ? m : m.replace(/\S/g, " ")));
 }
 
 /** What each retired file does wrong while it stays, and what to do about it. */
