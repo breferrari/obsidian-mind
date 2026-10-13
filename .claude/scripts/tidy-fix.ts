@@ -145,6 +145,7 @@ function moveTracked(
 	const git = spawnSync("git", ["mv", relSrc, relDest], {
 		cwd: vaultRoot,
 		encoding: "utf-8",
+		windowsHide: true,
 	});
 	if (git.status === 0) return true;
 	try {

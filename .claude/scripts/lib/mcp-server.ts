@@ -155,7 +155,7 @@ export function reindexSync(
 		((sub: string): boolean => {
 			try {
 				const { cmd, args: argv, shell } = buildQmdCommand(resolveQmdEntry(), qmdArgs(sub));
-				const r = spawnSync(cmd, [...argv], { shell, timeout: REINDEX_TIMEOUT_MS, stdio: "ignore" });
+				const r = spawnSync(cmd, [...argv], { shell, timeout: REINDEX_TIMEOUT_MS, stdio: "ignore", windowsHide: true });
 				return r.status === 0;
 			} catch {
 				return false;

@@ -532,6 +532,7 @@ export function runReasoning(
 				timeout: SPAWN_TIMEOUT_MS,
 				killSignal: "SIGKILL",
 				stdio: ["ignore", "pipe", "pipe"],
+				windowsHide: true,
 			});
 		} catch (e) {
 			resolve(interpretRun("", "", e instanceof Error ? e.message : String(e), Date.now() - started));

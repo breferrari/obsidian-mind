@@ -67,7 +67,7 @@ function fail(message: string): never {
  * back to `shardmind` on PATH through the shell.
  */
 function shardmindCommand(args: readonly string[]): { cmd: string; args: string[]; shell: boolean } {
-	const root = spawnSync("npm root -g", { shell: true, encoding: "utf8", timeout: 10_000 }).stdout?.trim() ?? "";
+	const root = spawnSync("npm root -g", { shell: true, encoding: "utf8", timeout: 10_000, windowsHide: true }).stdout?.trim() ?? "";
 	const entry = root ? join(root, "shardmind", "dist", "cli.js") : "";
 	if (entry && existsSync(entry)) return { cmd: process.execPath, args: [entry, ...args], shell: false };
 	// No argument here comes from outside this script except the source ref,
@@ -85,6 +85,7 @@ function shardmind<T>(vault: string, args: readonly string[]): ShardmindEnvelope
 		timeout: 300_000,
 		input: "",
 		env: { ...process.env, CI: "true" },
+		windowsHide: true,
 	});
 	try {
 		return JSON.parse(r.stdout) as ShardmindEnvelope<T>;
@@ -111,6 +112,7 @@ function cloneRelease(source: string, version: string): string {
 	const r = spawnSync("git", ["clone", "-q", "--depth", "1", "--branch", `v${version}`, `https://github.com/${repo}`, dir], {
 		encoding: "utf8",
 		timeout: 120_000,
+		windowsHide: true,
 	});
 	if (r.status !== 0) fail(`could not fetch ${repo} v${version}: ${r.stderr.slice(0, 300)}`);
 	return dir;
@@ -119,7 +121,7 @@ function cloneRelease(source: string, version: string): string {
 /** The newest stable `vX.Y.Z` tag of `source`. */
 function latestRelease(source: string): string {
 	const repo = source.replace(/^github:/, "").replace(/[#@].*$/, "");
-	const r = spawnSync("git", ["ls-remote", "--tags", `https://github.com/${repo}`], { encoding: "utf8", timeout: 60_000 });
+	const r = spawnSync("git", ["ls-remote", "--tags", `https://github.com/${repo}`], { encoding: "utf8", timeout: 60_000, windowsHide: true });
 	const tags = [...r.stdout.matchAll(/refs\/tags\/v(\d+)\.(\d+)\.(\d+)$/gm)].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])] as const);
 	if (tags.length === 0) fail(`no release tags found for ${repo}`);
 	tags.sort((a, b) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2]);
@@ -136,7 +138,7 @@ function main(): void {
 
 	const vault = resolveProjectDir(process.cwd());
 	const v = shardmindCommand(["--version"]);
-	const ver = spawnSync(v.cmd, v.args, { shell: v.shell, encoding: "utf8", timeout: 60_000 });
+	const ver = spawnSync(v.cmd, v.args, { shell: v.shell, encoding: "utf8", timeout: 60_000, windowsHide: true });
 	if (ver.status !== 0) fail("ShardMind is not installed. Install it (npm i -g shardmind) or use the manual migration in /om-vault-upgrade.");
 	if (!versionAtLeast(ver.stdout, [0, 2, 1])) fail(`ShardMind ${ver.stdout.trim()} is too old; 0.2.1 or later is needed (--json, and an adopt that keeps a clone's .shardmind/ files if it fails). Run: npm i -g shardmind@latest`);
 

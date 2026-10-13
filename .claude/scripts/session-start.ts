@@ -201,6 +201,7 @@ if (qmdIndex !== null && qmdEntry !== null) {
 		encoding: "utf-8",
 		timeout: 5_000,
 		shell: preflightCmd.shell,
+		windowsHide: true,
 	});
 	if (isQmdNativeAbiMismatch(preflight.stderr ?? "")) {
 		const pkgRoot = qmdPackageRootFromEntry(qmdEntry);
@@ -210,6 +211,7 @@ if (qmdIndex !== null && qmdEntry !== null) {
 				encoding: "utf-8",
 				timeout: 20_000,
 				shell: true,
+				windowsHide: true,
 			});
 			qmdSelfHealNote =
 				rebuild.status === 0
@@ -231,6 +233,7 @@ if (qmdMinVersion !== null && qmdEntry !== null) {
 		encoding: "utf-8",
 		timeout: 5_000,
 		shell: versionCmd.shell,
+		windowsHide: true,
 	});
 	if (v.status === 0 && !qmdVersionAtLeast(v.stdout ?? "", qmdMinVersion)) {
 		qmdVersionNote = `⚠️ Installed qmd (${(v.stdout ?? "").trim()}) is below this vault's declared minimum (${qmdMinVersion}) — semantic search may misbehave. Update: \`npm i -g @tobilu/qmd\`, then re-run the bootstrap.`;
@@ -294,6 +297,7 @@ function runCmd(
 	const r = spawnSync(cmd, args as string[], {
 		encoding: "utf-8",
 		timeout: timeoutMs,
+		windowsHide: true,
 	});
 	if (
 		r.error &&
