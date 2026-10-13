@@ -712,7 +712,7 @@ Your old vault is **never modified**. Use `--dry-run` to preview the plan withou
 
 ## 🗺️ Roadmap
 
-**Contributions welcome.** Open an issue first for anything bigger than a one-file change. Especially anything that touches the hooks, the install, or what people need installed. Saves you from building something that can't be merged.
+**Issues and bug reports welcome.** Code contributions go through assignment: comment on an issue to ask for it, and open a PR once it's assigned to you. A PR for an unassigned issue is closed without review. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
