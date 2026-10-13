@@ -34,6 +34,7 @@ import {
 	newNoteClusterCandidate,
 } from "./lib/active-hygiene.ts";
 import {
+	sentinelPathFrom,
 	shouldRefreshForPath,
 	triggerDebouncedRefresh,
 } from "./lib/qmd-refresh.ts";
@@ -72,9 +73,7 @@ if (refreshed.length === 0) {
 // before the skip ladder so template/root/memory paths still refresh.
 const DEBOUNCE_MS = 30_000;
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SENTINEL_PATH =
-	process.env["QMD_REFRESH_SENTINEL"] ??
-	join(SCRIPT_DIR, ".qmd-refresh-sentinel");
+const SENTINEL_PATH = sentinelPathFrom(process.env, SCRIPT_DIR);
 const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
 if (refreshed.some(shouldRefreshForPath)) {
 	triggerDebouncedRefresh({

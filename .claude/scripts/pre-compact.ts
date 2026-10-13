@@ -20,7 +20,7 @@ import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { debug, readStdinJson } from "./lib/hook-io.ts";
 import { isMainModule } from "./lib/main-guard.ts";
-import { triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
+import { sentinelPathFrom, triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
 type HookInput = {
@@ -73,9 +73,7 @@ if (isMainModule(import.meta.url)) {
 	{
 		const scriptDir = dirname(fileURLToPath(import.meta.url));
 		triggerDebouncedRefresh({
-			sentinelPath:
-				process.env["QMD_REFRESH_SENTINEL"] ??
-				join(scriptDir, ".qmd-refresh-sentinel"),
+			sentinelPath: sentinelPathFrom(process.env, scriptDir),
 			workerPath: resolvePath(scriptDir, "qmd-refresh-run.ts"),
 			debounceMs: 30_000,
 			logPrefix: "pre-compact",

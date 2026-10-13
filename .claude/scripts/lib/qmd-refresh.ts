@@ -16,7 +16,7 @@
 
 import { spawn } from "node:child_process";
 import { rmSync, statSync, writeFileSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import { buildQmdCommand, REFRESH_SWITCH, refreshDisabled, resolveQmdEntry } from "./qmd.ts";
 import { debug } from "./hook-io.ts";
 import { qmdArgsWithIndex } from "./session-start.ts";
@@ -52,6 +52,15 @@ const SKIP_SEGMENTS: readonly string[] = [
  * no-op); under-triggering is the failure mode we optimize against, so
  * the filter is deliberately permissive beyond the three skip segments.
  */
+/**
+ * Where the debounce sentinel lives: QMD_REFRESH_SENTINEL when set (tests point
+ * it at a temp file so parallel workers don't race on the shared one), else
+ * beside the hook scripts.
+ */
+export function sentinelPathFrom(env: Readonly<Record<string, string | undefined>>, scriptDir: string): string {
+	return env["QMD_REFRESH_SENTINEL"] ?? join(scriptDir, ".qmd-refresh-sentinel");
+}
+
 export function shouldRefreshForPath(filePath: unknown): boolean {
 	if (typeof filePath !== "string" || filePath === "") return false;
 	if (!filePath.toLowerCase().endsWith(".md")) return false;
