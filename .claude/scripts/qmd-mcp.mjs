@@ -126,10 +126,6 @@ function localQmdEntry() {
 	}
 }
 
-/**
- * Where npm keeps global packages, worked out the way npm does, without
- * spawning it (#349). The duplicate of lib/qmd.ts's npmGlobalRoot; see there.
- */
 function readTextOrNull(path) {
 	try {
 		return readFileSync(path, "utf8");
@@ -138,74 +134,70 @@ function readTextOrNull(path) {
 	}
 }
 
+/**
+ * The duplicate of lib/qmd.ts's npmGlobalRoot, generated from it with Node's
+ * stripTypeScriptTypes; change that one and regenerate.
+ *
+ * Where npm keeps global packages, without spawning it (#349): `npm root -g`
+ * is a shell plus a Node start on every resolve, 0.1-1 s on CI. Only the
+ * cheap exact cases are worked out here; anything else returns null, and the
+ * caller asks npm, which gives its exact answer at the old cost.
+ *
+ * 1. npm_config_prefix in the env (any case): use it if it's an absolute path
+ *    with no `${`, else ask npm.
+ * 2. PREFIX, DESTDIR, npm_config_userconfig or npm_config_globalconfig set →
+ *    ask npm.
+ * 3. ~/.npmrc (HOME before the OS home) or `<node prefix>/etc/npmrc` has a
+ *    line mentioning `prefix` or `globalconfig` anywhere, sections included →
+ *    ask npm. An npmrc with only auth or registry lines doesn't count.
+ * 4. The builtin npmrc: on Windows, the installer's exact
+ *    `prefix=${APPDATA}\npm` → %APPDATA%\npm. Any other prefix line there →
+ *    ask npm.
+ * 5. Otherwise Node's own prefix.
+ *
+ * Packages sit in `<prefix>\node_modules` on Windows and
+ * `<prefix>/lib/node_modules` elsewhere.
+ */
 export function npmGlobalRoot(at = {}) {
 	const vars = at.env ?? process.env;
 	const win = (at.platform ?? process.platform) === "win32";
 	const execPath = at.execPath ?? process.execPath;
 	const home = at.home ?? (vars["HOME"] || homedir());
 	const readText = at.readText ?? readTextOrNull;
-	const fromEnv = (key) => {
+	const npmConfig = (key) => {
 		const want = `npm_config_${key}`;
-		for (const [name, value] of Object.entries(vars)) if (name.toLowerCase() === want && value) return value;
+		for (const [name, value] of Object.entries(vars)) if (name.toLowerCase() === want && value !== undefined) return value;
 		return undefined;
 	};
-	// The last top-level `key = value` in an npmrc: a `[section]` starts keys
-	// npm reads as `section.key`, and `;` or `#` starts a comment outside quotes.
-	const fromNpmrc = (file, key) => {
-		let found;
-		for (const line of readText(file)?.split(/\r?\n/) ?? []) {
-			if (/^\s*\[/.test(line)) break;
-			const m = /^\s*([^=\s]+)\s*=(.*)$/.exec(line);
-			if (m?.[1] !== key) continue;
-			const raw = m[2].trim();
-			const quoted = /^(["'])(.*)\1$/.exec(raw);
-			found = quoted ? quoted[2] : raw.replace(/[;#].*$/, "").trim();
-		}
-		return found || undefined;
-	};
-	// A path setting as npm reads it: `${VAR}` from the environment and a
-	// leading `~` as home. Null when that can't be done exactly here.
-	const asPath = (raw) => {
-		if (raw === undefined) return undefined;
-		let unset = false;
-		const value = raw
-			.replace(/\$\{([^}?]+)\??\}/g, (_, name) => {
-				const v = vars[name];
-				if (v === undefined) unset = true;
-				return v ?? "";
-			})
-			.replace(/^~(?=$|[\\/])/, home);
-		return unset || !isAbsolute(value) ? null : value;
-	};
+	const settingLines = (file) =>
+		(readText(file) ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => /prefix|globalconfig/i.test(l));
+	const layout = (prefix) => (win ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules"));
 
-	const nodePrefix =
-		vars["PREFIX"] || (win ? dirname(execPath) : join(vars["DESTDIR"] ?? "", dirname(dirname(execPath))));
-	// Each step: a path (decided), null (set but unusable: ask npm), or
-	// undefined (not set: go on). Null never falls through to a lower step.
-	const unlessSet = (value, fallback) => (value === undefined ? fallback : value);
-	const decide = () => {
-		const fromEnvPrefix = asPath(fromEnv("prefix"));
-		if (fromEnvPrefix !== undefined) return fromEnvPrefix;
-		const userconfig = unlessSet(asPath(fromEnv("userconfig")), join(home, ".npmrc"));
-		if (userconfig === null) return null;
-		const fromUser = asPath(fromNpmrc(userconfig, "prefix"));
-		if (fromUser !== undefined) return fromUser;
-		const builtin = asPath(
-			fromNpmrc(join(win ? nodePrefix : join(nodePrefix, "lib"), "node_modules", "npm", "npmrc"), "prefix"),
-		);
-		if (builtin === null) return null;
-		const globalconfig = unlessSet(
-			asPath(fromEnv("globalconfig") ?? fromNpmrc(userconfig, "globalconfig")),
-			join(builtin ?? nodePrefix, "etc", "npmrc"),
-		);
-		if (globalconfig === null) return null;
-		const fromGlobal = asPath(fromNpmrc(globalconfig, "prefix"));
-		if (fromGlobal !== undefined) return fromGlobal;
-		return builtin ?? nodePrefix;
-	};
-	const prefix = decide();
-	if (prefix === null) return null;
-	return win ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules");
+	// 1.
+	const fromEnv = npmConfig("prefix");
+	if (fromEnv !== undefined) return isAbsolute(fromEnv) && !fromEnv.includes("${") ? layout(fromEnv) : null;
+
+	// 2.
+	if (vars["PREFIX"] || vars["DESTDIR"] || npmConfig("userconfig") !== undefined || npmConfig("globalconfig") !== undefined) {
+		return null;
+	}
+
+	// 3.
+	const nodePrefix = win ? dirname(execPath) : dirname(dirname(execPath));
+	if (settingLines(join(home, ".npmrc")).length > 0 || settingLines(join(nodePrefix, "etc", "npmrc")).length > 0) {
+		return null;
+	}
+
+	// 4.
+	const builtin = settingLines(join(win ? nodePrefix : join(nodePrefix, "lib"), "node_modules", "npm", "npmrc"));
+	if (builtin.length === 0) return layout(nodePrefix); // 5.
+	const appdata = vars["APPDATA"];
+	if (!win || builtin.length !== 1 || builtin[0] !== "prefix=${APPDATA}\\npm" || !appdata || !isAbsolute(appdata)) {
+		return null;
+	}
+	// npm's global npmrc then lives under that prefix.
+	const prefix = join(appdata, "npm");
+	return settingLines(join(prefix, "etc", "npmrc")).length > 0 ? null : layout(prefix);
 }
 
 /** @tobilu/qmd's entry under a global root, when it is there. */
