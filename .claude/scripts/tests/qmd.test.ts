@@ -218,9 +218,10 @@ describe("qmdVersionAtLeast", () => {
 });
 
 /**
- * Where npm keeps global packages, without spawning npm (#349). Both copies
- * of the resolver run the same cases; the last asks the real npm on this
- * machine and must agree with it.
+ * Where npm keeps global packages, without spawning npm (#349): only the five
+ * cheap exact cases npmGlobalRoot's doc lists, and null (ask npm) for the
+ * rest. Both copies of the resolver run the same cases; the last checks the
+ * real npm on this machine.
  */
 /** The real npm's answer on this machine, asked at most once for both copies; null without npm. */
 let npmAsked: string | null | undefined;
@@ -245,99 +246,88 @@ for (const [label, npmGlobalRoot] of [
 			npmGlobalRoot({ env, platform: "win32", execPath: join(nodeDir, "node.exe"), home, readText: files(text) });
 		const posix = (env: Record<string, string> = {}, text: Record<string, string> = {}) =>
 			npmGlobalRoot({ env, platform: "linux", execPath: join(nodeDir, "bin", "node"), home, readText: files(text) });
+		const winBuiltin = join(nodeDir, "node_modules", "npm", "npmrc");
+		const posixBuiltin = join(nodeDir, "lib", "node_modules", "npm", "npmrc");
+		const userNpmrc = join(home, ".npmrc");
 
-		test("nothing configured: Node's own prefix, laid out per platform", () => {
+		test("5: nothing configured is Node's own prefix, laid out per platform", () => {
 			assert.equal(win(), join(nodeDir, "node_modules"));
 			assert.equal(posix(), join(nodeDir, "lib", "node_modules"));
 		});
 
-		test("the Windows installer's builtin npmrc, with its ${APPDATA}", () => {
-			const builtin = join(nodeDir, "node_modules", "npm", "npmrc");
+		test("1: npm_config_prefix in the env, in any case, beats every npmrc", () => {
+			const p = join(tmpdir(), "env-prefix");
+			const npmrc = { [userNpmrc]: "prefix=/elsewhere" };
+			assert.equal(win({ npm_config_prefix: p }, npmrc), join(p, "node_modules"));
+			assert.equal(posix({ NPM_CONFIG_PREFIX: p }, npmrc), join(p, "lib", "node_modules"));
+			assert.equal(posix({ Npm_Config_Prefix: p }), join(p, "lib", "node_modules"));
+		});
+
+		test("1: an env prefix that isn't absolute, or holds ${, asks npm", () => {
+			assert.equal(posix({ npm_config_prefix: "relative/dir" }), null);
+			assert.equal(posix({ npm_config_prefix: "" }), null);
+			assert.equal(posix({ npm_config_prefix: join(tmpdir(), "${NAME}") }), null);
+		});
+
+		test("2: PREFIX, DESTDIR, npm_config_userconfig or npm_config_globalconfig set asks npm", () => {
+			for (const key of ["PREFIX", "DESTDIR", "npm_config_userconfig", "NPM_CONFIG_GLOBALCONFIG"]) {
+				assert.equal(posix({ [key]: join(tmpdir(), "x") }), null, key);
+			}
+		});
+
+		test("3: a user or global npmrc that mentions prefix or globalconfig, sections included, asks npm", () => {
+			assert.equal(posix({}, { [userNpmrc]: "prefix=/opt/npm" }), null);
+			assert.equal(posix({}, { [userNpmrc]: "[project]\nprefix = /opt/npm" }), null);
+			assert.equal(posix({}, { [userNpmrc]: `globalconfig=${join(tmpdir(), "g")}` }), null);
+			assert.equal(posix({}, { [join(nodeDir, "etc", "npmrc")]: "prefix=/opt/npm" }), null);
+			assert.equal(win({}, { [join(nodeDir, "etc", "npmrc")]: "prefix=C:\\npm" }), null);
+		});
+
+		test("3: an npmrc with only auth or registry lines doesn't count", () => {
+			const auth = { [userNpmrc]: "registry=https://registry.example.com/\n//registry.example.com/:_authToken=abc\n" };
+			assert.equal(posix({}, auth), join(nodeDir, "lib", "node_modules"));
+		});
+
+		test("3: HOME is read before the OS home", () => {
+			const h = join(tmpdir(), "h");
+			const at = (text: Record<string, string>) =>
+				npmGlobalRoot({ env: { HOME: h }, platform: "linux", execPath: join(nodeDir, "bin", "node"), readText: files(text) });
+			assert.equal(at({ [join(h, ".npmrc")]: "prefix=/opt/npm" }), null);
+			assert.equal(at({}), join(nodeDir, "lib", "node_modules"));
+		});
+
+		test("4: the Windows installer's builtin npmrc is %APPDATA%\\npm", () => {
 			const appdata = join(tmpdir(), "Roaming");
 			assert.equal(
-				win({ APPDATA: appdata }, { [builtin]: String.raw`prefix=${"${APPDATA}"}\npm` + "\n" }),
-				join(String.raw`${appdata}\npm`, "node_modules"),
+				win({ APPDATA: appdata }, { [winBuiltin]: "prefix=${APPDATA}\\npm\n" }),
+				join(appdata, "npm", "node_modules"),
 			);
 		});
 
-		test("the user npmrc beats the builtin, quoted, among other keys", () => {
-			const builtin = join(nodeDir, "lib", "node_modules", "npm", "npmrc");
-			const mine = join(tmpdir(), "mine");
+		test("4: any other builtin prefix line asks npm", () => {
+			const appdata = join(tmpdir(), "Roaming");
+			assert.equal(win({ APPDATA: appdata }, { [winBuiltin]: "prefix=C:\\npm\\prefix" }), null);
+			assert.equal(win({}, { [winBuiltin]: "prefix=${APPDATA}\\npm" }), null, "no APPDATA to expand");
+			assert.equal(posix({}, { [posixBuiltin]: "prefix=/opt/homebrew" }), null);
+		});
+
+		test("4: the global npmrc under %APPDATA%\\npm still counts", () => {
+			const appdata = join(tmpdir(), "Roaming");
 			assert.equal(
-				posix({}, { [builtin]: "prefix=/usr/local\n", [join(home, ".npmrc")]: `; comment\nregistry=https://example.com/\r\nprefix = "${mine}"\n` }),
-				join(mine, "lib", "node_modules"),
+				win(
+					{ APPDATA: appdata },
+					{ [winBuiltin]: "prefix=${APPDATA}\\npm", [join(appdata, "npm", "etc", "npmrc")]: "prefix=D:\\npm" },
+				),
+				null,
 			);
 		});
 
-		test("npm_config_userconfig and npm_config_globalconfig name the files read", () => {
-			const user = join(tmpdir(), "u.npmrc");
-			const global = join(tmpdir(), "g.npmrc");
-			const a = join(tmpdir(), "a");
-			const b = join(tmpdir(), "b");
-			assert.equal(posix({ npm_config_userconfig: user }, { [user]: `prefix=${a}` }), join(a, "lib", "node_modules"));
-			assert.equal(posix({ npm_config_globalconfig: global }, { [global]: `prefix=${b}` }), join(b, "lib", "node_modules"));
-		});
-
-		test("the environment beats every npmrc, in either case", () => {
-			const env = join(tmpdir(), "env-prefix");
-			const npmrc = { [join(home, ".npmrc")]: "prefix=/elsewhere" };
-			assert.equal(win({ npm_config_prefix: env }, npmrc), join(env, "node_modules"));
-			assert.equal(posix({ NPM_CONFIG_PREFIX: env }, npmrc), join(env, "lib", "node_modules"));
-		});
-
-		test("a leading ~ in an npmrc prefix is home, as npm reads it", () => {
-			assert.equal(posix({}, { [join(home, ".npmrc")]: "prefix=~/.npm-global" }), join(home, ".npm-global", "lib", "node_modules"));
-		});
-
-		test("a setting it can't work out exactly gives null, never a lower setting", () => {
-			const user = { [join(home, ".npmrc")]: `prefix=${join(tmpdir(), "user")}` };
-			// npm keeps an unset ${VAR} literally; a relative prefix would anchor at the cwd.
-			assert.equal(posix({ npm_config_prefix: "relative/dir" }, user), null);
-			assert.equal(posix({}, { [join(home, ".npmrc")]: "prefix=${NO_SUCH_VAR}/npm" }), null);
-			assert.equal(posix({ npm_config_userconfig: "~not-home" }), null);
-		});
-
-		test("an npmrc is read as npm reads it: the last top-level prefix, no section keys, comments stripped", () => {
-			const a = join(tmpdir(), "a");
-			const b = join(tmpdir(), "b");
-			assert.equal(
-				posix({}, { [join(home, ".npmrc")]: `prefix=${a}\nprefix=${b} ; moved\n[sub]\nprefix=/ignored\n` }),
-				join(b, "lib", "node_modules"),
-			);
-		});
-
-		test("home is $HOME before the OS home, and a user npmrc may name the global npmrc", () => {
-			const h = join(tmpdir(), "h");
-			const g = join(tmpdir(), "custom-global");
-			const c = join(tmpdir(), "c");
-			const root = npmGlobalRoot({
-				env: { HOME: h },
-				platform: "linux",
-				execPath: join(nodeDir, "bin", "node"),
-				readText: files({ [join(h, ".npmrc")]: `globalconfig=${g}`, [g]: `prefix=${c}` }),
-			});
-			assert.equal(root, join(c, "lib", "node_modules"));
-		});
-
-		test("Node's own prefix honours PREFIX, and DESTDIR on POSIX", () => {
-			const p = join(tmpdir(), "p");
-			assert.equal(posix({ PREFIX: p }), join(p, "lib", "node_modules"));
-			assert.equal(win({ PREFIX: p }), join(p, "node_modules"));
-			assert.equal(posix({ DESTDIR: join(tmpdir(), "dest") }), join(tmpdir(), "dest", nodeDir, "lib", "node_modules"));
-		});
-
-		test("npm_config_ is matched in any case", () => {
-			const env = join(tmpdir(), "mixed");
-			assert.equal(posix({ Npm_Config_Prefix: env }), join(env, "lib", "node_modules"));
-		});
-
-		// The property that matters: a root this works out and finds qmd under is
-		// the root npm itself would give. A miss (Homebrew's builtin npmrc lives
-		// outside Node's prefix, say) only costs the spawn.
+		// The property that matters: a root worked out here that holds qmd is
+		// the root npm would give. A null only costs the spawn it would save.
 		test("where it finds qmd on this machine, npm agrees", (t) => {
 			const ours = npmGlobalRoot();
 			if (ours === null || !existsSync(join(ours, "@tobilu", "qmd", "dist", "cli", "qmd.js"))) {
-				return t.skip("no qmd under the worked-out root here; the caller asks npm");
+				return t.skip("no qmd under a worked-out root here; the caller asks npm");
 			}
 			const answer = npmAnswer();
 			if (answer === null) return t.skip("npm is not available here");
