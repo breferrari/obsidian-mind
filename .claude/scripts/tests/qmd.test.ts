@@ -318,10 +318,10 @@ for (const [label, npmGlobalRoot] of [
 			assert.equal(at({}), join(nodeDir, "lib", "node_modules"));
 		});
 
-		test("4: the Windows installer's builtin npmrc is %APPDATA%\\npm", () => {
+		test("4: the Windows installer's builtin npmrc is %APPDATA%\\npm, comments and blank lines aside", () => {
 			const appdata = join(tmpdir(), "Roaming");
 			assert.equal(
-				win({ APPDATA: appdata }, { [winBuiltin]: "prefix=${APPDATA}\\npm\n" }),
+				win({ APPDATA: appdata }, { [winBuiltin]: "; installer default\n\nprefix=${APPDATA}\\npm\n" }),
 				join(appdata, "npm", "node_modules"),
 			);
 		});

@@ -241,10 +241,12 @@ function globalQmdEntry() {
 	// stays clean on Node 24 (DEP0190 — args concatenated with shell:true is
 	// an injection risk in the general case; our command is a literal
 	// constant so the concatenated form is safe).
+	// windowsHide: under a windowless parent, a shell started without it opens a console window.
 	const npmRoot = spawnSync("npm root -g", {
 		shell: true,
 		encoding: "utf8",
 		timeout: 3000,
+		windowsHide: true,
 	});
 	if (
 		npmRoot.error ||
