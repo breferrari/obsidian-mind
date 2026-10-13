@@ -89,6 +89,8 @@ const FIXTURE_MIN_CHARS = Math.round(HOOK_CAP_CHARS * 1.2);
 const SESSION_BUDGET_USD = "5";
 /** How long one turn may take before the session is abandoned. */
 const TURN_TIMEOUT_MS = 5 * 60_000;
+/** The model the gate asks for when `--model` isn't given. */
+export const DEFAULT_MODEL = "opus";
 
 /** What a checkpoint's answer must contain: the context's last line, and the middle marker when the context carries one. */
 export type Expected = { readonly line: string; readonly marker: string | null };
@@ -861,7 +863,7 @@ async function main(): Promise<void> {
 	const selfTest = argv.includes("--self-test");
 	const hooksOnly = argv.includes("--hooks-only");
 	const trustedDir = flag("--trusted-dir");
-	const base = { claude: flag("--claude") ?? "claude", model: flag("--model") ?? "opus", ...(trustedDir ? { trustedDir: resolve(trustedDir) } : {}) };
+	const base = { claude: flag("--claude") ?? "claude", model: flag("--model") ?? DEFAULT_MODEL, ...(trustedDir ? { trustedDir: resolve(trustedDir) } : {}) };
 	const version = spawnSync(base.claude, ["--version"], { encoding: "utf8" }).stdout?.trim() || "unknown version";
 	process.on("SIGINT", () => {
 		for (const vault of [...fixtures.keys()]) removeFixture(vault);
