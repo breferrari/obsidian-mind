@@ -23,13 +23,7 @@ export function pickQmdEntry(
 export function isRunnableQmdEntry(entry: string): boolean;
 
 /** Where npm keeps global packages, worked out as npm does, without spawning it. */
-export function npmGlobalRoot(at: {
-	readonly env: Readonly<Record<string, string | undefined>>;
-	readonly platform: string;
-	readonly execPath: string;
-	readonly home: string;
-	readonly readText: (path: string) => string | null;
-}): string;
+export function npmGlobalRoot(at?: import("./lib/qmd.ts").NpmLocation): string;
 
 /**
  * Resolve the vault root directory from a `file://` URL and optional env.

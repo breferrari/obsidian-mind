@@ -130,52 +130,59 @@ function localQmdEntry() {
  * Where npm keeps global packages, worked out the way npm does, without
  * spawning it (#349). The duplicate of lib/qmd.ts's npmGlobalRoot; see there.
  */
-export function npmGlobalRoot(at) {
-	const win = at.platform === "win32";
-	const env = (key) => at.env[key] || at.env[key.toUpperCase()] || undefined;
-	const expand = (value) => value.replace(/\$\{([^}]+)\}/g, (_, name) => at.env[name] ?? "");
+function readTextOrNull(path) {
+	try {
+		return readFileSync(path, "utf8");
+	} catch {
+		return null;
+	}
+}
+
+export function npmGlobalRoot(at = {}) {
+	const vars = at.env ?? process.env;
+	const win = (at.platform ?? process.platform) === "win32";
+	const execPath = at.execPath ?? process.execPath;
+	const home = at.home ?? homedir();
+	const readText = at.readText ?? readTextOrNull;
+	const env = (key) => vars[key] || vars[key.toUpperCase()] || undefined;
+	// As npm reads a path setting: `${VAR}` from the environment, and a leading `~` as home.
+	const expand = (value) =>
+		value.replace(/\$\{([^}]+)\}/g, (_, name) => vars[name] ?? "").replace(/^~(?=$|[\\/])/, home);
 	const prefixIn = (file) => {
-		const text = at.readText(file);
-		const line = text?.split(/\r?\n/).find((l) => /^\s*prefix\s*=/.test(l));
+		const line = readText(file)?.split(/\r?\n/).find((l) => /^\s*prefix\s*=/.test(l));
 		const value = line?.slice(line.indexOf("=") + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
 		return value ? expand(value) : undefined;
 	};
-	const nodePrefix = win ? dirname(at.execPath) : dirname(dirname(at.execPath));
-	const builtin = prefixIn(
-		win ? join(nodePrefix, "node_modules", "npm", "npmrc") : join(nodePrefix, "lib", "node_modules", "npm", "npmrc"),
-	);
+	const nodePrefix = win ? dirname(execPath) : dirname(dirname(execPath));
+	// Read only when the chain reaches it, or to find the global npmrc.
+	let builtinRead = false;
+	let builtinValue;
+	const builtin = () => {
+		if (!builtinRead) {
+			builtinRead = true;
+			builtinValue = prefixIn(join(win ? nodePrefix : join(nodePrefix, "lib"), "node_modules", "npm", "npmrc"));
+		}
+		return builtinValue;
+	};
 	const prefix =
 		env("npm_config_prefix") ??
-		prefixIn(env("npm_config_userconfig") ?? join(at.home, ".npmrc")) ??
-		prefixIn(env("npm_config_globalconfig") ?? join(builtin ?? nodePrefix, "etc", "npmrc")) ??
-		builtin ??
+		prefixIn(env("npm_config_userconfig") ?? join(home, ".npmrc")) ??
+		prefixIn(env("npm_config_globalconfig") ?? join(builtin() ?? nodePrefix, "etc", "npmrc")) ??
+		builtin() ??
 		nodePrefix;
 	return win ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules");
 }
 
+/** @tobilu/qmd's entry under a global root, when it is there. */
+function qmdEntryUnder(root) {
+	const entry = join(root, "@tobilu", "qmd", "dist", "cli", "qmd.js");
+	return existsSync(entry) ? entry : null;
+}
+
 function globalQmdEntry() {
 	// Where npm would put a global install, without spawning npm (#349).
-	const known = join(
-		npmGlobalRoot({
-			env: process.env,
-			platform: process.platform,
-			execPath: process.execPath,
-			home: homedir(),
-			readText: (path) => {
-				try {
-					return readFileSync(path, "utf8");
-				} catch {
-					return null;
-				}
-			},
-		}),
-		"@tobilu",
-		"qmd",
-		"dist",
-		"cli",
-		"qmd.js",
-	);
-	if (existsSync(known)) return known;
+	const known = qmdEntryUnder(npmGlobalRoot());
+	if (known !== null) return known;
 
 	// Fallback for global npm installs that aren't on this package's resolution
 	// path — ask npm directly where global packages live. Bounded timeout so a
@@ -205,9 +212,7 @@ function globalQmdEntry() {
 	if (root === "" || !isAbsolute(root)) {
 		return null;
 	}
-
-	const entry = join(root, "@tobilu", "qmd", "dist", "cli", "qmd.js");
-	return existsSync(entry) ? entry : null;
+	return qmdEntryUnder(root);
 }
 
 /**
