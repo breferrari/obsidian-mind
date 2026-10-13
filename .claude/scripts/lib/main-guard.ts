@@ -8,8 +8,8 @@
  * Equivalent of CommonJS's `require.main === module`. `fileURLToPath` strips
  * the `file://` prefix and URL-encoded segments. Node gives the entry module
  * its real path, while `process.argv[1]` keeps the path as typed, so a
- * symlinked folder on the way (macOS's /var, a link to /private/var) is
- * resolved on the argv side too.
+ * symlinked folder on the way (macOS's /var, a link to /private/var, or a
+ * Windows junction) is resolved on the argv side too.
  */
 
 import { realpathSync } from "node:fs";
