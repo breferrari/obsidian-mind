@@ -143,13 +143,40 @@ export function resolveSupersedes<T extends Titled>(
 	claims: unknown,
 	existing: readonly T[],
 ): { matched: T[]; unmatched: string[] } {
-	// Every memory carrying the title, not the first (#364): a correction that
-	// keeps its title is the normal path, so a title can name several, and the
-	// first in listing order is an accident of the listing.
-	const norm = (s: unknown): string => String(s ?? "").trim().toLowerCase();
-	const asked = (Array.isArray(claims) ? claims : []).filter((c) => norm(c) !== "");
-	const needles = new Set(asked.map(norm));
-	const matched = existing.filter((e) => needles.has(norm(e.title)));
-	const found = new Set(matched.map((e) => norm(e.title)));
-	return { matched, unmatched: asked.filter((c) => !found.has(norm(c))).map(String) };
+	return supersedeResolver(existing)(claims);
 }
+
+/**
+ * `resolveSupersedes` with the title index built once, for a caller resolving
+ * every memory's claims against one corpus: per call, each claim would
+ * otherwise normalise every title in it again.
+ *
+ * Every memory carrying the title, not the first (#364): a correction that
+ * keeps its title is the normal path, so a title can name several, and the
+ * first in listing order is an accident of the listing.
+ */
+export function supersedeResolver<T extends Titled>(
+	existing: readonly T[],
+): (claims: unknown) => { matched: T[]; unmatched: string[] } {
+	const byTitle = new Map<string, T[]>();
+	for (const e of existing) {
+		const key = titleKey(e.title);
+		const group = byTitle.get(key);
+		if (group) group.push(e);
+		else byTitle.set(key, [e]);
+	}
+	return (claims) => {
+		const matched = new Set<T>();
+		const unmatched: string[] = [];
+		for (const claim of Array.isArray(claims) ? claims : []) {
+			const key = titleKey(claim);
+			if (!key) continue;
+			const hits = byTitle.get(key) ?? [];
+			for (const hit of hits) matched.add(hit);
+			if (hits.length === 0) unmatched.push(String(claim));
+		}
+		return { matched: [...matched], unmatched };
+	};
+}
+
+const titleKey = (s: unknown): string => String(s ?? "").trim().toLowerCase();
