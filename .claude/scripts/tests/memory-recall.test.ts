@@ -581,11 +581,16 @@ describe("a correction that keeps the corrected memory's title (#364)", () => {
 		assert.deepEqual(recallFrom([alone], beta).map((m) => m.rel), [alone.rel]);
 	});
 
+	// Within one day, two retired copies would otherwise each count the other as
+	// a replacement and keep each other served; the write's timestamp orders them.
 	test("on the same day, the write's session time decides which copy is newer", () => {
-		const old = dated({ scope: "general", date: "2026-07-26", session: "2026-07-26T09:00:00Z", superseded_by: [TITLE] }, TITLE, "a");
-		const fix = dated({ scope: "project", projects: ["atlas"], date: "2026-07-26", session: "2026-07-26T17:00:00Z" }, TITLE, "b");
-		assert.deepEqual(recallFrom([old, fix], beta).map((m) => m.rel), []);
-		assert.deepEqual(recallFrom([fix, old], beta).map((m) => m.rel), []);
+		const day = (hour: string, fm: Record<string, unknown>, slug: string) =>
+			dated({ date: "2026-07-26", session: `2026-07-26T${hour}:00:00Z`, ...fm }, TITLE, slug);
+		const a = day("09", { scope: "general", superseded_by: [TITLE] }, "a");
+		const b = day("12", { scope: "general", superseded_by: [TITLE] }, "b");
+		const c = day("17", { scope: "project", projects: ["atlas"] }, "c");
+		assert.deepEqual(recallFrom([a, b, c], beta).map((m) => m.rel), []);
+		assert.deepEqual(recallFrom([c, b, a], beta).map((m) => m.rel), []);
 	});
 
 	test("the title matches whatever its case and surrounding space", () => {
