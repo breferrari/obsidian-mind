@@ -737,8 +737,9 @@ flowchart TB
     Vault -->|no| Neut["neutralise dangling wikilinks<br/>in title AND body"]
     Neut --> Val["validateMemory<br/>epistemic contract"]
     Val -->|fails| Report["refused, with reasons"]
-    Val --> Dup{"near-duplicate?<br/>facet-gated"}
-    Dup -->|"yes, and force is not set"| Collide["reports what it collided with,<br/>suggests supersedes"]
+    Val --> Sup0["resolve supersedes — the named targets<br/>drop out of the comparison"]
+    Sup0 --> Dup{"near-duplicate against the rest?<br/>facet-gated"}
+    Dup -->|"yes, and force is not set"| Collide["reports what it collided with —<br/>suggests supersedes, or names the<br/>supersedes titles that matched nothing"]
     Dup -->|no| Links["resolve links — emitted only if the target exists"]
     Links --> Write["claimFile: atomic exclusive create"]
     Write --> Sup["mark superseded memories,<br/>kept and back-linked"]
