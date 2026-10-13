@@ -39,7 +39,7 @@
  * Run it by hand on any Claude Code version before it is recommended, with a
  * logged-in `claude`:
  *
- *   node --experimental-strip-types .github/scripts/delivery-gate.ts [--trusted-dir <dir>] [--file-issue] [--hooks-only] [--model opus] [--claude <bin>]
+ *   node --experimental-strip-types .github/scripts/delivery-gate.ts [--trusted-dir <dir>] [--file-issue] [--hooks-only] [--model <full model id>] [--claude <bin>]
  *
  * `--trusted-dir` loads the mod the way a user gets it: found in the vault's
  * `.claude/skills/` after the workspace-trust prompt, which a headless session
@@ -89,8 +89,14 @@ const FIXTURE_MIN_CHARS = Math.round(HOOK_CAP_CHARS * 1.2);
 const SESSION_BUDGET_USD = "5";
 /** How long one turn may take before the session is abandoned. */
 const TURN_TIMEOUT_MS = 5 * 60_000;
-/** The model the gate asks for when `--model` isn't given. */
-export const DEFAULT_MODEL = "opus";
+/**
+ * The model the gate asks for when `--model` isn't given: a full id, because a
+ * bare alias is not honoured for every model and can silently run another
+ * (#346). Update it when a newer model ships.
+ */
+export const DEFAULT_MODEL = "claude-opus-5-5";
+/** Every model a session of this run reported, so the run can say what actually answered. */
+const modelsSeen = new Set<string>();
 
 /** What a checkpoint's answer must contain: the context's last line, and the middle marker when the context carries one. */
 export type Expected = { readonly line: string; readonly marker: string | null };
@@ -319,6 +325,15 @@ export function modelsRan(streamJson: string): string[] {
 		}
 	}
 	return seen;
+}
+
+/** The line that says which model answered, and flags one that isn't the model asked for. */
+export function modelNote(asked: string, ran: readonly string[]): string {
+	if (ran.length === 0) return `Could not tell which model answered (asked for ${asked}).`;
+	const other = ran.filter((m) => m !== asked);
+	return other.length === 0
+		? `Model that answered: ${asked}.`
+		: `⚠️  Asked for ${asked}, but the sessions ran ${ran.join(", ")}: these verdicts are for ${other.join(", ")}.`;
 }
 
 export function parseTurns(streamJson: string): Turn[] {
@@ -807,6 +822,7 @@ async function runSession(steps: readonly Step[], breakage: Breakage, options: S
 		const { transcript, ending } = await session(vault, steps, options, (step, index) => {
 			expectedByStep[index] = expectFor(step);
 		});
+		for (const model of modelsRan(transcript)) modelsSeen.add(model);
 		// Steps never sent (the session stopped early) are INVALID whatever their expectation.
 		return judge(
 			steps,
@@ -904,6 +920,7 @@ async function main(): Promise<void> {
 		}
 		const { exitCode, message } = selfTestOutcome(runs);
 		console.log(`\n${message}`);
+		console.log(modelNote(base.model, [...modelsSeen]));
 		process.exitCode = exitCode;
 		return;
 	}
@@ -912,6 +929,7 @@ async function main(): Promise<void> {
 	if (!hooksOnly) for (const steps of plan(true)) verdicts.push(...(await runSession(steps, "none", { ...base, withMod: true })));
 	for (const steps of plan(false)) verdicts.push(...(await runSession(steps, "none", { ...base, withMod: false })));
 	print("", verdicts);
+	console.log(`\n${modelNote(base.model, [...modelsSeen])}`);
 	const invalid = verdicts.filter((v) => v.outcome === "INVALID").length;
 	const failed = verdicts.filter((v) => v.outcome === "FAIL").length;
 	if (invalid > 0) console.log(`\n${invalid} checkpoint(s) could not be judged.`);

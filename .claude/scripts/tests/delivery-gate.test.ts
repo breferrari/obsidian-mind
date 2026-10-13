@@ -32,6 +32,7 @@ import {
 	sessionDirs,
 	DEFAULT_MODEL,
 	modelsRan,
+	modelNote,
 	subagentReport,
 	SUBAGENT_TASK,
 	type Step,
@@ -550,5 +551,11 @@ describe("the gate's model", () => {
 		].join("\n");
 		assert.deepEqual(modelsRan(stream), ["claude-opus-5-5"]);
 		assert.deepEqual(modelsRan(""), []);
+	});
+
+	test("modelNote names the model that answered, and flags one that isn't the model asked for", () => {
+		assert.equal(modelNote("claude-opus-5-5", ["claude-opus-5-5"]), "Model that answered: claude-opus-5-5.");
+		assert.match(modelNote("opus", ["claude-sonnet-5"]), /Asked for opus, but the sessions ran claude-sonnet-5: these verdicts are for claude-sonnet-5/);
+		assert.match(modelNote("claude-opus-5-5", []), /Could not tell which model answered/);
 	});
 });
