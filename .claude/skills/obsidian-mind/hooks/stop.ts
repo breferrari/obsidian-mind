@@ -38,7 +38,10 @@ export function parseStopReport(stdout: string): StopReport {
 /**
  * The line drawn under the answer when the report changed: what drifted, in
  * the report's own words, and where the rest went. Claude Code shows it after
- * the mod's name (observed on 2.1.288: `obsidian-mind: …`).
+ * the names of the plugins that answered on Stop, joined with `+` (observed on
+ * 2.1.288: `obsidian-mind: …`; reported on 2.1.296 as
+ * `obsidian-mind+cc-plugin-agents-md: …` when a built-in plugin also answered —
+ * TBC, not re-checked). Match any such label with `^obsidian-mind(\+[^:]+)?: `.
  */
 export function summaryLine(report: StopReport): string {
 	const what = report.claims.length > 0 ? report.claims.join(" · ") : "wrap-up checklist";
