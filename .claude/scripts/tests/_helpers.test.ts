@@ -15,7 +15,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { leakedTempDirs, rmTemp, waitFor } from "./_helpers.ts";
+import { leakedTempDirs, rmTemp, runScript, waitFor } from "./_helpers.ts";
 
 describe("waitFor", () => {
 	test("returns as soon as the condition holds", async () => {
@@ -131,4 +131,31 @@ describe("rmTemp", () => {
 			}
 		},
 	);
+});
+
+describe("runScript", () => {
+	// A spawn killed by the timeout used to come back as empty stdout and exit
+	// -1, so the test failed on whatever it parsed next: "hook stdout is not one
+	// JSON object" on Windows CI, where nothing said a timeout had fired (#348).
+	test("a script that outlives the timeout is reported as killed, not as empty output", () => {
+		const dir = mkdtempSync(join(tmpdir(), "run-script-timeout-"));
+		try {
+			const script = join(dir, "sleeps.ts");
+			writeFileSync(script, "setTimeout(() => {}, 5_000);\n");
+			assert.throws(() => runScript(script, null, {}, { timeoutMs: 300 }), /sleeps\.ts was killed after 0\.3 s/);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a script that finishes in time returns its output", () => {
+		const dir = mkdtempSync(join(tmpdir(), "run-script-ok-"));
+		try {
+			const script = join(dir, "prints.ts");
+			writeFileSync(script, 'process.stdout.write("done");\n');
+			assert.deepEqual(runScript(script, null, {}, { timeoutMs: 10_000 }).stdout, "done");
+		} finally {
+			rmTemp(dir);
+		}
+	});
 });

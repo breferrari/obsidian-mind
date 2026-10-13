@@ -32,7 +32,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { parseHookContext } from "../lib/hook-io.ts";
 import { REFRESH_SWITCH } from "../lib/qmd-refresh.ts";
 
@@ -59,11 +59,20 @@ export type RunResult = {
  */
 export const hookContext = (stdout: string): string => parseHookContext(stdout, "SessionStart");
 
+/**
+ * How long a hook spawn may take before it is killed. One session-start spawn
+ * takes 5-12 s on Windows CI (#349), so the old 10 s left under a second of
+ * margin and failed a run on runner variance alone (#348).
+ */
+export const SCRIPT_TIMEOUT_MS = 30_000;
+
 export function runScript(
 	scriptPath: string,
 	stdin: string | object | null,
 	envOverrides?: Readonly<Record<string, string>>,
+	opts: { readonly timeoutMs?: number } = {},
 ): RunResult {
+	const timeoutMs = opts.timeoutMs ?? SCRIPT_TIMEOUT_MS;
 	const input =
 		stdin === null
 			? ""
@@ -84,10 +93,16 @@ export function runScript(
 		{
 			input,
 			encoding: "utf-8",
-			timeout: 10_000,
+			timeout: timeoutMs,
 			env,
 		},
 	);
+	// A killed run has no output to judge: say it was killed, rather than hand
+	// the caller empty stdout to fail on as something else (#348).
+	if (proc.signal !== null) {
+		const tail = (proc.stderr ?? "").trimEnd().split("\n").slice(-5).join("\n");
+		throw new Error(`${basename(scriptPath)} was killed after ${timeoutMs / 1000} s (${proc.signal})${tail ? `: ${tail}` : ""}`);
+	}
 	return {
 		stdout: proc.stdout ?? "",
 		stderr: proc.stderr ?? "",
