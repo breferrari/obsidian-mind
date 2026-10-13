@@ -96,14 +96,16 @@ type SpawnOutcome = {
 /**
  * Run qmd and capture both streams so callers can classify failures.
  * Captured output is echoed to the user afterward so the visible log matches
- * `stdio: "inherit"` ordering.
+ * `stdio: "inherit"` ordering. `spawn` is a seam for tests, which check the
+ * options without starting qmd.
  */
-function spawnQmd(
+export function spawnQmd(
 	entry: string | null,
 	subcommandArgs: readonly string[],
+	spawn: typeof spawnSync = spawnSync,
 ): SpawnOutcome {
 	const { cmd, args, shell } = buildQmdCommand(entry, subcommandArgs);
-	const r = spawnSync(cmd, args as string[], { shell, encoding: "utf-8" });
+	const r = spawn(cmd, args as string[], { shell, encoding: "utf-8" });
 	return {
 		status: r.status,
 		signal: r.signal,
