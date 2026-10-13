@@ -722,7 +722,7 @@ describe("leftover CLAUDE.md beside AGENTS.md (#321)", () => {
 		);
 		// An escaped quote doesn't end the string, so the // after it is still inside it.
 		assert.deepEqual(
-			scanWith(String.raw`{ "note": "say \"hi\" // not a comment", "context": { "fileName": "AGENTS.md" } }`).leftoverInstructionFiles,
+			scanWith(String.raw`{ "note": "a 12\" ruler // not a comment", "context": { "fileName": "AGENTS.md" } }`).leftoverInstructionFiles,
 			["GEMINI.md"],
 		);
 	});
