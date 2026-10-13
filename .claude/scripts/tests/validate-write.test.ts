@@ -282,3 +282,21 @@ describe("validate-write — required fields come from the manifest", () => {
 		}
 	});
 });
+
+describe("validate-write — under Gemini's AfterTool (#353)", () => {
+	// Gemini's file tools are write_file and replace, and both take file_path
+	// (gemini-cli tools/definitions/base-declarations.ts, as of 2026-10-13);
+	// AfterTool reads hookSpecificOutput.additionalContext (hooks/types.ts).
+	test("a write_file payload gets its warning back in an AfterTool envelope", () => {
+		const path = makeMd("No frontmatter here\n" + "x".repeat(300), "gemini.md");
+		const { stdout, code } = runScript({
+			hook_event_name: "AfterTool",
+			tool_name: "write_file",
+			tool_input: { file_path: path, content: "" },
+		});
+		assert.equal(code, 0);
+		const data = JSON.parse(stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+		assert.equal(data.hookSpecificOutput.hookEventName, "AfterTool");
+		assert.match(data.hookSpecificOutput.additionalContext, /frontmatter/i);
+	});
+});

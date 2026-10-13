@@ -475,3 +475,33 @@ describe("hook config — SessionStart fires for every source the agent document
 		}
 	});
 });
+
+describe("hook config — write validation fires on each agent's own file tools (#353)", () => {
+	// validate-write runs after a file write; each agent names its file tools
+	// differently, and a matcher with another agent's names never fires.
+	const agents: ReadonlyArray<{ readonly label: string; readonly path: string; readonly event: string; readonly tools: readonly string[] }> = [
+		// Claude Code: Write and Edit (hooks reference).
+		{ label: "Claude Code", path: ".claude/settings.json", event: "PostToolUse", tools: ["Write", "Edit"] },
+		// Codex: "For file edits through apply_patch, matcher values can use
+		// apply_patch, Edit, or Write" (developers.openai.com/codex/hooks, as of
+		// 2026-10-13). The payload is a separate gap (#354).
+		{ label: "Codex CLI", path: ".codex/hooks.json", event: "PostToolUse", tools: ["Write", "Edit"] },
+		// Gemini: write_file and replace (gemini-cli
+		// tools/definitions/base-declarations.ts, as of 2026-10-13); tool-event
+		// matchers are regexes (hooks/hookPlanner.ts).
+		{ label: "Gemini CLI", path: ".gemini/settings.json", event: "AfterTool", tools: ["write_file", "replace"] },
+	];
+
+	for (const agent of agents) {
+		test(`${agent.label}: validate-write's matcher matches ${agent.tools.join(" and ")}`, () => {
+			const entries = (loadConfig(agent.path).hooks?.[agent.event] ?? []).filter((e) =>
+				(e.hooks ?? []).some((h) => h.command?.includes("validate-write.ts")),
+			);
+			assert.ok(entries.length > 0, `a ${agent.event} entry runs validate-write.ts`);
+			for (const tool of agent.tools) {
+				const fires = entries.some((e) => e.matcher === undefined || new RegExp(`^(?:${e.matcher})$`).test(tool));
+				assert.ok(fires, `no matcher fires on ${tool}`);
+			}
+		});
+	}
+});

@@ -30,7 +30,7 @@
     ],
     "AfterTool": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "write_file|replace",
         "hooks": [
           {
             "type": "command",
