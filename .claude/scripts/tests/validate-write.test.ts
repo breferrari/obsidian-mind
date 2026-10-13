@@ -421,3 +421,30 @@ describe("validate-write — apply_patch review follow-ups (#354)", () => {
 		assert.deepEqual(clusterPaths, ["work/active/Pelican Notes.md", "work/active/Pelican Plan.md", "work/active/Pelican Risks.md"]);
 	});
 });
+
+describe("validate-write — the refresh covers only notes inside the vault (#366)", () => {
+	const write = (filePath: string, env: Record<string, string>) =>
+		spawnHook(SCRIPT, { tool_input: { file_path: filePath } }, { CLAUDE_PROJECT_DIR: TMP_DIR, ...env });
+
+	test("a note written outside the vault requests no refresh", () => {
+		const outside = mkdtempSync(join(tmpdir(), "validate-write-refresh-outside-"));
+		try {
+			const note = join(outside, "README.md");
+			writeFileSync(note, "# Elsewhere\n");
+			const { code, stderr } = write(note, refreshEnv("outside"));
+			assert.equal(code, 0);
+			assert.equal(refreshed(stderr), false, "a write the index can't see starts no worker");
+		} finally {
+			rmTemp(outside);
+		}
+	});
+
+	test("an in-vault template, skipped by validation, still requests one (the control)", () => {
+		mkdirSync(join(TMP_DIR, "templates"), { recursive: true });
+		const note = join(TMP_DIR, "templates", "Refresh Control.md");
+		writeFileSync(note, "# Template\n");
+		const { code, stderr } = write(note, refreshEnv("template"));
+		assert.equal(code, 0);
+		assert.equal(refreshed(stderr), true);
+	});
+});

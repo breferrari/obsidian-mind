@@ -70,7 +70,9 @@ if (refreshed.length === 0) {
 // Debounced QMD refresh (#107) — fire-and-forget, never blocks validation.
 // Folded here from the retired qmd-refresh.ts entry so every .md write
 // costs ONE process spawn, not two (~150-300ms each on Windows). Runs
-// before the skip ladder so template/root/memory paths still refresh.
+// before the skip ladder so in-vault template/root/memory paths still
+// refresh; a note outside the vault can't change the index and refreshes
+// nothing (#366).
 const DEBOUNCE_MS = 30_000;
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SENTINEL_PATH = sentinelPathFrom(process.env, SCRIPT_DIR);

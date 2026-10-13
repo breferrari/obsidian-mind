@@ -70,10 +70,17 @@ export function shouldRefreshForPath(filePath: unknown): boolean {
 }
 
 /**
- * Whether a write to `filePath` should refresh this vault's index (#366).
+ * Whether a write to `filePath` should refresh this vault's index (#366): a
+ * note `shouldRefreshForPath` accepts, inside `vaultRoot` (forward slashes, no
+ * trailing slash). A note outside the vault can't change the index, so it
+ * starts no worker. The check is boundary-safe, like validate-write's skip
+ * ladder: "/vault" does not contain "/vaulting/…". In-vault paths that ladder
+ * skips (templates, root docs) still refresh: they are indexed all the same.
  */
-export function refreshesVaultIndex(filePath: unknown, _vaultRoot: string): boolean {
-	return shouldRefreshForPath(filePath);
+export function refreshesVaultIndex(filePath: unknown, vaultRoot: string): boolean {
+	if (!shouldRefreshForPath(filePath)) return false;
+	const fwd = (filePath as string).replaceAll("\\", "/");
+	return fwd === vaultRoot || fwd.startsWith(vaultRoot + "/");
 }
 
 /**
