@@ -9,13 +9,15 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 
 import {
 	buildQmdCommand,
 	isRunnableQmdEntry,
+	npmGlobalRoot as npmGlobalRootTs,
 	parseVersionTriple,
 	pickQmdEntry,
 	qmdVersionAtLeast,
@@ -23,6 +25,7 @@ import {
 } from "../lib/qmd.ts";
 import {
 	isRunnableQmdEntry as isRunnableQmdEntryMjs,
+	npmGlobalRoot as npmGlobalRootMjs,
 	pickQmdEntry as pickQmdEntryMjs,
 } from "../qmd-mcp.mjs";
 
@@ -213,3 +216,82 @@ describe("qmdVersionAtLeast", () => {
 		assert.equal(qmdVersionAtLeast("2.5.3", "latest"), true);
 	});
 });
+
+/**
+ * Where npm keeps global packages, without spawning npm (#349). Both copies
+ * of the resolver run the same cases; the last asks the real npm on this
+ * machine and must agree with it.
+ */
+for (const [label, npmGlobalRoot] of [
+	["lib/qmd.ts", npmGlobalRootTs],
+	["qmd-mcp.mjs", npmGlobalRootMjs],
+] as const) {
+	describe(`${label} npmGlobalRoot`, () => {
+		const home = join(tmpdir(), "home");
+		const nodeDir = join(tmpdir(), "nodejs");
+		const files = (map: Record<string, string>) => (path: string) => map[path] ?? null;
+		const win = (env: Record<string, string> = {}, text: Record<string, string> = {}) =>
+			npmGlobalRoot({ env, platform: "win32", execPath: join(nodeDir, "node.exe"), home, readText: files(text) });
+		const posix = (env: Record<string, string> = {}, text: Record<string, string> = {}) =>
+			npmGlobalRoot({ env, platform: "linux", execPath: join(nodeDir, "bin", "node"), home, readText: files(text) });
+
+		test("nothing configured: Node's own prefix, laid out per platform", () => {
+			assert.equal(win(), join(nodeDir, "node_modules"));
+			assert.equal(posix(), join(nodeDir, "lib", "node_modules"));
+		});
+
+		test("the Windows installer's builtin npmrc, with its ${APPDATA}", () => {
+			const builtin = join(nodeDir, "node_modules", "npm", "npmrc");
+			const appdata = join(tmpdir(), "Roaming");
+			assert.equal(
+				win({ APPDATA: appdata }, { [builtin]: String.raw`prefix=${"${APPDATA}"}\npm` + "\n" }),
+				join(String.raw`${appdata}\npm`, "node_modules"),
+			);
+		});
+
+		test("the user npmrc beats the builtin, quoted, among other keys", () => {
+			const builtin = join(nodeDir, "lib", "node_modules", "npm", "npmrc");
+			const mine = join(tmpdir(), "mine");
+			assert.equal(
+				posix({}, { [builtin]: "prefix=/usr/local\n", [join(home, ".npmrc")]: `; comment\nregistry=https://example.com/\r\nprefix = "${mine}"\n` }),
+				join(mine, "lib", "node_modules"),
+			);
+		});
+
+		test("npm_config_userconfig and npm_config_globalconfig name the files read", () => {
+			const user = join(tmpdir(), "u.npmrc");
+			const global = join(tmpdir(), "g.npmrc");
+			const a = join(tmpdir(), "a");
+			const b = join(tmpdir(), "b");
+			assert.equal(posix({ npm_config_userconfig: user }, { [user]: `prefix=${a}` }), join(a, "lib", "node_modules"));
+			assert.equal(posix({ npm_config_globalconfig: global }, { [global]: `prefix=${b}` }), join(b, "lib", "node_modules"));
+		});
+
+		test("the environment beats every npmrc, in either case", () => {
+			const env = join(tmpdir(), "env-prefix");
+			const npmrc = { [join(home, ".npmrc")]: "prefix=/elsewhere" };
+			assert.equal(win({ npm_config_prefix: env }, npmrc), join(env, "node_modules"));
+			assert.equal(posix({ NPM_CONFIG_PREFIX: env }, npmrc), join(env, "lib", "node_modules"));
+		});
+
+		test("agrees with `npm root -g` on this machine", (t) => {
+			const npm = spawnSync("npm root -g", { shell: true, encoding: "utf8", timeout: 15_000 });
+			const asked = (npm.stdout ?? "").trim();
+			if (npm.status !== 0 || asked === "") return t.skip("npm is not available here");
+			const worked = npmGlobalRoot({
+				env: process.env,
+				platform: process.platform,
+				execPath: process.execPath,
+				home: homedir(),
+				readText: (path) => {
+					try {
+						return readFileSync(path, "utf8");
+					} catch {
+						return null;
+					}
+				},
+			});
+			assert.equal(resolve(worked).toLowerCase(), resolve(asked).toLowerCase());
+		});
+	});
+}

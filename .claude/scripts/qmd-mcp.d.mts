@@ -22,6 +22,15 @@ export function pickQmdEntry(
 /** Does this entrypoint start? Bounded `--version` probe. */
 export function isRunnableQmdEntry(entry: string): boolean;
 
+/** Where npm keeps global packages, worked out as npm does, without spawning it. */
+export function npmGlobalRoot(at: {
+	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly platform: string;
+	readonly execPath: string;
+	readonly home: string;
+	readonly readText: (path: string) => string | null;
+}): string;
+
 /**
  * Resolve the vault root directory from a `file://` URL and optional env.
  * The env argument is read for `CLAUDE_PROJECT_DIR` (Claude Code's

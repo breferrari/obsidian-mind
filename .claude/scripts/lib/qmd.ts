@@ -21,9 +21,10 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { createRequire } from "node:module";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { debug } from "./hook-io.ts";
 
 const require = createRequire(import.meta.url);
@@ -93,7 +94,71 @@ function localQmdEntry(): string | null {
 	}
 }
 
+/** What `npmGlobalRoot` reads, injectable so tests need no real npm install. */
+export interface NpmLocation {
+	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly platform: string;
+	readonly execPath: string;
+	readonly home: string;
+	/** A file's text, or null when it can't be read. */
+	readonly readText: (path: string) => string | null;
+}
+
+/**
+ * Where npm keeps global packages, worked out the way npm does, without
+ * spawning it (#349): `npm root -g` is a shell plus a Node start on every
+ * resolve, 0.1-1 s on CI. The prefix is the first of: the environment
+ * (`npm_config_prefix`), the user npmrc, the global npmrc, npm's builtin
+ * npmrc (the Windows installer's sets `${APPDATA}\npm`), and Node's own
+ * location. Only that one prefix is used, so a stale install somewhere else
+ * can't shadow the configured one. Packages sit in `<prefix>\node_modules` on
+ * Windows and `<prefix>/lib/node_modules` elsewhere.
+ */
+export function npmGlobalRoot(at: NpmLocation): string {
+	const win = at.platform === "win32";
+	const env = (key: string): string | undefined => at.env[key] || at.env[key.toUpperCase()] || undefined;
+	const expand = (value: string): string => value.replace(/\$\{([^}]+)\}/g, (_, name: string) => at.env[name] ?? "");
+	const prefixIn = (file: string): string | undefined => {
+		const text = at.readText(file);
+		const line = text?.split(/\r?\n/).find((l) => /^\s*prefix\s*=/.test(l));
+		const value = line?.slice(line.indexOf("=") + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
+		return value ? expand(value) : undefined;
+	};
+	const nodePrefix = win ? dirname(at.execPath) : dirname(dirname(at.execPath));
+	const builtin = prefixIn(
+		win ? join(nodePrefix, "node_modules", "npm", "npmrc") : join(nodePrefix, "lib", "node_modules", "npm", "npmrc"),
+	);
+	const prefix =
+		env("npm_config_prefix") ??
+		prefixIn(env("npm_config_userconfig") ?? join(at.home, ".npmrc")) ??
+		prefixIn(env("npm_config_globalconfig") ?? join(builtin ?? nodePrefix, "etc", "npmrc")) ??
+		builtin ??
+		nodePrefix;
+	return win ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules");
+}
+
+const QMD_ENTRY_IN_ROOT = ["@tobilu", "qmd", "dist", "cli", "qmd.js"] as const;
+
 function globalQmdEntry(): string | null {
+	// Where npm would put a global install, without spawning npm (#349).
+	const known = join(
+		npmGlobalRoot({
+			env: process.env,
+			platform: process.platform,
+			execPath: process.execPath,
+			home: homedir(),
+			readText: (path) => {
+				try {
+					return readFileSync(path, "utf8");
+				} catch {
+					return null;
+				}
+			},
+		}),
+		...QMD_ENTRY_IN_ROOT,
+	);
+	if (existsSync(known)) return known;
+
 	// Fallback for global npm installs that aren't on this package's resolution
 	// path — ask npm directly where global packages live. Bounded timeout so a
 	// hung npm process can't block a fire-and-forget hook indefinitely.
