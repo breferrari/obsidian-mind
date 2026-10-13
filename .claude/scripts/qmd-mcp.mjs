@@ -135,11 +135,12 @@ function readTextOrNull(path) {
 }
 
 /**
- * The duplicate of lib/qmd.ts's npmGlobalRoot, generated from it with Node's
- * stripTypeScriptTypes; change that one and regenerate.
+ * The duplicate of lib/qmd.ts's npmGlobalRoot, kept in step by hand: change
+ * that one first, then carry the change here with the types removed.
  *
  * Where npm keeps global packages, without spawning it (#349): `npm root -g`
- * is a shell plus a Node start on every resolve, 0.1-1 s on CI. Only the
+ * is a shell plus a Node start on every resolve (0.1-1 s on CI runners,
+ * measured 2026-10-13, #349). Only the
  * cheap exact cases are worked out here; anything else returns null, and the
  * caller asks npm, which gives its exact answer at the old cost.
  *
@@ -152,8 +153,9 @@ function readTextOrNull(path) {
  *    built from `${…}` → ask npm. An npmrc with only auth or registry lines
  *    (or `save-prefix`) doesn't count.
  * 4. The builtin npmrc: on Windows, the installer's exact
- *    `prefix=${APPDATA}\npm`, alone in the file → %APPDATA%\npm. Anything
- *    else there → ask npm.
+ *    `prefix=${APPDATA}\npm` → %APPDATA%\npm. Any other line there setting
+ *    `prefix`, `globalconfig` or `userconfig` (which moves the user npmrc),
+ *    or a key built from `${…}` → ask npm.
  * 5. Otherwise Node's own prefix.
  *
  * 4 and 5 hold only when npm sits beside this Node; where it doesn't
@@ -210,7 +212,9 @@ export function npmGlobalRoot(at = {}) {
 	if (readText(join(npmDir, "package.json")) === null) return null;
 
 	// 4.
-	const builtin = lines(join(npmDir, "npmrc"));
+	const builtin = lines(join(npmDir, "npmrc")).filter(
+		(l) => /^(prefix|globalconfig|userconfig)\s*=/i.test(l) || /\$\{[^=]*=/.test(l),
+	);
 	if (builtin.length === 0) return layout(nodePrefix); // 5.
 	const appdata = vars["APPDATA"];
 	if (!win || builtin.length !== 1 || builtin[0] !== "prefix=${APPDATA}\\npm" || !appdata || !exactPath(appdata)) {

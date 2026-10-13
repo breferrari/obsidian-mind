@@ -16,8 +16,10 @@
  * this .ts helper at Node's `--experimental-strip-types` runtime. The two
  * copies are asserted independently: `tests/qmd.test.ts` locks this file's
  * `resolveQmdEntry` + `buildQmdCommand` shape, and `tests/qmd-mcp.test.ts`
- * locks the .mjs wrapper's equivalents. Drift between the two shows up as
- * a test failure on the CI matrix rather than a silent platform bug.
+ * locks the .mjs wrapper's equivalents; `tests/qmd.test.ts` also runs
+ * `pickQmdEntry` and `npmGlobalRoot` against both copies. Drift between the
+ * two shows up as a test failure on the CI matrix rather than a silent
+ * platform bug.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -114,7 +116,8 @@ function readTextOrNull(path: string): string | null {
 
 /**
  * Where npm keeps global packages, without spawning it (#349): `npm root -g`
- * is a shell plus a Node start on every resolve, 0.1-1 s on CI. Only the
+ * is a shell plus a Node start on every resolve (0.1-1 s on CI runners,
+ * measured 2026-10-13, #349). Only the
  * cheap exact cases are worked out here; anything else returns null, and the
  * caller asks npm, which gives its exact answer at the old cost.
  *
@@ -127,8 +130,9 @@ function readTextOrNull(path: string): string | null {
  *    built from `${…}` → ask npm. An npmrc with only auth or registry lines
  *    (or `save-prefix`) doesn't count.
  * 4. The builtin npmrc: on Windows, the installer's exact
- *    `prefix=${APPDATA}\npm`, alone in the file → %APPDATA%\npm. Anything
- *    else there → ask npm.
+ *    `prefix=${APPDATA}\npm` → %APPDATA%\npm. Any other line there setting
+ *    `prefix`, `globalconfig` or `userconfig` (which moves the user npmrc),
+ *    or a key built from `${…}` → ask npm.
  * 5. Otherwise Node's own prefix.
  *
  * 4 and 5 hold only when npm sits beside this Node; where it doesn't
@@ -185,7 +189,9 @@ export function npmGlobalRoot(at: NpmLocation = {}): string | null {
 	if (readText(join(npmDir, "package.json")) === null) return null;
 
 	// 4.
-	const builtin = lines(join(npmDir, "npmrc"));
+	const builtin = lines(join(npmDir, "npmrc")).filter(
+		(l) => /^(prefix|globalconfig|userconfig)\s*=/i.test(l) || /\$\{[^=]*=/.test(l),
+	);
 	if (builtin.length === 0) return layout(nodePrefix); // 5.
 	const appdata = vars["APPDATA"];
 	if (!win || builtin.length !== 1 || builtin[0] !== "prefix=${APPDATA}\\npm" || !appdata || !exactPath(appdata)) {

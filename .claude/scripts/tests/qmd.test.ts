@@ -217,12 +217,11 @@ describe("qmdVersionAtLeast", () => {
 	});
 });
 
-/**
- * Where npm keeps global packages, without spawning npm (#349): only the five
- * cheap exact cases npmGlobalRoot's doc lists, and null (ask npm) for the
- * rest. Both copies of the resolver run the same cases; the last checks the
- * real npm on this machine.
- */
+// Where npm keeps global packages, without spawning npm (#349): only the
+// cheap exact cases npmGlobalRoot's doc lists, and null (ask npm) for the
+// rest. Both copies of the resolver run the same cases; the last checks the
+// real npm on this machine.
+
 /** The real npm's answer on this machine, asked at most once for both copies; null without npm. */
 let npmAsked: string | null | undefined;
 const npmAnswer = (): string | null => {
@@ -301,7 +300,8 @@ for (const [label, npmGlobalRoot] of [
 
 		test("3: an npmrc with only auth, registry or save-prefix lines doesn't count", () => {
 			const auth = {
-				[userNpmrc]: "registry=https://registry.example.com/\n//registry.example.com/:_authToken=abc\nsave-prefix=~\n; prefix=/commented\n",
+				[userNpmrc]:
+					"registry=https://registry.example.com/\n//registry.example.com/:_authToken=abc\nsave-prefix=~\n; prefix=/commented\n# ${NPMKEY}=/commented\n",
 			};
 			assert.equal(posix({}, auth), join(nodeDir, "lib", "node_modules"));
 		});
@@ -336,6 +336,16 @@ for (const [label, npmGlobalRoot] of [
 				"another setting beside the installer's line",
 			);
 			assert.equal(posix({}, { [posixBuiltin]: "prefix=/opt/homebrew" }), null);
+			assert.equal(posix({}, { [posixBuiltin]: "userconfig=/etc/other-npmrc" }), null, "it moves the user npmrc");
+		});
+
+		test("4: other keys in the builtin npmrc don't count", () => {
+			assert.equal(posix({}, { [posixBuiltin]: "update-notifier=false\n" }), join(nodeDir, "lib", "node_modules"));
+			const appdata = join(tmpdir(), "Roaming");
+			assert.equal(
+				win({ APPDATA: appdata }, { [winBuiltin]: "update-notifier=false\nprefix=${APPDATA}\\npm" }),
+				join(appdata, "npm", "node_modules"),
+			);
 		});
 
 		test("4 and 5: with no npm beside this Node (Homebrew, Debian), ask npm", () => {
