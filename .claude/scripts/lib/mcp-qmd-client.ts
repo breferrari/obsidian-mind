@@ -19,7 +19,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { HISTORICAL_STATUS } from "./correction-sweep.ts";
-import { parseFrontmatter } from "./memory-recall.ts";
+import { facetsOf, parseFrontmatter } from "./memory-recall.ts";
 
 /** One hit as qmd reports it in `structuredContent.results`. */
 export interface QmdHit {
@@ -191,6 +191,11 @@ function resolveNote(vaultRoot: string, relPath: string): string | null {
  *
  * Called for at most `limit` hits per search, each a small markdown file, so the
  * cost is a handful of reads — not the index sweep this deliberately avoids.
+ *
+ * `superseded_by` goes through `facetsOf` so this reader and recall agree on
+ * what the key means. Reading `fm.superseded_by` directly would treat the hand
+ * -written scalar `superseded_by: New Decision` as absent and show a replaced
+ * note as live, while recall correctly treats it as a one-item list.
  */
 export function vaultLifecycleReader(vaultRoot: string): LifecycleReader {
 	return (relPath) => {
@@ -205,10 +210,9 @@ export function vaultLifecycleReader(vaultRoot: string): LifecycleReader {
 		}
 		const fm = parseFrontmatter(text);
 		const status = fm["status"];
-		const supersededBy = fm["superseded_by"];
 		const lifecycle: NoteLifecycle = {
 			...(typeof status === "string" ? { status: status.trim().toLowerCase() } : {}),
-			supersededBy: Array.isArray(supersededBy) ? supersededBy : [],
+			supersededBy: facetsOf(fm).superseded_by,
 		};
 		return lifecycle;
 	};

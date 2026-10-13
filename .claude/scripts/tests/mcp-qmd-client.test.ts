@@ -298,6 +298,7 @@ describe("closed notes in search results", () => {
 		"brain/old-decision.md",
 		"brain/2026-07-26-capture.md",
 		"brain/reversed.md",
+		"brain/scalar.md",
 	]);
 
 	/**
@@ -315,6 +316,7 @@ describe("closed notes in search results", () => {
 		note("Old Decision.md", "status: superseded");
 		note("2026-07-26 Capture.md", "date: 2026-07-26");
 		note("Reversed.md", 'superseded_by: ["New Decision"]');
+		note("Scalar.md", "superseded_by: New Decision");
 		return dir;
 	}
 
@@ -384,6 +386,45 @@ describe("closed notes in search results", () => {
 				r.text.indexOf("Decisions.md") < r.text.indexOf("Old Decision.md") &&
 					r.text.indexOf("Old Decision.md") < r.text.indexOf("Reversed.md"),
 				`stable partition, relevance preserved within each group:\n${r.text}`,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a hit path as qmd reports it still finds the note it stands for", () => {
+		// qmd normalises what it indexes, so the paths it reports are dashed
+		// even when the note is stored as `Old Decision.md`. Every test above
+		// passes the on-disk name, which means the fallback walk in
+		// `resolveNote` — the path real searches take — was never exercised.
+		// A miss there is silent in the worst way: the replaced note comes back
+		// unmarked, which is indistinguishable from a live one.
+		const dir = fixtureVault();
+		try {
+			const hits = [hit("myvault/brain/old-decision.md", { score: 0.97 }), hit("myvault/brain/decisions.md", { score: 0.81 })];
+			const r = scopeResults(hits, BRAIN, 5, vaultLifecycleReader(dir));
+			assert.match(r.text, /\(status: superseded\)/, `the dashed path must still be marked:\n${r.text}`);
+			assert.ok(
+				r.text.indexOf("brain/decisions.md") < r.text.indexOf("brain/old-decision.md"),
+				`and must still sort after a live note:\n${r.text}`,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a scalar `superseded_by` marks the note the way recall reads it", () => {
+		// `superseded_by: New Decision` is a hand-written scalar, and recall
+		// treats it as a one-item list. A reader that only accepts an array sees
+		// no claim at all and serves a replaced note as live.
+		const dir = fixtureVault();
+		try {
+			const hits = [hit("myvault/brain/Scalar.md", { score: 0.95 }), hit("myvault/brain/Decisions.md", { score: 0.6 })];
+			const r = scopeResults(hits, BRAIN, 5, vaultLifecycleReader(dir));
+			assert.match(r.text, /\(superseded by: New Decision\)/);
+			assert.ok(
+				r.text.indexOf("brain/Decisions.md") < r.text.indexOf("brain/Scalar.md"),
+				`a superseded note must sort after a live one:\n${r.text}`,
 			);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
