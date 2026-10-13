@@ -7,7 +7,7 @@ import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
 
@@ -298,5 +298,70 @@ describe("validate-write — under Gemini's AfterTool (#353)", () => {
 		const data = JSON.parse(stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
 		assert.equal(data.hookSpecificOutput.hookEventName, "AfterTool");
 		assert.match(data.hookSpecificOutput.additionalContext, /frontmatter/i);
+	});
+});
+
+describe("validate-write — Codex apply_patch, whose payload names no file_path (#354)", () => {
+	// openai/codex core/src/tools/handlers/apply_patch.rs: tool_input is
+	// { command: <raw patch> }, and the request carries an absolute cwd
+	// (hooks/src/events/post_tool_use.rs), as of 2026-10-13.
+	const applyPatch = (patch: string, env: Record<string, string> = {}) =>
+		spawnHook(
+			SCRIPT,
+			{ hook_event_name: "PostToolUse", tool_name: "apply_patch", cwd: TMP_DIR, tool_input: { command: patch } },
+			{ CLAUDE_PROJECT_DIR: TMP_DIR, ...env },
+		);
+	const context = (stdout: string) =>
+		(JSON.parse(stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } }).hookSpecificOutput;
+
+	test("an added note without frontmatter gets its warning, relative to the payload's cwd", () => {
+		makeMd("No frontmatter here\n" + "x".repeat(300), "codex-added.md");
+		const { stdout, code } = applyPatch("*** Begin Patch\n*** Add File: codex-added.md\n+No frontmatter here\n*** End Patch\n");
+		assert.equal(code, 0);
+		const out = context(stdout);
+		assert.equal(out.hookEventName, "PostToolUse");
+		assert.match(out.additionalContext, /codex-added\.md/);
+	});
+
+	test("every note a patch writes is validated, in one envelope", () => {
+		makeMd("No frontmatter one\n" + "x".repeat(300), "codex-one.md");
+		makeMd("No frontmatter two\n" + "x".repeat(300), "codex-two.md");
+		const { stdout } = applyPatch(
+			"*** Begin Patch\n*** Add File: codex-one.md\n+a\n*** Update File: codex-two.md\n@@\n+b\n*** End Patch\n",
+		);
+		const out = context(stdout);
+		assert.match(out.additionalContext, /codex-one\.md/);
+		assert.match(out.additionalContext, /codex-two\.md/);
+	});
+
+	test("a misplaced memory file in a patch is flagged", () => {
+		const { stdout } = applyPatch(
+			"*** Begin Patch\n*** Add File: /Users/foo/.claude/projects/-Users-foo-dev-bar/memory/feedback_x.md\n+x\n*** End Patch\n",
+		);
+		assert.match(context(stdout).additionalContext, /Memory location violation/);
+	});
+
+	test("a patch touching only non-.md files warns nothing and triggers no refresh", () => {
+		const sentinel = join(TMP_DIR, "nomd.sentinel");
+		writeFileSync(join(TMP_DIR, "code.ts"), "export {};\n");
+		const { stdout, code } = applyPatch("*** Begin Patch\n*** Add File: code.ts\n+export {};\n*** End Patch\n", {
+			QMD_REFRESH_SENTINEL: sentinel,
+		});
+		assert.equal(code, 0);
+		assert.equal(stdout, "");
+		assert.ok(!existsSync(sentinel), "no refresh was triggered");
+	});
+
+	test("a patch touching only a note outside the vault warns nothing, as a single-file write does", () => {
+		const outside = mkdtempSync(join(tmpdir(), "validate-write-outside-"));
+		try {
+			const note = join(outside, "elsewhere.md");
+			writeFileSync(note, "No frontmatter here\n" + "x".repeat(300));
+			const { stdout, code } = applyPatch(`*** Begin Patch\n*** Add File: ${note}\n+x\n*** End Patch\n`);
+			assert.equal(code, 0);
+			assert.equal(stdout, "");
+		} finally {
+			rmTemp(outside);
+		}
 	});
 });
