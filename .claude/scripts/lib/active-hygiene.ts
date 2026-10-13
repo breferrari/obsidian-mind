@@ -148,6 +148,11 @@ export type ActiveHygieneReport = {
 	 * wrong, in RETIRED_INSTRUCTION_FILES order (see LEFTOVER_HARM).
 	 */
 	readonly leftoverInstructionFiles: readonly string[];
+	/**
+	 * .gemini/settings.json exists beside AGENTS.md but Gemini cannot load it,
+	 * so Gemini refuses to start (#374). Such a file retires nothing.
+	 */
+	readonly geminiSettingsBroken: boolean;
 	/** AGENTS.md's size once it reaches AGENTS_MD_FLAG_BYTES, else null. `sizeKb`, so a report's identity ignores it (#252). */
 	readonly agentsMd: { readonly sizeKb: number } | null;
 };
@@ -682,6 +687,7 @@ export function scanActiveHygiene(
 		inboxPressure: findInboxPressure(root, nowMs),
 		memoryInbox: findMemoryInbox(root, memoryRoot, nowMs),
 		leftoverInstructionFiles: findLeftoverInstructionFiles(root),
+		geminiSettingsBroken: existsSync(join(root, INSTRUCTION_FILE)) && geminiSettings(root) === "broken",
 		agentsMd: agentsMdPastFlag(root),
 	};
 }
@@ -742,30 +748,89 @@ function findLeftoverInstructionFiles(root: string): string[] {
 
 /** Whether .gemini/settings.json lists AGENTS.md in context.fileName. */
 function geminiReadsAgentsMd(root: string): boolean {
-	const names = geminiContextFiles(root);
+	const settings = geminiSettings(root);
+	if (settings === null || settings === "broken") return false;
+	const names = contextFileNames(settings);
 	return names.includes(INSTRUCTION_FILE) && !names.includes(GEMINI_MD);
 }
 
 /**
- * The context files .gemini/settings.json names (context.fileName, a string
- * or a list), or [] when there is none. Gemini accepts comments and a BOM in
- * that file, so a strict JSON.parse is tried first and a narrow read of the
- * fileName value second.
+ * .gemini/settings.json as Gemini loads it: null when there is none, "broken"
+ * when Gemini cannot load it. Gemini reads the file as plain utf-8 and runs
+ * JSON.parse(stripJsonComments(text)), and a failure, or a value that is not
+ * an object, is fatal: the CLI does not start (gemini-cli
+ * packages/cli/src/config/settings.ts, strip-json-comments 3.1.1, as of
+ * 51617c1, #374). So comments are fine, and a BOM or a trailing comma is not.
  */
-function geminiContextFiles(root: string): string[] {
+function geminiSettings(root: string): Record<string, unknown> | "broken" | null {
 	let text: string;
 	try {
-		text = readFileSync(join(root, GEMINI_SETTINGS), "utf8").replace(/^\uFEFF/, "");
+		text = readFileSync(join(root, GEMINI_SETTINGS), "utf8");
 	} catch {
-		return [];
+		return null;
 	}
 	try {
-		const names = (JSON.parse(text) as { context?: { fileName?: unknown } }).context?.fileName;
-		return (Array.isArray(names) ? names : [names]).filter((n): n is string => typeof n === "string");
+		const value: unknown = JSON.parse(stripJsonComments(text));
+		return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : "broken";
 	} catch {
-		const value = /"fileName"\s*:\s*(\[[^\]]*\]|"[^"]*")/.exec(text)?.[1] ?? "";
-		return [...value.matchAll(/"([^"]*)"/g)].map((m) => m[1]!);
+		return "broken";
 	}
+}
+
+/** The context files settings name: context.fileName, else the v1 contextFileName; a string or a list. */
+function contextFileNames(settings: Record<string, unknown>): string[] {
+	const context = settings["context"];
+	const fromContext = context !== null && typeof context === "object" ? (context as { fileName?: unknown }).fileName : undefined;
+	const names = fromContext ?? settings["contextFileName"];
+	return (Array.isArray(names) ? names : [names]).filter((n): n is string => typeof n === "string");
+}
+
+/**
+ * strip-json-comments 3.1.1 with its default `whitespace: true`, the version
+ * gemini-cli pins: a line comment to the end of its line and a block comment
+ * become spaces (line breaks kept), a quote not escaped by an odd run of
+ * backslashes toggles a string, and an unterminated block comment runs to the
+ * end.
+ */
+function stripJsonComments(text: string): string {
+	const blank = (s: string): string => s.replace(/\S/g, " ");
+	let out = "";
+	let i = 0;
+	let inString = false;
+	while (i < text.length) {
+		const c = text[i]!;
+		if (inString) {
+			out += c;
+			if (c === '"' && !escaped(text, i)) inString = false;
+			i++;
+		} else if (c === '"') {
+			inString = true;
+			out += c;
+			i++;
+		} else if (text.startsWith("//", i)) {
+			// A CR before the newline is whitespace either way, so it may be blanked.
+			const nl = text.indexOf("\n", i);
+			const stop = nl === -1 ? text.length : nl;
+			out += blank(text.slice(i, stop));
+			i = stop;
+		} else if (text.startsWith("/*", i)) {
+			const close = text.indexOf("*/", i + 2);
+			const stop = close === -1 ? text.length : close + 2;
+			out += blank(text.slice(i, stop));
+			i = stop;
+		} else {
+			out += c;
+			i++;
+		}
+	}
+	return out;
+}
+
+/** Whether the quote at `at` follows an odd run of backslashes. */
+function escaped(text: string, at: number): boolean {
+	let n = 0;
+	for (let j = at - 1; j >= 0 && text[j] === "\\"; j--) n++;
+	return n % 2 === 1;
 }
 
 /** What each retired file does wrong while it stays, and what to do about it. */
@@ -812,13 +877,15 @@ const claims = {
 	inbox: (n: number) => `${n} raw export(s) sitting in work/meetings/ for ${INBOX_PRESSURE_DAYS}+ days`,
 	memoryInbox: (n: number) => `${n} cross-repo memory capture(s) awaiting review`,
 	leftover: (file: string) => `${file} present beside AGENTS.md`,
+	geminiSettings: () => `${GEMINI_SETTINGS} doesn't parse`,
 	agentsMd: (sizeKb: number) => `AGENTS.md is ${sizeKb}KB`,
 };
 
 /** The claim of every finding in `report`, in the order the formatter lists them. */
 export function hygieneClaims(report: ActiveHygieneReport): string[] {
-	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox, leftoverInstructionFiles, agentsMd } = report;
+	const { completedInActive, ungroupedClusters, oversizedNotes, openLoops, inboxPressure, memoryInbox, leftoverInstructionFiles, geminiSettingsBroken, agentsMd } = report;
 	const out: string[] = [];
+	if (geminiSettingsBroken) out.push(claims.geminiSettings());
 	for (const file of leftoverInstructionFiles) out.push(claims.leftover(file));
 	if (agentsMd !== null) out.push(claims.agentsMd(agentsMd.sizeKb));
 	if (completedInActive.length > 0) out.push(claims.completed(completedInActive.length));
@@ -843,6 +910,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		inboxPressure,
 		memoryInbox,
 		leftoverInstructionFiles,
+		geminiSettingsBroken,
 		agentsMd,
 	} = report;
 	if (
@@ -853,6 +921,7 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 		inboxPressure === null &&
 		memoryInbox === null &&
 		leftoverInstructionFiles.length === 0 &&
+		!geminiSettingsBroken &&
 		agentsMd === null
 	) {
 		return [];
@@ -861,6 +930,11 @@ export function formatActiveHygiene(report: ActiveHygieneReport): string[] {
 
 	// First: until they are gone, an agent reads none of the rest of the
 	// conventions this vault ships in AGENTS.md, or loses what the user added.
+	if (geminiSettingsBroken) {
+		lines.push(
+			`⚠️  ${claims.geminiSettings()} — Gemini refuses to start until it does: a BOM, a trailing comma or a syntax error is fatal there, though comments are fine. Fix the file, and keep GEMINI.md until it parses and points Gemini at AGENTS.md.`,
+		);
+	}
 	for (const file of leftoverInstructionFiles) {
 		if (lines.length > 0) lines.push("");
 		const harm = LEFTOVER_HARM[file] ?? "it is a retired instruction file; move anything you added there to AGENTS.md and delete it.";

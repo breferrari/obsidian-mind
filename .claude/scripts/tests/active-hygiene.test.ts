@@ -433,6 +433,7 @@ describe("scanActiveHygiene — detectors", () => {
 			inboxPressure: null,
 			memoryInbox: { count: 4, oldestDays: 2, namedOnly: 0 },
 			leftoverInstructionFiles: [],
+			geminiSettingsBroken: false,
 			agentsMd: null,
 		});
 		const text = lines.join("\n");
@@ -455,6 +456,7 @@ describe("scanActiveHygiene — detectors", () => {
 				inboxPressure: null,
 				memoryInbox: null,
 				leftoverInstructionFiles: [],
+				geminiSettingsBroken: false,
 				agentsMd: null,
 			});
 		const atCap = report(HYGIENE_LIST_CAP);
@@ -550,6 +552,7 @@ describe("formatActiveHygiene", () => {
 			inboxPressure: null,
 			memoryInbox: null,
 			leftoverInstructionFiles: [],
+			geminiSettingsBroken: false,
 			agentsMd: null,
 		});
 		const text = lines.join("\n");

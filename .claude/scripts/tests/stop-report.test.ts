@@ -26,6 +26,7 @@ const EVERY_FINDING: ActiveHygieneReport = {
 	inboxPressure: { count: 2, oldestDays: 9 },
 	memoryInbox: { count: 4, oldestDays: 2, namedOnly: 1 },
 	leftoverInstructionFiles: ["CLAUDE.md", "GEMINI.md"],
+	geminiSettingsBroken: true,
 	agentsMd: { sizeKb: 23 },
 };
 
@@ -50,6 +51,7 @@ describe("stopSummary", () => {
 describe("hygieneClaims", () => {
 	test("every finding reduces to its claim: counts, no file lists, no instructions", () => {
 		assert.deepEqual(hygieneClaims(EVERY_FINDING), [
+			".gemini/settings.json doesn't parse",
 			"CLAUDE.md present beside AGENTS.md",
 			"GEMINI.md present beside AGENTS.md",
 			"AGENTS.md is 23KB",
@@ -72,7 +74,7 @@ describe("hygieneClaims", () => {
 
 	test("a clean report has no claims", () => {
 		assert.deepEqual(
-			hygieneClaims({ completedInActive: [], ungroupedClusters: [], oversizedNotes: [], openLoops: [], inboxPressure: null, memoryInbox: null, leftoverInstructionFiles: [], agentsMd: null }),
+			hygieneClaims({ completedInActive: [], ungroupedClusters: [], oversizedNotes: [], openLoops: [], inboxPressure: null, memoryInbox: null, leftoverInstructionFiles: [], geminiSettingsBroken: false, agentsMd: null }),
 			[],
 		);
 	});
