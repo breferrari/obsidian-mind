@@ -158,6 +158,8 @@ QMD runs **three small models locally**, so there is no API key to set up, no pe
 
 They download on first use and are cached. QMD offloads to the GPU when it finds one — CUDA on a discrete card, Metal on Apple Silicon — and falls back to CPU otherwise. Check what yours is doing with `qmd doctor`.
 
+Use qmd 2.5.1 or later. In 2.1, `qmd status` probes the GPU, and on a machine without one that can take several seconds (4 to 37 s on CI runners, measured 2026-10-13, #349). SessionStart's self-heal reads `qmd status` under a 5-second limit, so a status that times out leaves it unable to see a broken install.
+
 The three CLI verbs map onto that stack, cheapest first: `qmd search` is BM25 keywords with **no model at all**, `qmd vsearch` is vector-only, and `qmd query` is the full hybrid. If you want to avoid the larger downloads, `search` alone is genuinely useful.
 
 #### What that means for the MCP server

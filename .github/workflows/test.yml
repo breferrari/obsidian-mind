@@ -70,7 +70,7 @@ jobs:
         run: npm install --no-save --silent --prefix .claude/scripts typescript@5.6.3 @types/node@22.9.0
       - name: Install qmd globally (proves MCP wrapper resolution on this OS)
         shell: bash
-        run: npm install -g @tobilu/qmd@2.1.0
+        run: npm install -g @tobilu/qmd@2.8.3
       - name: Typecheck
         shell: bash
         working-directory: .claude/scripts

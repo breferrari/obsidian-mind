@@ -95,7 +95,7 @@ jobs:
       # wrapper that keeps qmd out of the runner's folders, #307). A bare
       # `node --test` with no qmd once failed a release that CI had passed.
       - name: Install qmd globally (as CI does)
-        run: npm install -g @tobilu/qmd@2.1.0
+        run: npm install -g @tobilu/qmd@2.8.3
 
       - name: Run tests
         working-directory: .claude/scripts
