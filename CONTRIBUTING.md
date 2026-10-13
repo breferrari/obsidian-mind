@@ -11,13 +11,13 @@ Issues and bug reports are welcome from anyone. Code contributions go through as
 3. Fork the repo and create a branch from `main`
 4. Make your changes. A code change comes with a test that fails on `main` and passes with it
 5. Open a PR with a title following the [commit format](#pr-title-format), linking the issue
-6. Once CI is green, the maintainer reviews it, then merges, requests changes, or closes it with context
+6. Once CI is green and, for a code change, the PR shows that test, the maintainer reviews it, then merges, requests changes, or closes it with context
 
 A PR for an issue that isn't assigned to you is closed without review. Trivial typo fixes in documentation are the only exception.
 
 ## Before You Open a PR
 
-**Every change starts with an assigned issue, small fixes included, unless it is a trivial typo fix in documentation.** For bigger changes, agree the approach on the issue before writing code. This includes:
+**Small fixes need an assigned issue too.** For bigger changes, agree the approach on the issue before writing code, such as:
 
 - Rewrites, migrations, or language swaps
 - New commands, agents, hooks, or vault structure
@@ -32,7 +32,7 @@ An issue's assignee is the one person whose PR for it gets reviewed.
 
 | Label | What it means |
 |---|---|
-| `maintainer` | Work the maintainer is building or sequencing. Ask on the issue if you'd like to help with it. |
+| `maintainer` | Work the maintainer is building or sequencing. Please don't open a PR for these. If you'd like to help, ask on the issue. |
 | `decision` | The deliverable is a ruling, not code. See [below](#some-issues-are-questions-and-they-close-differently). |
 
 A few things that save everyone time:
@@ -118,7 +118,7 @@ The release pipeline handles these automatically — **do not include in your PR
 ## Before Submitting
 
 - [ ] PR title follows `type: description` format
-- [ ] The PR links an issue assigned to you (a trivial typo fix in documentation needs none)
+- [ ] Links an issue assigned to you, or is a trivial typo fix in documentation
 - [ ] A code change comes with a test that fails on `main` and passes with it
 - [ ] Counts match everywhere (commands, agents) if you added/removed any
 - [ ] New command/agent appears in ALL doc tables (README + Skills.md, and `.claude/rules/subagents.md` for an agent)
