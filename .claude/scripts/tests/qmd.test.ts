@@ -222,12 +222,16 @@ describe("qmdVersionAtLeast", () => {
  * of the resolver run the same cases; the last asks the real npm on this
  * machine and must agree with it.
  */
-/** The real npm's answer on this machine, asked once for both copies; null without npm. */
-const npmAnswer = ((): string | null => {
-	const npm = spawnSync("npm root -g", { shell: true, encoding: "utf8", timeout: 15_000 });
-	const asked = (npm.stdout ?? "").trim();
-	return npm.status === 0 && asked !== "" ? asked : null;
-})();
+/** The real npm's answer on this machine, asked at most once for both copies; null without npm. */
+let npmAsked: string | null | undefined;
+const npmAnswer = (): string | null => {
+	if (npmAsked === undefined) {
+		const npm = spawnSync("npm root -g", { shell: true, encoding: "utf8", timeout: 15_000 });
+		const asked = (npm.stdout ?? "").trim();
+		npmAsked = npm.status === 0 && asked !== "" ? asked : null;
+	}
+	return npmAsked;
+};
 
 for (const [label, npmGlobalRoot] of [
 	["lib/qmd.ts", npmGlobalRootTs],
@@ -285,9 +289,59 @@ for (const [label, npmGlobalRoot] of [
 			assert.equal(posix({}, { [join(home, ".npmrc")]: "prefix=~/.npm-global" }), join(home, ".npm-global", "lib", "node_modules"));
 		});
 
-		test("agrees with `npm root -g` on this machine", (t) => {
-			if (npmAnswer === null) return t.skip("npm is not available here");
-			assert.equal(resolve(npmGlobalRoot()).toLowerCase(), resolve(npmAnswer).toLowerCase());
+		test("a setting it can't work out exactly gives null, never a lower setting", () => {
+			const user = { [join(home, ".npmrc")]: `prefix=${join(tmpdir(), "user")}` };
+			// npm keeps an unset ${VAR} literally; a relative prefix would anchor at the cwd.
+			assert.equal(posix({ npm_config_prefix: "relative/dir" }, user), null);
+			assert.equal(posix({}, { [join(home, ".npmrc")]: "prefix=${NO_SUCH_VAR}/npm" }), null);
+			assert.equal(posix({ npm_config_userconfig: "~not-home" }), null);
+		});
+
+		test("an npmrc is read as npm reads it: the last top-level prefix, no section keys, comments stripped", () => {
+			const a = join(tmpdir(), "a");
+			const b = join(tmpdir(), "b");
+			assert.equal(
+				posix({}, { [join(home, ".npmrc")]: `prefix=${a}\nprefix=${b} ; moved\n[sub]\nprefix=/ignored\n` }),
+				join(b, "lib", "node_modules"),
+			);
+		});
+
+		test("home is $HOME before the OS home, and a user npmrc may name the global npmrc", () => {
+			const h = join(tmpdir(), "h");
+			const g = join(tmpdir(), "custom-global");
+			const c = join(tmpdir(), "c");
+			const root = npmGlobalRoot({
+				env: { HOME: h },
+				platform: "linux",
+				execPath: join(nodeDir, "bin", "node"),
+				readText: files({ [join(h, ".npmrc")]: `globalconfig=${g}`, [g]: `prefix=${c}` }),
+			});
+			assert.equal(root, join(c, "lib", "node_modules"));
+		});
+
+		test("Node's own prefix honours PREFIX, and DESTDIR on POSIX", () => {
+			const p = join(tmpdir(), "p");
+			assert.equal(posix({ PREFIX: p }), join(p, "lib", "node_modules"));
+			assert.equal(win({ PREFIX: p }), join(p, "node_modules"));
+			assert.equal(posix({ DESTDIR: join(tmpdir(), "dest") }), join(tmpdir(), "dest", nodeDir, "lib", "node_modules"));
+		});
+
+		test("npm_config_ is matched in any case", () => {
+			const env = join(tmpdir(), "mixed");
+			assert.equal(posix({ Npm_Config_Prefix: env }), join(env, "lib", "node_modules"));
+		});
+
+		// The property that matters: a root this works out and finds qmd under is
+		// the root npm itself would give. A miss (Homebrew's builtin npmrc lives
+		// outside Node's prefix, say) only costs the spawn.
+		test("where it finds qmd on this machine, npm agrees", (t) => {
+			const ours = npmGlobalRoot();
+			if (ours === null || !existsSync(join(ours, "@tobilu", "qmd", "dist", "cli", "qmd.js"))) {
+				return t.skip("no qmd under the worked-out root here; the caller asks npm");
+			}
+			const answer = npmAnswer();
+			if (answer === null) return t.skip("npm is not available here");
+			assert.equal(resolve(ours).toLowerCase(), resolve(answer).toLowerCase());
 		});
 	});
 }

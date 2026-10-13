@@ -142,34 +142,69 @@ export function npmGlobalRoot(at = {}) {
 	const vars = at.env ?? process.env;
 	const win = (at.platform ?? process.platform) === "win32";
 	const execPath = at.execPath ?? process.execPath;
-	const home = at.home ?? homedir();
+	const home = at.home ?? (vars["HOME"] || homedir());
 	const readText = at.readText ?? readTextOrNull;
-	const env = (key) => vars[key] || vars[key.toUpperCase()] || undefined;
-	// As npm reads a path setting: `${VAR}` from the environment, and a leading `~` as home.
-	const expand = (value) =>
-		value.replace(/\$\{([^}]+)\}/g, (_, name) => vars[name] ?? "").replace(/^~(?=$|[\\/])/, home);
-	const prefixIn = (file) => {
-		const line = readText(file)?.split(/\r?\n/).find((l) => /^\s*prefix\s*=/.test(l));
-		const value = line?.slice(line.indexOf("=") + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
-		return value ? expand(value) : undefined;
+	const fromEnv = (key) => {
+		const want = `npm_config_${key}`;
+		for (const [name, value] of Object.entries(vars)) if (name.toLowerCase() === want && value) return value;
+		return undefined;
 	};
-	const nodePrefix = win ? dirname(execPath) : dirname(dirname(execPath));
-	// Read only when the chain reaches it, or to find the global npmrc.
-	let builtinRead = false;
-	let builtinValue;
-	const builtin = () => {
-		if (!builtinRead) {
-			builtinRead = true;
-			builtinValue = prefixIn(join(win ? nodePrefix : join(nodePrefix, "lib"), "node_modules", "npm", "npmrc"));
+	// The last top-level `key = value` in an npmrc: a `[section]` starts keys
+	// npm reads as `section.key`, and `;` or `#` starts a comment outside quotes.
+	const fromNpmrc = (file, key) => {
+		let found;
+		for (const line of readText(file)?.split(/\r?\n/) ?? []) {
+			if (/^\s*\[/.test(line)) break;
+			const m = /^\s*([^=\s]+)\s*=(.*)$/.exec(line);
+			if (m?.[1] !== key) continue;
+			const raw = m[2].trim();
+			const quoted = /^(["'])(.*)\1$/.exec(raw);
+			found = quoted ? quoted[2] : raw.replace(/[;#].*$/, "").trim();
 		}
-		return builtinValue;
+		return found || undefined;
 	};
-	const prefix =
-		env("npm_config_prefix") ??
-		prefixIn(env("npm_config_userconfig") ?? join(home, ".npmrc")) ??
-		prefixIn(env("npm_config_globalconfig") ?? join(builtin() ?? nodePrefix, "etc", "npmrc")) ??
-		builtin() ??
-		nodePrefix;
+	// A path setting as npm reads it: `${VAR}` from the environment and a
+	// leading `~` as home. Null when that can't be done exactly here.
+	const asPath = (raw) => {
+		if (raw === undefined) return undefined;
+		let unset = false;
+		const value = raw
+			.replace(/\$\{([^}?]+)\??\}/g, (_, name) => {
+				const v = vars[name];
+				if (v === undefined) unset = true;
+				return v ?? "";
+			})
+			.replace(/^~(?=$|[\\/])/, home);
+		return unset || !isAbsolute(value) ? null : value;
+	};
+
+	const nodePrefix =
+		vars["PREFIX"] || (win ? dirname(execPath) : join(vars["DESTDIR"] ?? "", dirname(dirname(execPath))));
+	// Each step: a path (decided), null (set but unusable: ask npm), or
+	// undefined (not set: go on). Null never falls through to a lower step.
+	const unlessSet = (value, fallback) => (value === undefined ? fallback : value);
+	const decide = () => {
+		const fromEnvPrefix = asPath(fromEnv("prefix"));
+		if (fromEnvPrefix !== undefined) return fromEnvPrefix;
+		const userconfig = unlessSet(asPath(fromEnv("userconfig")), join(home, ".npmrc"));
+		if (userconfig === null) return null;
+		const fromUser = asPath(fromNpmrc(userconfig, "prefix"));
+		if (fromUser !== undefined) return fromUser;
+		const builtin = asPath(
+			fromNpmrc(join(win ? nodePrefix : join(nodePrefix, "lib"), "node_modules", "npm", "npmrc"), "prefix"),
+		);
+		if (builtin === null) return null;
+		const globalconfig = unlessSet(
+			asPath(fromEnv("globalconfig") ?? fromNpmrc(userconfig, "globalconfig")),
+			join(builtin ?? nodePrefix, "etc", "npmrc"),
+		);
+		if (globalconfig === null) return null;
+		const fromGlobal = asPath(fromNpmrc(globalconfig, "prefix"));
+		if (fromGlobal !== undefined) return fromGlobal;
+		return builtin ?? nodePrefix;
+	};
+	const prefix = decide();
+	if (prefix === null) return null;
 	return win ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules");
 }
 
@@ -181,7 +216,8 @@ function qmdEntryUnder(root) {
 
 function globalQmdEntry() {
 	// Where npm would put a global install, without spawning npm (#349).
-	const known = qmdEntryUnder(npmGlobalRoot());
+	const computed = npmGlobalRoot();
+	const known = computed === null ? null : qmdEntryUnder(computed);
 	if (known !== null) return known;
 
 	// Fallback for global npm installs that aren't on this package's resolution

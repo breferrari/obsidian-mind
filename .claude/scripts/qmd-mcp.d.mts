@@ -22,8 +22,8 @@ export function pickQmdEntry(
 /** Does this entrypoint start? Bounded `--version` probe. */
 export function isRunnableQmdEntry(entry: string): boolean;
 
-/** Where npm keeps global packages, worked out as npm does, without spawning it. */
-export function npmGlobalRoot(at?: import("./lib/qmd.ts").NpmLocation): string;
+/** Where npm keeps global packages, worked out as npm does, without spawning it; null when that can't be done exactly. */
+export function npmGlobalRoot(at?: import("./lib/qmd.ts").NpmLocation): string | null;
 
 /**
  * Resolve the vault root directory from a `file://` URL and optional env.
