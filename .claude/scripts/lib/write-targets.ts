@@ -9,12 +9,12 @@
  * (hooks/src/events/post_tool_use.rs).
  */
 
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 
 // openai/codex apply-patch/src/parser.rs: a hunk header starts its own line.
-// A deleted file is not a target: there is nothing left to validate.
 const ADD_FILE = "*** Add File: ";
 const UPDATE_FILE = "*** Update File: ";
+const DELETE_FILE = "*** Delete File: ";
 const MOVE_TO = "*** Move to: ";
 
 /** The path after `marker` on a header line, or null when the line is not that header or names nothing. */
@@ -24,9 +24,14 @@ function matchHeader(line: string, marker: string): string | null {
 	return path === "" ? null : path;
 }
 
-/** The paths a patch adds, updates, or moves a file to, in patch order. */
-function patchTargets(patch: string): string[] {
-	const out: string[] = [];
+/**
+ * What a patch leaves on disk to validate (`written`: added and updated files,
+ * a moved file at its new path) and what it takes away (`removed`: deleted
+ * files, a moved file's old path), in patch order.
+ */
+function patchPaths(patch: string): { written: string[]; removed: string[] } {
+	const written: string[] = [];
+	const removed: string[] = [];
 	let afterUpdate = false;
 	for (const raw of patch.split(/\r?\n/)) {
 		// Hunk bodies start with "+", "-", " " or "@@", so a header line is never
@@ -36,36 +41,57 @@ function patchTargets(patch: string): string[] {
 		afterUpdate = false;
 		const added = matchHeader(line, ADD_FILE);
 		const updated = added === null ? matchHeader(line, UPDATE_FILE) : null;
+		const deleted = matchHeader(line, DELETE_FILE);
 		const movedTo = wasUpdate ? matchHeader(line, MOVE_TO) : null;
-		if (added !== null) out.push(added);
+		if (added !== null) written.push(added);
 		else if (updated !== null) {
-			out.push(updated);
+			written.push(updated);
 			afterUpdate = true;
-		} else if (movedTo !== null) {
-			// The file now lives at the new path, and the old one is gone: the
-			// new path is what gets validated.
-			out[out.length - 1] = movedTo;
+		} else if (deleted !== null) removed.push(deleted);
+		else if (movedTo !== null) {
+			// The file now lives at the new path and the old one is gone: the new
+			// path is validated, and both count for the index.
+			removed.push(written[written.length - 1] as string);
+			written[written.length - 1] = movedTo;
 		}
 	}
-	return out;
+	return { written, removed };
+}
+
+/** The payload's paths, absolute and normalised, once each; null when it names none. */
+function payloadPaths(input: unknown, projectDir: string): { written: string[]; removed: string[] } | null {
+	if (!input || typeof input !== "object") return null;
+	const payload = input as { tool_name?: unknown; tool_input?: unknown; cwd?: unknown };
+	const toolInput = payload.tool_input;
+	if (!toolInput || typeof toolInput !== "object") return null;
+	const fields = toolInput as { file_path?: unknown; command?: unknown };
+
+	if (typeof fields.file_path === "string" && fields.file_path !== "") return { written: [fields.file_path], removed: [] };
+	if (payload.tool_name !== "apply_patch" || typeof fields.command !== "string") return null;
+
+	// resolve() keeps an absolute path absolute and normalises it, so one file
+	// spelled two ways is still one target.
+	const base = typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : projectDir;
+	const absolute = (paths: string[]) => [...new Set(paths.map((p) => resolve(base, p)))];
+	const { written, removed } = patchPaths(fields.command);
+	return { written: absolute(written), removed: absolute(removed) };
 }
 
 /**
- * Every file the payload wrote, absolute and once each. Empty when the payload
- * names none, so the caller has nothing to validate.
+ * Every file the payload left to validate, absolute and once each. A
+ * `file_path` is returned as given, exactly as validate-write read it before
+ * (#354). Empty when the payload names none.
  */
 export function writeTargets(input: unknown, projectDir: string): string[] {
-	if (!input || typeof input !== "object") return [];
-	const payload = input as { tool_name?: unknown; tool_input?: unknown; cwd?: unknown };
-	const toolInput = payload.tool_input;
-	if (!toolInput || typeof toolInput !== "object") return [];
-	const fields = toolInput as { file_path?: unknown; command?: unknown };
+	return payloadPaths(input, projectDir)?.written ?? [];
+}
 
-	if (typeof fields.file_path === "string" && fields.file_path !== "") return [fields.file_path];
-	if (payload.tool_name !== "apply_patch" || typeof fields.command !== "string") return [];
-
-	const base = typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : projectDir;
-	const seen = new Set<string>();
-	for (const p of patchTargets(fields.command)) seen.add(isAbsolute(p) ? p : resolve(base, p));
-	return [...seen];
+/**
+ * Every file whose change the search index should see: what was written and
+ * what was removed (a deleted note, a moved note's old path), once each. The
+ * index would otherwise keep serving a note that is gone.
+ */
+export function refreshTargets(input: unknown, projectDir: string): string[] {
+	const paths = payloadPaths(input, projectDir);
+	return paths === null ? [] : [...new Set([...paths.removed, ...paths.written])];
 }

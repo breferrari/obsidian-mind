@@ -2,7 +2,9 @@
 /**
  * PostToolUse hook — validate vault notes after Write/Edit operations.
  *
- * Reads the hook JSON payload from stdin, inspects the tool_input.file_path,
+ * Reads the hook JSON payload from stdin and inspects each file it wrote: the
+ * tool_input.file_path (Claude Code, Gemini), or every file a Codex
+ * apply_patch adds, updates or moves (lib/write-targets.ts, #354). It
  * skips files outside the vault-note scope (dotfiles, templates, root docs,
  * translated READMEs, thinking drafts), and emits a hookSpecificOutput with
  * vault hygiene warnings when frontmatter or wikilinks are missing.
@@ -36,7 +38,7 @@ import {
 	triggerDebouncedRefresh,
 } from "./lib/qmd-refresh.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
-import { writeTargets } from "./lib/write-targets.ts";
+import { refreshTargets, writeTargets } from "./lib/write-targets.ts";
 
 type HookInput = {
 	readonly hook_event_name?: unknown;
@@ -55,9 +57,11 @@ const vaultRoot = resolveProjectDir(process.cwd())
 	.replace(/\/+$/, "");
 
 // One file for Claude Code and Gemini (file_path); every file a Codex
-// apply_patch adds, updates or moves, whose payload names none (#354).
+// apply_patch adds, updates or moves, whose payload names none (#354). The
+// index also sees what a patch deleted or moved away.
 const targets = writeTargets(input, vaultRoot);
-if (targets.length === 0) {
+const refreshed = refreshTargets(input, vaultRoot);
+if (refreshed.length === 0) {
 	debug("validate: no file_path and no patch targets");
 	process.exit(0);
 }
@@ -72,7 +76,7 @@ const SENTINEL_PATH =
 	process.env["QMD_REFRESH_SENTINEL"] ??
 	join(SCRIPT_DIR, ".qmd-refresh-sentinel");
 const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
-if (targets.some(shouldRefreshForPath)) {
+if (refreshed.some(shouldRefreshForPath)) {
 	triggerDebouncedRefresh({
 		sentinelPath: SENTINEL_PATH,
 		workerPath: WORKER_PATH,
@@ -239,15 +243,25 @@ function checkFile(filePath: string): FileFindings {
 }
 
 // One envelope for the call, however many files it wrote: each file's
-// findings in patch order. A single write reads exactly as before.
-const findings = targets.map(checkFile);
-const blocks = findings.flatMap((f) => f.blocks);
+// findings in patch order, a file that throws costing only its own. A finding
+// several files share (the cluster they all join) is said once. A single
+// write reads exactly as before.
+const findings = targets.map((t): FileFindings => {
+	try {
+		return checkFile(t);
+	} catch (err) {
+		debug(`validate: ${t} — check failed: ${(err as Error)?.message ?? err}`);
+		return { blocks: [], policyResults: [] };
+	}
+});
+const blocks = [...new Set(findings.flatMap((f) => f.blocks))];
 if (blocks.length > 0) {
 	const eventName =
 		typeof input.hook_event_name === "string"
 			? input.hook_event_name
 			: "PostToolUse";
-	writeHookOutput(eventName, blocks.join("\n\n"), findings.flatMap((f) => f.policyResults));
+	const policies = new Map(findings.flatMap((f) => f.policyResults).map((p) => [JSON.stringify(p), p] as const));
+	writeHookOutput(eventName, blocks.join("\n\n"), [...policies.values()]);
 }
 
 process.exit(0);

@@ -376,3 +376,41 @@ describe("validate-write — Codex apply_patch, whose payload names no file_path
 		}
 	});
 });
+
+describe("validate-write — apply_patch review follow-ups (#354)", () => {
+	const applyPatch = (patch: string, env: Record<string, string> = {}) =>
+		spawnHook(
+			SCRIPT,
+			{ hook_event_name: "PostToolUse", tool_name: "apply_patch", cwd: TMP_DIR, tool_input: { command: patch } },
+			{ CLAUDE_PROJECT_DIR: TMP_DIR, ...env },
+		);
+
+	test("a patch that only deletes a note still refreshes the index, which would otherwise serve it", () => {
+		const sentinel = join(TMP_DIR, "delete.sentinel");
+		const { stdout } = applyPatch("*** Begin Patch\n*** Delete File: gone.md\n*** End Patch\n", { QMD_REFRESH_SENTINEL: sentinel });
+		assert.equal(stdout, "", "nothing to validate");
+		assert.ok(existsSync(sentinel), "the refresh touched its sentinel");
+	});
+
+	test("three new notes joining one cluster give its hint once, not once per note", () => {
+		const active = join(TMP_DIR, "work", "active");
+		mkdirSync(active, { recursive: true });
+		const fm = "---\ndate: 2026-10-13\ndescription: d\ntags: [work-note]\nquarter: Q4-2026\n---\n\nSee [[Home]].\n" + "x".repeat(300);
+		// A cluster needs a root of at least 4 notes, its token in no more than
+		// half of them (lib/active-hygiene.ts): 3 Pelican notes beside 3 others.
+		for (const n of ["Pelican Plan.md", "Pelican Notes.md", "Pelican Risks.md", "Zebra Budget.md", "Otter Hiring.md", "Falcon Launch.md"]) {
+			writeFileSync(join(active, n), fm);
+		}
+		const { stdout } = applyPatch(
+			"*** Begin Patch\n*** Add File: work/active/Pelican Plan.md\n+x\n*** Add File: work/active/Pelican Notes.md\n+x\n*** Add File: work/active/Pelican Risks.md\n+x\n*** End Patch\n",
+		);
+		const out = JSON.parse(stdout) as { hookSpecificOutput: { additionalContext: string; policyResults?: Array<{ policy_id: string }> } };
+		assert.equal(out.hookSpecificOutput.additionalContext.split("loose sibling(s)").length - 1, 1, out.hookSpecificOutput.additionalContext);
+		// The machine-readable results stay one per file: each names its own path.
+		const clusterPaths = (out.hookSpecificOutput.policyResults as Array<{ policy_id: string; path: string }> | undefined)
+			?.filter((p) => p.policy_id === "topic-cluster")
+			.map((p) => p.path)
+			.sort();
+		assert.deepEqual(clusterPaths, ["work/active/Pelican Notes.md", "work/active/Pelican Plan.md", "work/active/Pelican Risks.md"]);
+	});
+});

@@ -8,7 +8,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 
-import { writeTargets } from "../lib/write-targets.ts";
+import { refreshTargets, writeTargets } from "../lib/write-targets.ts";
 
 const PROJECT = resolve("/vault");
 const CWD = resolve("/vault/work");
@@ -87,5 +87,24 @@ describe("writeTargets — Codex apply_patch (#354)", () => {
 	test("a file line inside a hunk's body is content, not a target", () => {
 		const input = applyPatch(patch("*** Add File: a.md", "+*** Add File: not-a-target.md"));
 		assert.deepEqual(writeTargets(input, PROJECT), [join(CWD, "a.md")]);
+	});
+});
+
+describe("writeTargets / refreshTargets — review follow-ups (#354)", () => {
+	test("an absolute path is normalised, so it and its relative spelling are one target", () => {
+		// Concatenated, not joined: join() would normalise the ".." away before the code under test sees it.
+		const unnormalised = `${CWD}/../work/a.md`;
+		const input = applyPatch(patch(`*** Update File: ${unnormalised}`, "@@", "+1", "*** Update File: a.md", "@@", "+2"));
+		assert.deepEqual(writeTargets(input, PROJECT), [join(CWD, "a.md")]);
+	});
+
+	test("the refresh sees what a patch removed as well as what it wrote", () => {
+		const input = applyPatch(patch("*** Delete File: gone.md", "*** Update File: old.md", "*** Move to: new.txt", "@@", "+x"));
+		assert.deepEqual(writeTargets(input, PROJECT), [join(CWD, "new.txt")]);
+		assert.deepEqual(refreshTargets(input, PROJECT), [join(CWD, "gone.md"), join(CWD, "old.md"), join(CWD, "new.txt")]);
+	});
+
+	test("for a file_path payload, the refresh sees the one file", () => {
+		assert.deepEqual(refreshTargets({ tool_input: { file_path: join(PROJECT, "a.md") } }, PROJECT), [join(PROJECT, "a.md")]);
 	});
 });
