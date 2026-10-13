@@ -17,7 +17,7 @@
 import { spawn } from "node:child_process";
 import { rmSync, statSync, writeFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
-import { buildQmdCommand, resolveQmdEntry } from "./qmd.ts";
+import { buildQmdCommand, REFRESH_SWITCH, refreshDisabled, resolveQmdEntry } from "./qmd.ts";
 import { debug } from "./hook-io.ts";
 import { qmdArgsWithIndex } from "./session-start.ts";
 
@@ -276,22 +276,9 @@ function touchSentinel(sentinelPath: string): void {
 	}
 }
 
-/**
- * The switch that stops the detached qmd refresh: this trigger's worker, and
- * session-start's update. Every test process carries it, so a suite leaves
- * no qmd work behind (#337); wiki-mind's vendored copy uses the same name
- * (wiki-mind #93).
- */
-export const REFRESH_SWITCH = "VAULT_QMD_REFRESH";
-
-/**
- * Whether the detached qmd refresh is switched off for this process: exactly
- * "off". wiki-mind's copy reads the same variable the same way, and one
- * variable must mean the same to every vault's hooks.
- */
-export function refreshDisabled(): boolean {
-	return process.env[REFRESH_SWITCH] === "off";
-}
+// The switch lives in lib/qmd.ts beside the detached qmd spawn it guards
+// (#347); re-exported here, where #338 defined it, so its importers hold.
+export { REFRESH_SWITCH, refreshDisabled } from "./qmd.ts";
 
 /**
  * Spawn the detached worker. `stdio: 'ignore'` + `.unref()` + `detached`

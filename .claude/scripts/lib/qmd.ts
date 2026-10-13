@@ -20,10 +20,11 @@
  * a test failure on the CI matrix rather than a silent platform bug.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { isAbsolute, join } from "node:path";
+import { debug } from "./hook-io.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -151,6 +152,51 @@ export function buildQmdCommand(
 				args: [],
 				shell: true,
 			};
+}
+
+/**
+ * The switch that stops detached qmd work: the write-time refresh worker,
+ * session-start's update, and the MCP server's embed. Every test process
+ * carries it, so a suite leaves no qmd work behind (#337, #347); wiki-mind's
+ * vendored copy uses the same name (wiki-mind #93).
+ */
+export const REFRESH_SWITCH = "VAULT_QMD_REFRESH";
+
+/**
+ * Whether detached qmd work is switched off for this process: exactly "off".
+ * wiki-mind's copy reads the same variable the same way, and one variable
+ * must mean the same to every vault's hooks.
+ */
+export function refreshDisabled(): boolean {
+	return process.env[REFRESH_SWITCH] === "off";
+}
+
+/**
+ * Spawn `command` detached, unless the switch is off: then log under `label`
+ * and spawn nothing. The one place a detached qmd process starts, so no
+ * caller can forget the switch. Its stdio is ignored, it gets no console
+ * window on Windows, and a spawn error (qmd missing) is logged, never thrown
+ * as an unhandled `error` event. Returns whether it spawned.
+ */
+export function spawnDetachedQmd(
+	command: { readonly cmd: string; readonly args: readonly string[]; readonly shell: boolean },
+	label: string,
+	cwd?: string,
+): boolean {
+	if (refreshDisabled()) {
+		debug(`${label}: qmd refresh off (${REFRESH_SWITCH}=off); nothing spawned`);
+		return false;
+	}
+	const child = spawn(command.cmd, [...command.args], {
+		stdio: "ignore",
+		shell: command.shell,
+		detached: true,
+		windowsHide: true,
+		...(cwd !== undefined ? { cwd } : {}),
+	});
+	child.on("error", (err) => debug(`${label}: detached qmd failed to start: ${err.message}`));
+	child.unref();
+	return true;
 }
 
 /**

@@ -25,7 +25,7 @@ import {
 	statSync,
 	type Dirent,
 } from "node:fs";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -77,6 +77,7 @@ import {
 	buildQmdCommand,
 	qmdVersionAtLeast,
 	resolveQmdEntry,
+	spawnDetachedQmd,
 } from "./lib/qmd.ts";
 import {
 	formatActiveHygiene,
@@ -86,7 +87,6 @@ import {
 } from "./lib/active-hygiene.ts";
 
 import { debug, envelopedLimit, fitWithMeter, type OutputLimit, readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
-import { REFRESH_SWITCH, refreshDisabled } from "./lib/qmd-refresh.ts";
 import { readOmMod } from "./lib/om-mod.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
@@ -279,21 +279,7 @@ const qmdCwd = bootstrapNeeded ? cwd : tmpdir();
 // update too, the same as the write-time refresh worker (#337): a test's
 // session-start would otherwise leave a qmd update or bootstrap running
 // against its temp vault after the run.
-if (refreshDisabled()) {
-	debug(`session-start: qmd refresh off (${REFRESH_SWITCH}=off); nothing spawned`);
-} else {
-	const qmdChild = spawn(qmdUpdate.cmd, qmdUpdate.args as string[], {
-		stdio: "ignore",
-		shell: qmdUpdate.shell,
-		detached: true,
-		windowsHide: true,
-		cwd: qmdCwd,
-	});
-	// Silence the spawn-error event so a missing qmd doesn't crash the hook;
-	// qmd is optional and the hook already degrades when it's not installed.
-	qmdChild.on("error", () => undefined);
-	qmdChild.unref();
-}
+spawnDetachedQmd(qmdUpdate, "session-start", qmdCwd);
 
 type CmdResult =
 	| { readonly kind: "ok"; readonly stdout: string }

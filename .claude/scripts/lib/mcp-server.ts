@@ -13,7 +13,7 @@
  */
 
 import { readFileSync, realpathSync } from "node:fs";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 import type { VaultContext } from "./mcp-context.ts";
 import { INSTRUCTIONS, PROMPTS } from "./mcp-context.ts";
@@ -45,9 +45,7 @@ import { validateMemory, writeMemory, renderMemory, resolveLinks, neutralizeWiki
 import { findSimilar } from "./memory-similarity.ts";
 import { markSuperseded, resolveSupersedes } from "./memory-supersede.ts";
 import { health } from "./memory-discover.ts";
-import { resolveQmdEntry, buildQmdCommand } from "./qmd.ts";
-import { debug } from "./hook-io.ts";
-import { REFRESH_SWITCH, refreshDisabled } from "./qmd-refresh.ts";
+import { resolveQmdEntry, buildQmdCommand, spawnDetachedQmd } from "./qmd.ts";
 import {
 	resolveReasonConfig,
 	reasonUsage,
@@ -163,16 +161,10 @@ export function reindexSync(
 				return false;
 			}
 		});
-	// VAULT_QMD_REFRESH=off (every test process carries it) stops the detached
-	// embed and nothing else, as it stops the detached refresh (#337, #347).
+	// spawnDetachedQmd honours VAULT_QMD_REFRESH=off, which every test process
+	// carries: the embed is skipped, the update above still runs (#347).
 	const spawnEmbed =
-		deps.spawnEmbed ??
-		(refreshDisabled()
-			? () => debug(`om-mcp: refresh off (${REFRESH_SWITCH}=off); no embed spawned`)
-			: (args: readonly string[]) => {
-					const { cmd, args: argv, shell } = buildQmdCommand(resolveQmdEntry(), args);
-					spawn(cmd, [...argv], { shell, detached: true, stdio: "ignore" }).unref();
-				});
+		deps.spawnEmbed ?? ((args: readonly string[]) => void spawnDetachedQmd(buildQmdCommand(resolveQmdEntry(), args), "om-mcp"));
 
 	// `update` indexes the text and is what makes the note retrievable at all, so
 	// it is synchronous: reporting "recorded" before that is a lie the caller
