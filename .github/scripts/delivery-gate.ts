@@ -299,6 +299,28 @@ export function subagentReport(handedBack: string): string {
 }
 
 /** Split a stream-json transcript into turns, one per `result` event. Events before the first result belong to the first turn. */
+/**
+ * The models a session's stream says ran: the `model` of each `system`/`init`
+ * event, once each, in order. Read so the gate can say what actually answered:
+ * a bare alias is not honoured for every model, and a mismatch would judge
+ * delivery on one model while the run is labelled with another (#346).
+ */
+export function modelsRan(streamJson: string): string[] {
+	const seen: string[] = [];
+	for (const line of streamJson.split("\n")) {
+		let event: { type?: string; subtype?: string; model?: unknown };
+		try {
+			event = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (event.type === "system" && event.subtype === "init" && typeof event.model === "string" && !seen.includes(event.model)) {
+			seen.push(event.model);
+		}
+	}
+	return seen;
+}
+
 export function parseTurns(streamJson: string): Turn[] {
 	const turns: Turn[] = [];
 	const fresh = () => ({
