@@ -788,7 +788,7 @@ function geminiContextFiles(root: string): string[] | "broken" {
  * end. Where the two differ, on an unterminated string, JSON.parse fails
  * either way.
  */
-function stripJsonComments(text: string): string {
+export function stripJsonComments(text: string): string {
 	return text.replace(/"(?:\\.|[^"\\])*"|\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/g, (m) => (m.startsWith('"') ? m : m.replace(/\S/g, " ")));
 }
 
