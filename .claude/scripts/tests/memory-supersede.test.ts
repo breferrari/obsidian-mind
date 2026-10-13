@@ -142,6 +142,11 @@ describe("resolveSupersedes", () => {
 		assert.deepEqual(resolveSupersedes(["Ghost"], existing).unmatched, ["Ghost"]);
 	});
 
+	test("a claim resolves to every memory carrying the title, not the first (#364)", () => {
+		const shared = [...existing, { rel: "c.md", title: "the old lesson" }];
+		assert.deepEqual(resolveSupersedes(["The Old Lesson"], shared).matched.map((m) => m.rel), ["a.md", "c.md"]);
+	});
+
 	test("empty and malformed claims are ignored safely", () => {
 		assert.deepEqual(resolveSupersedes(null, existing).matched, []);
 		assert.deepEqual(resolveSupersedes(["", "  "], existing).matched, []);

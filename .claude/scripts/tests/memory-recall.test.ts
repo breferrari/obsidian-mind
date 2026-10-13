@@ -543,11 +543,11 @@ describe("a superseded memory reaches only where its successor reaches", () => {
  */
 describe("a correction that keeps the corrected memory's title (#364)", () => {
 	const TITLE = "tokens expire after one hour";
-	const dated = (fm: Record<string, unknown>, title: string = TITLE, slug: string = String(fm["date"])): MemoryEntry => ({
-		rel: `memories/${slug} ${title}.md`,
+	const dated = (fm: Record<string, unknown>, slug: string = String(fm["date"])): MemoryEntry => ({
+		rel: `memories/${slug} ${TITLE}.md`,
 		full: `/nowhere/${slug}.md`,
 		facets: facetsOf({ source: MEMORY_SOURCE, ...fm }),
-		title,
+		title: TITLE,
 		body: "b",
 	});
 	const OLD = dated({ scope: "project", projects: ["atlas", "beta"], date: "2026-06-01", superseded_by: [TITLE] });
@@ -585,7 +585,7 @@ describe("a correction that keeps the corrected memory's title (#364)", () => {
 	// a replacement and keep each other served; the write's timestamp orders them.
 	test("on the same day, the write's session time decides which copy is newer", () => {
 		const day = (hour: string, fm: Record<string, unknown>, slug: string) =>
-			dated({ date: "2026-07-26", session: `2026-07-26T${hour}:00:00Z`, ...fm }, TITLE, slug);
+			dated({ date: "2026-07-26", session: `2026-07-26T${hour}:00:00Z`, ...fm }, slug);
 		const a = day("09", { scope: "general", superseded_by: [TITLE] }, "a");
 		const b = day("12", { scope: "general", superseded_by: [TITLE] }, "b");
 		const c = day("17", { scope: "project", projects: ["atlas"] }, "c");
@@ -593,13 +593,8 @@ describe("a correction that keeps the corrected memory's title (#364)", () => {
 		assert.deepEqual(recallFrom([c, b, a], beta).map((m) => m.rel), []);
 	});
 
-	test("the title matches whatever its case and surrounding space", () => {
-		const old = dated({ scope: "general", date: "2026-06-01", superseded_by: ["  Tokens Expire After One Hour "] });
-		assert.deepEqual(recallFrom([old, NEW], beta).map((m) => m.rel), []);
-	});
-
 	test("an undated side is never ruled out as older, so the rule still applies", () => {
-		const undated = dated({ scope: "project", projects: ["atlas"] }, TITLE, "undated");
+		const undated = dated({ scope: "project", projects: ["atlas"] }, "undated");
 		assert.deepEqual(recallFrom([OLD, undated], beta).map((m) => m.rel), []);
 	});
 });

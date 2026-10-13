@@ -20,7 +20,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createHandlers } from "../lib/mcp-server.ts";
-import { resolveSupersedes } from "../lib/memory-supersede.ts";
 import { recall } from "../lib/memory-recall.ts";
 
 import { rmTemp } from "./_helpers.ts";
@@ -57,17 +56,6 @@ function harness(vaultRoot: string): { remember: (at: Date, args: Record<string,
 }
 
 const recorded = (reply: string): string => /^Recorded: (.+)$/m.exec(reply)?.[1] ?? "";
-
-describe("resolveSupersedes under a shared title", () => {
-	test("a claim resolves to every memory carrying the title, not the first", () => {
-		const existing = [
-			{ rel: "a.md", title: TITLE },
-			{ rel: "b.md", title: "Something Else" },
-			{ rel: "c.md", title: "Tokens Expire After One Hour" },
-		];
-		assert.deepEqual(resolveSupersedes([TITLE], existing).matched.map((m) => m.rel), ["a.md", "c.md"]);
-	});
-});
 
 describe("remember marks every memory a shared title names", () => {
 	test("a third same-title correction retires the live wrong one, and the chain reaches only where its end does", async () => {
