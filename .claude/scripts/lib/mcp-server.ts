@@ -33,7 +33,7 @@ import { callerPlatforms, digestsFrom, resolvableNames, resolvableTargets } from
 import { captureNote, describeToolMarkup, toolMarkupRefusal } from "./mcp-capture.ts";
 import { semanticMemoryOrder } from "./mcp-memory-bridge.ts";
 import { TOOLS } from "./mcp-tools.ts";
-import { isVisibleTo, recallFrom, readMemories, type MemoryEntry } from "./memory-recall.ts";
+import { recallFrom, readMemories, servedAfterSupersession, type MemoryEntry } from "./memory-recall.ts";
 import {
 	resolvePromotedRef,
 	auditPromotions,
@@ -43,7 +43,7 @@ import {
 import { createMemoryIndex } from "./memory-index.ts";
 import { validateMemory, writeMemory, renderMemory, resolveLinks, neutralizeWikilinks } from "./memory-write.ts";
 import { findSimilar } from "./memory-similarity.ts";
-import { markSuperseded, resolveSupersedes } from "./memory-supersede.ts";
+import { isServerOwned, markSuperseded, resolveSupersedes } from "./memory-supersede.ts";
 import { health } from "./memory-discover.ts";
 import { resolveQmdEntry, buildQmdCommand, spawnDetachedQmd } from "./qmd.ts";
 import {
@@ -543,17 +543,25 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		}
 
 		const { resolved, dropped } = resolveLinks(args.links, resolvable);
-		// Only what this caller can see (#364). A title can name a memory scoped
-		// to another project; marking it would withhold it from that project's own
-		// callers, whose only replacement is out of their reach, and naming its
-		// file here would show this caller a memory recall never would. Such a
-		// match is counted, not named.
-		const everyMatch = resolveSupersedes(args.supersedes, digests);
-		const supers = { ...everyMatch, matched: everyMatch.matched.filter((d) => isVisibleTo(d, who)) };
-		const unseen = everyMatch.matched.length - supers.matched.length;
-		const unseenNote = unseen
-			? [`${unseen} memor${unseen === 1 ? "y" : "ies"} with that title ${unseen === 1 ? "is" : "are"} outside your reach and left alone.`]
-			: [];
+		// Only what recall serves this caller (#364). A title can name a memory
+		// scoped to another project, or one recall already withholds; marking it
+		// would withhold it from its own project's callers, whose only replacement
+		// is out of their reach, and naming its file here would show this caller a
+		// memory recall never would. Nor is it counted: a count would say whether
+		// another project holds that title, so a claim with no match in reach is
+		// simply not matched, which is the truth from where the caller stands.
+		const served = servedAfterSupersession(
+			digests.map((d) => ({ rel: d.rel, full: d.full, title: d.title, body: d.body, facets: d })),
+			who,
+		);
+		const supers = resolveSupersedes(
+			args.supersedes,
+			digests.filter((d) => served.has(d.rel)),
+		);
+		// A match the server may not modify (a hand-filed memory) is shown apart,
+		// so a preview never promises a mark the write will refuse.
+		const markable = supers.matched.filter((d) => isServerOwned(d.source));
+		const unmarkable = supers.matched.filter((d) => !isServerOwned(d.source));
 		const named = (m: { title: string; rel: string }) => `${m.title} (${m.rel})`;
 
 		if (args.dry_run === true) {
@@ -563,8 +571,8 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				renderMemory(v.value, resolved),
 				...(dropped.length ? ["", `Links dropped as unresolvable: ${dropped.join(", ")}`] : []),
 				...(unlinked.length ? [`Dangling wikilinks were unlinked: ${unlinked.join(", ")}`] : []),
-				...(supers.matched.length ? [`Would supersede: ${supers.matched.map(named).join("; ")}`] : []),
-				...unseenNote,
+				...(markable.length ? [`Would supersede: ${markable.map(named).join("; ")}`] : []),
+				...(unmarkable.length ? [`Matched but would not be marked (not written by this server): ${unmarkable.map(named).join("; ")}`] : []),
 				...(supers.unmatched.length ? [`Supersedes not matched: ${supers.unmatched.join(", ")}`] : []),
 				...(v.warnings.length ? ["", "Warnings:", ...v.warnings.map((w) => `- ${w}`)] : []),
 			].join("\n");
@@ -588,18 +596,23 @@ export function createHandlers(deps: ServerDeps): Handlers {
 				retired.push(named(m));
 				// Rewritten in place, and the new frontmatter is what makes it sink.
 				memoryIndex.invalidate(m.rel);
-			} else notMarked.push(`${named(m)}: ${r.reason}`);
+			} else notMarked.push(`${m.title}: ${r.reason}`);
 		}
 
 		const indexed = reindex();
-		audit("remember", { rel: written.rel, scope: v.value.scope, projects: v.value.projects, indexed });
+		audit("remember", {
+			rel: written.rel,
+			scope: v.value.scope,
+			projects: v.value.projects,
+			indexed,
+			...(notMarked.length ? { not_marked: notMarked.length } : {}),
+		});
 
 		return [
 			`Recorded: ${written.rel}`,
 			`Scope: ${v.value.scope}${v.value.projects.length ? ` → ${v.value.projects.join(", ")}` : ""}`,
 			...(retired.length ? [`Superseded: ${retired.join("; ")} (kept and back-linked)`] : []),
 			...(notMarked.length ? [`Matched but not marked: ${notMarked.join("; ")}`] : []),
-			...unseenNote,
 			...(supers.unmatched.length ? [`Supersedes NOT matched: ${supers.unmatched.join(", ")}`] : []),
 			...(dropped.length ? [`Links dropped as unresolvable: ${dropped.join(", ")}`] : []),
 			...(unlinked.length ? [`Dangling wikilinks were unlinked: ${unlinked.join(", ")}`] : []),

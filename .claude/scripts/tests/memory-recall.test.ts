@@ -607,6 +607,14 @@ describe("a correction that keeps the corrected memory's title (#364)", () => {
 		assert.deepEqual(recallFrom([old, fix], beta).map((m) => m.rel), []);
 	});
 
+	// A hand-filed memory can carry a session with an offset; compared as text it
+	// would sort by its local clock, so the timestamps are parsed.
+	test("a session written with a time-zone offset is ordered by the instant it names", () => {
+		const old = dated({ scope: "general", date: "2026-10-14", session: "2026-10-14T01:00:00+09:00", superseded_by: [TITLE] }, "offset");
+		const fix = dated({ scope: "project", projects: ["atlas"], date: "2026-10-13", session: "2026-10-13T17:00:00.000Z" }, "utc");
+		assert.deepEqual(recallFrom([old, fix], beta).map((m) => m.rel), []);
+	});
+
 	test("explain names supersession, not scope, for the withheld old copy", () => {
 		const { withheld } = recallFrom([OLD, NEW], beta, { explain: true });
 		assert.ok(withheld.find((m) => m.rel === OLD.rel)?.why?.startsWith(SUPERSEDED_OUT_OF_REACH));

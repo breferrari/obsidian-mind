@@ -181,3 +181,8 @@ export function supersedeResolver<T extends Titled>(
 }
 
 const titleKey = (s: unknown): string => String(s ?? "").trim().toLowerCase();
+
+/** Whether a memory with this `source` is one `markSuperseded` may modify. */
+export function isServerOwned(source: unknown): boolean {
+	return source === OWNED_BY_SERVER;
+}

@@ -312,7 +312,8 @@ export function supersededOutOfReach(
  * across time zones and where a value is missing, which ranking sorts oldest.
  */
 function olderThan(a: Facets, b: Facets): boolean {
-	if (a.session && b.session) return a.session < b.session;
+	const [ta, tb] = [Date.parse(a.session ?? ""), Date.parse(b.session ?? "")];
+	if (!Number.isNaN(ta) && !Number.isNaN(tb)) return ta < tb;
 	if (!a.date || !b.date) return false;
 	return a.date < b.date;
 }

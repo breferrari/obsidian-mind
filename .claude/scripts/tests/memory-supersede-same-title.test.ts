@@ -128,7 +128,7 @@ describe("remember marks every memory a shared title names", () => {
 	// project's memory would withhold it from that project's own callers, whose
 	// only replacement is out of their reach, and naming its file would show this
 	// caller a memory recall never would.
-	test("a match the caller cannot see is left alone and counted, not named", async () => {
+	test("a match the caller cannot see is left alone, and its claim reads as not matched", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "sup-unseen-"));
 		try {
 			const { remember } = harness(dir);
@@ -138,9 +138,46 @@ describe("remember marks every memory a shared title names", () => {
 			const reply = await remember(new Date(2026, 6, 1), { scope: "general", supersedes: [TITLE] });
 
 			assert.ok(!reply.includes(theirs), "the reply does not name a memory outside the caller's reach");
-			assert.match(reply, /1 memory .*outside your reach/i);
+			assert.match(reply, /Supersedes NOT matched: tokens expire after one hour/);
+			assert.doesNotMatch(reply, /outside your reach/i, "nothing says another project holds the title");
 			const harbor = recall(dir, { project: "harbor", platforms: [] });
 			assert.deepEqual(harbor.find((m) => m.rel === theirs)?.facets.superseded_by, [], "harbor's memory is not marked");
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a dry run keeps a match the server may not modify apart from what it would mark", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "sup-dry-hand-"));
+		try {
+			const { remember } = harness(dir);
+			const handFiled = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
+			const full = join(dir, handFiled);
+			writeFileSync(full, readFileSync(full, "utf8").replace(/^source: .*$/m, "source: hand-filed"));
+			const preview = await remember(new Date(2026, 6, 1), { scope: "general", supersedes: [TITLE], dry_run: true });
+
+			assert.doesNotMatch(preview, /Would supersede/, "no mark is promised that the write would refuse");
+			assert.match(preview, /would not be marked.*tokens expire after one hour/);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a memory recall already withholds from the caller is not named or marked either", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "sup-withheld-"));
+		try {
+			const { remember } = harness(dir);
+			// Withheld from atlas: its correction is scoped to harbor, out of atlas's reach.
+			const withheld = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
+			const harborFix = recorded(await remember(new Date(2026, 5, 2), { scope: "general", title: "tokens expire after one hour (harbor)" }));
+			const fixFull = join(dir, harborFix);
+			writeFileSync(fixFull, readFileSync(fixFull, "utf8").replace(/^scope: .*$/m, "scope: project").replace(/^projects: .*$/m, 'projects: ["harbor"]'));
+			const full = join(dir, withheld);
+			writeFileSync(full, readFileSync(full, "utf8").replace(/^scope: general$/m, 'scope: general\nsuperseded_by: ["tokens expire after one hour (harbor)"]'));
+
+			const reply = await remember(new Date(2026, 6, 1), { scope: "general", supersedes: [TITLE] });
+			assert.ok(!reply.includes(withheld), "the reply does not name a memory recall withholds from the caller");
+			assert.match(reply, /Supersedes NOT matched: tokens expire after one hour/);
 		} finally {
 			rmTemp(dir);
 		}
