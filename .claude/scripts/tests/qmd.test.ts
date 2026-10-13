@@ -241,13 +241,17 @@ for (const [label, npmGlobalRoot] of [
 	describe(`${label} npmGlobalRoot`, () => {
 		const home = join(tmpdir(), "home");
 		const nodeDir = join(tmpdir(), "nodejs");
-		const files = (map: Record<string, string>) => (path: string) => map[path] ?? null;
+		const winNpm = join(nodeDir, "node_modules", "npm");
+		const posixNpm = join(nodeDir, "lib", "node_modules", "npm");
+		// npm sits beside this Node unless a test says otherwise.
+		const npmBeside = { [join(winNpm, "package.json")]: "{}", [join(posixNpm, "package.json")]: "{}" };
+		const files = (map: Record<string, string>) => (path: string) => ({ ...npmBeside, ...map })[path] ?? null;
 		const win = (env: Record<string, string> = {}, text: Record<string, string> = {}) =>
 			npmGlobalRoot({ env, platform: "win32", execPath: join(nodeDir, "node.exe"), home, readText: files(text) });
 		const posix = (env: Record<string, string> = {}, text: Record<string, string> = {}) =>
 			npmGlobalRoot({ env, platform: "linux", execPath: join(nodeDir, "bin", "node"), home, readText: files(text) });
-		const winBuiltin = join(nodeDir, "node_modules", "npm", "npmrc");
-		const posixBuiltin = join(nodeDir, "lib", "node_modules", "npm", "npmrc");
+		const winBuiltin = join(winNpm, "npmrc");
+		const posixBuiltin = join(posixNpm, "npmrc");
 		const userNpmrc = join(home, ".npmrc");
 
 		test("5: nothing configured is Node's own prefix, laid out per platform", () => {
@@ -265,8 +269,20 @@ for (const [label, npmGlobalRoot] of [
 
 		test("1: an env prefix that isn't absolute, or holds ${, asks npm", () => {
 			assert.equal(posix({ npm_config_prefix: "relative/dir" }), null);
-			assert.equal(posix({ npm_config_prefix: "" }), null);
 			assert.equal(posix({ npm_config_prefix: join(tmpdir(), "${NAME}") }), null);
+		});
+
+		test("1: env values are read as npm reads them: trimmed, empty skipped, the last winning", () => {
+			const a = join(tmpdir(), "a");
+			const b = join(tmpdir(), "b");
+			assert.equal(posix({ npm_config_prefix: `${a} ` }), join(a, "lib", "node_modules"));
+			assert.equal(posix({ npm_config_prefix: "" }), join(nodeDir, "lib", "node_modules"), "empty is unset");
+			assert.equal(posix({ npm_config_prefix: a, NPM_CONFIG_PREFIX: b }), join(b, "lib", "node_modules"));
+		});
+
+		test("1: on a Windows host, a drive-relative prefix asks npm", { skip: process.platform !== "win32" }, () => {
+			assert.equal(win({ npm_config_prefix: "\\npm" }), null);
+			assert.equal(win({ npm_config_prefix: "/npm" }), null);
 		});
 
 		test("2: PREFIX, DESTDIR, npm_config_userconfig or npm_config_globalconfig set asks npm", () => {
@@ -283,9 +299,15 @@ for (const [label, npmGlobalRoot] of [
 			assert.equal(win({}, { [join(nodeDir, "etc", "npmrc")]: "prefix=C:\\npm" }), null);
 		});
 
-		test("3: an npmrc with only auth or registry lines doesn't count", () => {
-			const auth = { [userNpmrc]: "registry=https://registry.example.com/\n//registry.example.com/:_authToken=abc\n" };
+		test("3: an npmrc with only auth, registry or save-prefix lines doesn't count", () => {
+			const auth = {
+				[userNpmrc]: "registry=https://registry.example.com/\n//registry.example.com/:_authToken=abc\nsave-prefix=~\n; prefix=/commented\n",
+			};
 			assert.equal(posix({}, auth), join(nodeDir, "lib", "node_modules"));
+		});
+
+		test("3: a key npm would build from ${...} asks npm", () => {
+			assert.equal(posix({}, { [userNpmrc]: "${NPMKEY}=/opt/g" }), null);
 		});
 
 		test("3: HOME is read before the OS home", () => {
@@ -304,11 +326,22 @@ for (const [label, npmGlobalRoot] of [
 			);
 		});
 
-		test("4: any other builtin prefix line asks npm", () => {
+		test("4: anything else in the builtin npmrc asks npm", () => {
 			const appdata = join(tmpdir(), "Roaming");
 			assert.equal(win({ APPDATA: appdata }, { [winBuiltin]: "prefix=C:\\npm\\prefix" }), null);
 			assert.equal(win({}, { [winBuiltin]: "prefix=${APPDATA}\\npm" }), null, "no APPDATA to expand");
+			assert.equal(
+				win({ APPDATA: appdata }, { [winBuiltin]: "prefix=${APPDATA}\\npm\nuserconfig=D:\\cfg\\npmrc" }),
+				null,
+				"another setting beside the installer's line",
+			);
 			assert.equal(posix({}, { [posixBuiltin]: "prefix=/opt/homebrew" }), null);
+		});
+
+		test("4 and 5: with no npm beside this Node (Homebrew, Debian), ask npm", () => {
+			const noNpm = () => null;
+			assert.equal(npmGlobalRoot({ env: {}, platform: "linux", execPath: join(nodeDir, "bin", "node"), home, readText: noNpm }), null);
+			assert.equal(npmGlobalRoot({ env: {}, platform: "win32", execPath: join(nodeDir, "node.exe"), home, readText: noNpm }), null);
 		});
 
 		test("4: the global npmrc under %APPDATA%\\npm still counts", () => {

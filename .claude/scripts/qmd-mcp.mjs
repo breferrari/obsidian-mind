@@ -148,12 +148,17 @@ function readTextOrNull(path) {
  * 2. PREFIX, DESTDIR, npm_config_userconfig or npm_config_globalconfig set →
  *    ask npm.
  * 3. ~/.npmrc (HOME before the OS home) or `<node prefix>/etc/npmrc` has a
- *    line mentioning `prefix` or `globalconfig` anywhere, sections included →
- *    ask npm. An npmrc with only auth or registry lines doesn't count.
+ *    line setting `prefix` or `globalconfig`, sections included, or a key
+ *    built from `${…}` → ask npm. An npmrc with only auth or registry lines
+ *    (or `save-prefix`) doesn't count.
  * 4. The builtin npmrc: on Windows, the installer's exact
- *    `prefix=${APPDATA}\npm` → %APPDATA%\npm. Any other prefix line there →
- *    ask npm.
+ *    `prefix=${APPDATA}\npm`, alone in the file → %APPDATA%\npm. Anything
+ *    else there → ask npm.
  * 5. Otherwise Node's own prefix.
+ *
+ * 4 and 5 hold only when npm sits beside this Node; where it doesn't
+ * (Homebrew, Debian's packaged npm), ask npm. Env values are read as npm
+ * reads them: trimmed, empty ones skipped, the last of several winning.
  *
  * Packages sit in `<prefix>\node_modules` on Windows and
  * `<prefix>/lib/node_modules` elsewhere.
@@ -164,18 +169,29 @@ export function npmGlobalRoot(at = {}) {
 	const execPath = at.execPath ?? process.execPath;
 	const home = at.home ?? (vars["HOME"] || homedir());
 	const readText = at.readText ?? readTextOrNull;
+	// As npm's loadEnv reads it: any case, trimmed, empty skipped, the last one winning.
 	const npmConfig = (key) => {
 		const want = `npm_config_${key}`;
-		for (const [name, value] of Object.entries(vars)) if (name.toLowerCase() === want && value !== undefined) return value;
-		return undefined;
+		let found;
+		for (const [name, value] of Object.entries(vars)) {
+			if (name.toLowerCase() === want && value?.trim()) found = value.trim();
+		}
+		return found;
 	};
+	const lines = (file) =>
+		(readText(file) ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !/^[;#]/.test(l));
+	// A line setting prefix or globalconfig, sections included, or one whose
+	// key npm would expand from the environment and so can't be read here.
 	const settingLines = (file) =>
-		(readText(file) ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => /prefix|globalconfig/i.test(l));
+		lines(file).filter((l) => /^(prefix|globalconfig)\s*=/i.test(l) || /\$\{[^=]*=/.test(l));
+	// Absolute in npm's sense: on a Windows host, `\npm` is drive-relative.
+	const exactPath = (value) =>
+		isAbsolute(value) && !value.includes("${") && (process.platform !== "win32" || !/^[\\/](?![\\/])/.test(value));
 	const layout = (prefix) => (win ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules"));
 
 	// 1.
 	const fromEnv = npmConfig("prefix");
-	if (fromEnv !== undefined) return isAbsolute(fromEnv) && !fromEnv.includes("${") ? layout(fromEnv) : null;
+	if (fromEnv !== undefined) return exactPath(fromEnv) ? layout(fromEnv) : null;
 
 	// 2.
 	if (vars["PREFIX"] || vars["DESTDIR"] || npmConfig("userconfig") !== undefined || npmConfig("globalconfig") !== undefined) {
@@ -188,11 +204,16 @@ export function npmGlobalRoot(at = {}) {
 		return null;
 	}
 
+	// 4 and 5 hold only for the npm that sits beside this Node; Homebrew and
+	// Debian keep npm (and its builtin npmrc) elsewhere, so ask npm there.
+	const npmDir = join(win ? nodePrefix : join(nodePrefix, "lib"), "node_modules", "npm");
+	if (readText(join(npmDir, "package.json")) === null) return null;
+
 	// 4.
-	const builtin = settingLines(join(win ? nodePrefix : join(nodePrefix, "lib"), "node_modules", "npm", "npmrc"));
+	const builtin = lines(join(npmDir, "npmrc"));
 	if (builtin.length === 0) return layout(nodePrefix); // 5.
 	const appdata = vars["APPDATA"];
-	if (!win || builtin.length !== 1 || builtin[0] !== "prefix=${APPDATA}\\npm" || !appdata || !isAbsolute(appdata)) {
+	if (!win || builtin.length !== 1 || builtin[0] !== "prefix=${APPDATA}\\npm" || !appdata || !exactPath(appdata)) {
 		return null;
 	}
 	// npm's global npmrc then lives under that prefix.

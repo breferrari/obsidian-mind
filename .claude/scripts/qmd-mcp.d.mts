@@ -22,7 +22,11 @@ export function pickQmdEntry(
 /** Does this entrypoint start? Bounded `--version` probe. */
 export function isRunnableQmdEntry(entry: string): boolean;
 
-/** Where npm keeps global packages, worked out as npm does, without spawning it; null when that can't be done exactly. */
+/**
+ * Where npm keeps global packages, without spawning npm, in the five cheap
+ * exact cases lib/qmd.ts's npmGlobalRoot lists. Null means "ask npm", not
+ * "no global npm".
+ */
 export function npmGlobalRoot(at?: import("./lib/qmd.ts").NpmLocation): string | null;
 
 /**
