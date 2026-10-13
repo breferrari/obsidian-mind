@@ -183,3 +183,39 @@ describe("remember marks every memory a shared title names", () => {
 		}
 	});
 });
+
+/**
+ * The near-duplicate check compares only against what recall serves the
+ * caller (#375). A memory scoped to another project is not this caller's
+ * duplicate, and naming it in a refusal would show the caller a memory recall
+ * never would.
+ */
+describe("remember's near-duplicate check stays in reach", () => {
+	test("a near-identical memory in another project's scope neither refuses the write nor is named", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "neardup-reach-"));
+		try {
+			const { remember } = harness(dir);
+			const theirs = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
+			const full = join(dir, theirs);
+			writeFileSync(full, readFileSync(full, "utf8").replace(/^scope: .*$/m, "scope: project").replace(/^projects: .*$/m, 'projects: ["harbor"]'));
+
+			const reply = await remember(new Date(2026, 6, 1), { scope: "general", force: false });
+			assert.ok(!reply.includes(theirs), "the reply does not name a memory outside the caller's reach");
+			assert.match(reply, /^Recorded: /m, "another project's copy is not this caller's duplicate");
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a near-identical memory the caller can see still refuses the write (the control)", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "neardup-control-"));
+		try {
+			const { remember } = harness(dir);
+			await remember(new Date(2026, 5, 1), { scope: "general" });
+			const reply = await remember(new Date(2026, 6, 1), { scope: "general", force: false });
+			assert.match(reply, /near-identical/);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+});
