@@ -89,8 +89,14 @@ const HISTORICAL_DIRS = new Set(["archive", "1-1", "meetings", "thinking", "memo
  * `completed` is included on purpose. A finished piece of work describes what
  * was done, and editing it to agree with the present falsifies the record just
  * as surely as editing a dated capture would.
+ *
+ * Exported because search needs the same definition and not a second one. A
+ * status that closed a note to the correction sweep must close it in search too,
+ * and a copy of this list is exactly the kind that drifts: the sweep's list grows
+ * a value, search keeps demoting nothing, and the two disagree about what
+ * "closed" means without either being wrong on its own terms.
  */
-const HISTORICAL_STATUS = new Set(["superseded", "archived", "completed", "deprecated", "done"]);
+export const HISTORICAL_STATUS = new Set(["superseded", "archived", "completed", "deprecated", "done"]);
 
 /** A date anywhere in the filename, not only as a prefix. */
 const DATE_IN_NAME = /\d{4}-\d{2}-\d{2}/;

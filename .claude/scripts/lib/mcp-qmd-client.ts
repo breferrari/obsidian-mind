@@ -15,7 +15,11 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+import { HISTORICAL_STATUS } from "./correction-sweep.ts";
+import { parseFrontmatter } from "./memory-recall.ts";
 
 /** One hit as qmd reports it in `structuredContent.results`. */
 export interface QmdHit {
@@ -111,6 +115,139 @@ export function qmdRelKey(qmdPath: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
+// Lifecycle — the one thing qmd cannot know about a hit
+// ---------------------------------------------------------------------------
+
+/**
+ * What a note's own frontmatter says about whether it still asserts anything.
+ *
+ * Deliberately narrower than `isHistoricalNote`. That function also treats a
+ * dated filename and a record-keeping folder as historical, which is right for
+ * deciding what the correction sweep must not rewrite and wrong for search: it
+ * would demote every dated capture, and dated captures are often exactly what a
+ * query is looking for. Only an explicit closed status, or a non-empty
+ * `superseded_by`, changes the order here.
+ */
+export interface NoteLifecycle {
+	/** The closed `status` value, lowercased. Absent when the note is live. */
+	readonly status?: string;
+	/** Titles that replaced this note. Non-empty means it was superseded. */
+	readonly supersededBy?: readonly string[];
+}
+
+/**
+ * Read one hit's lifecycle from the vault. Returns `null` for anything it
+ * cannot read or parse — an unreadable note is shown unmarked, never dropped.
+ *
+ * A callback rather than a vault path so `scopeResults` keeps taking its input
+ * as data: the ordering and the marker below stay provable without a filesystem,
+ * which is the property the rest of this file is split around.
+ */
+export type LifecycleReader = (relPath: string) => NoteLifecycle | null;
+
+/**
+ * qmd's own path, collection prefix removed and case left alone.
+ *
+ * `qmdRelKey` folds case and whitespace because COMPARISON needs them equal.
+ * Opening the file needs the name as it is on disk: qmd reports
+ * `brain/key-decisions.md` for a note stored as `Key Decisions.md`, and
+ * joining the comparison key would miss a file that exists.
+ */
+export function qmdRelPath(qmdPath: unknown): string {
+	const p = String(qmdPath ?? "").replace(/\\/g, "/");
+	const i = p.indexOf("/");
+	return i >= 0 ? p.slice(i + 1) : p;
+}
+
+/**
+ * Find a note on disk from the path qmd reported, case- and space-insensitively.
+ *
+ * Falls back to walking the segments because qmd normalises what it indexes and
+ * a miss here is silent in the worst way: the note comes back unmarked, which is
+ * indistinguishable from a live one.
+ */
+function resolveNote(vaultRoot: string, relPath: string): string | null {
+	const direct = join(vaultRoot, relPath);
+	if (existsSync(direct)) return direct;
+	let cur = vaultRoot;
+	for (const seg of relPath.split("/")) {
+		if (!seg) continue;
+		let entries: string[];
+		try {
+			entries = readdirSync(cur);
+		} catch {
+			return null;
+		}
+		const want = pathKey(seg);
+		const match = entries.find((e) => pathKey(e) === want);
+		if (match === undefined) return null;
+		cur = join(cur, match);
+	}
+	return cur;
+}
+
+/**
+ * Build a reader over a real vault.
+ *
+ * Called for at most `limit` hits per search, each a small markdown file, so the
+ * cost is a handful of reads — not the index sweep this deliberately avoids.
+ */
+export function vaultLifecycleReader(vaultRoot: string): LifecycleReader {
+	return (relPath) => {
+		if (!relPath || relPath.split("/").includes("..")) return null;
+		const full = resolveNote(vaultRoot, relPath);
+		if (full === null) return null;
+		let text: string;
+		try {
+			text = readFileSync(full, "utf8");
+		} catch {
+			return null;
+		}
+		const fm = parseFrontmatter(text);
+		const status = fm["status"];
+		const supersededBy = fm["superseded_by"];
+		const lifecycle: NoteLifecycle = {
+			...(typeof status === "string" ? { status: status.trim().toLowerCase() } : {}),
+			supersededBy: Array.isArray(supersededBy) ? supersededBy : [],
+		};
+		return lifecycle;
+	};
+}
+
+/**
+ * The marker a closed hit carries, or `null` when it is live.
+ *
+ * `superseded_by` wins over `status` because it names WHAT replaced the note,
+ * and a search that surfaced the old decision without the new one is the case
+ * this whole path exists to prevent.
+ */
+export function lifecycleMarker(lc: NoteLifecycle | null): string | null {
+	if (!lc) return null;
+	const replaced = (lc.supersededBy ?? []).filter((t) => String(t ?? "").trim() !== "");
+	if (replaced.length) return `(superseded by: ${replaced.join(", ")})`;
+	const status = lc.status ?? "";
+	if (status && HISTORICAL_STATUS.has(status)) return `(status: ${status})`;
+	return null;
+}
+
+/**
+ * Stable partition: live hits first, closed ones after, relevance preserved
+ * inside each group.
+ *
+ * The same shape recall applies to memories. Reordering by relevance alone puts
+ * a corrected-away fact above the correction that replaced it, which is the one
+ * thing supersession exists to prevent. Applied AFTER `limit`, so a closed note
+ * never displaces a live one out of the set and is never pushed out of it
+ * either.
+ */
+function partitionByLifecycle<T>(hits: T[], isClosed: (hit: T) => boolean): T[] {
+	const live: T[] = [];
+	const closed: T[] = [];
+	for (const h of hits) (isClosed(h) ? closed : live).push(h);
+	return [...live, ...closed];
+}
+
+// ---------------------------------------------------------------------------
 // The filter — pure, and the reason this file is split
 // ---------------------------------------------------------------------------
 
@@ -124,11 +261,16 @@ const RESPONSE_MAX = 6000;
  * whose key is not in it is dropped and counted — counted, because a silent
  * drop is indistinguishable from an empty index, and the caller needs to tell
  * "nothing matched" apart from "nothing in scope".
+ *
+ * `lifecycle` is optional and omitted by the tests that are about the FILTER
+ * alone. Given one, each permitted hit is marked and closed hits are ordered
+ * after live ones; given none, the output is exactly what it always was.
  */
 export function scopeResults(
 	structured: unknown,
 	allowed: ReadonlySet<string>,
 	limit = 5,
+	lifecycle?: LifecycleReader,
 ): ScopedResult {
 	// No structured results means no per-hit paths to filter on. qmd's
 	// human-readable summary carries note paths too, so returning that instead
@@ -152,9 +294,23 @@ export function scopeResults(
 		};
 	}
 
+	// Read at most `limit` frontmatters, on the hits that survived the filter
+	// and the cut. A hit the policy does not serve is never opened.
+	const markers = new Map<QmdHit, string>();
+	const ordered = lifecycle
+		? (() => {
+				const marked = hits.map((h) => {
+					const marker = lifecycleMarker(lifecycle(qmdRelPath(h.file)));
+					if (marker) markers.set(h, marker);
+					return h;
+				});
+				return partitionByLifecycle(marked, (h) => markers.has(h));
+			})()
+		: hits;
+
 	// `context` is dropped: qmd repeats an identical vault-level blurb on every
 	// hit, and it was the single biggest consumer of the response budget.
-	const body = hits
+	const body = ordered
 		.map((h, i) => {
 			const snippet = String(h.snippet ?? "")
 				.replace(/\s+/g, " ")
@@ -162,7 +318,8 @@ export function scopeResults(
 				.slice(0, SNIPPET_MAX);
 			const where = `${h.file}${h.line ? `:${h.line}` : ""}`;
 			const score = Math.round((h.score ?? 0) * 100);
-			return `[${i + 1}] ${where}  (score ${score}%)\n    ${h.title ?? ""}\n    ${snippet}`;
+			const marker = markers.get(h);
+			return `[${i + 1}] ${where}  (score ${score}%)${marker ? `  ${marker}` : ""}\n    ${h.title ?? ""}\n    ${snippet}`;
 		})
 		.join("\n\n")
 		.slice(0, RESPONSE_MAX);
@@ -387,6 +544,7 @@ export async function qmdSearch(
 	allowed: ReadonlySet<string>,
 	query: string,
 	limit = 5,
+	lifecycle?: LifecycleReader,
 ): Promise<ScopedResult> {
 	try {
 		await client.ready;
@@ -402,7 +560,7 @@ export async function qmdSearch(
 				minScore: 0.4,
 			},
 		})) as { structuredContent?: { results?: unknown } } | null;
-		return scopeResults(out?.structuredContent?.results, allowed, limit);
+		return scopeResults(out?.structuredContent?.results, allowed, limit, lifecycle);
 	} catch (e) {
 		// qmd is optional in this template. A failure degrades this ONE call and
 		// says so; it must never present as "the vault is empty".

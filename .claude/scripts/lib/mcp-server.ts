@@ -27,7 +27,7 @@ import {
 	vaultRelKeyRaw,
 } from "./mcp-exposure.ts";
 import { expandNote } from "./mcp-graph.ts";
-import { qmdProbe, qmdSearch, type QmdClient } from "./mcp-qmd-client.ts";
+import { qmdProbe, qmdSearch, vaultLifecycleReader, type QmdClient } from "./mcp-qmd-client.ts";
 import { callerProject, callerProjectSource, CALLER_VAR, isVaultItself, PROJECT_MARKER, sumAuditField, sanitize } from "./mcp-caller.ts";
 import { callerPlatforms, digestsFrom, resolvableNames, resolvableTargets } from "./mcp-memory-bridge.ts";
 import { captureNote, describeToolMarkup, toolMarkupRefusal } from "./mcp-capture.ts";
@@ -283,7 +283,7 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		if (!query.trim()) return "(search needs a query)";
 		const limit = Number(args.limit ?? 5);
 		const allowed = allowedSearchPaths(ctx.vaultRoot, policy);
-		const r = await qmdSearch(qmd(), allowed, query, limit);
+		const r = await qmdSearch(qmd(), allowed, query, limit, vaultLifecycleReader(ctx.vaultRoot));
 		audit("search", { query, withheld: r.withheld, total: r.total, bytes: r.text.length });
 		return r.text;
 	}

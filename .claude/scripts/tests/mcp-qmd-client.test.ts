@@ -13,7 +13,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,8 +28,11 @@ import {
 	timeoutMessage,
 	qmdProbe,
 	probeBudget,
+	vaultLifecycleReader,
+	qmdRelPath,
 	type QmdHit,
 	type QmdClient,
+	type LifecycleReader,
 } from "../lib/mcp-qmd-client.ts";
 import { waitFor } from "./_helpers.ts";
 
@@ -281,6 +284,142 @@ describe("scoping results", () => {
 		const r = scopeResults([hit("myvault/brain/Key Decisions.md")], allowed);
 		assert.equal(r.withheld, 0);
 		assert.match(r.text, /Key Decisions/);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+
+describe("closed notes in search results", () => {
+	/** Everything the fixture vault holds, as a caller scoped to `brain/` gets it. */
+	const BRAIN = new Set([
+		"brain/decisions.md",
+		"brain/old-decision.md",
+		"brain/2026-07-26-capture.md",
+		"brain/reversed.md",
+	]);
+
+	/**
+	 * A vault with the two notes a reversal leaves behind, plus the cases that
+	 * must NOT be demoted: a dated capture and a note carrying only
+	 * `superseded_by`. Written with spaces in the filenames on purpose, because
+	 * that is how the vault stores them and qmd is what reports the paths.
+	 */
+	function fixtureVault(): string {
+		const dir = mkdtempSync(join(tmpdir(), "qmd-lifecycle-"));
+		mkdirSync(join(dir, "brain"), { recursive: true });
+		const note = (name: string, fm: string) =>
+			writeFileSync(join(dir, "brain", name), `---\n${fm}\n---\n\nbody\n`, "utf-8");
+		note("Decisions.md", "status: active");
+		note("Old Decision.md", "status: superseded");
+		note("2026-07-26 Capture.md", "date: 2026-07-26");
+		note("Reversed.md", 'superseded_by: ["New Decision"]');
+		return dir;
+	}
+
+	test("a live note outranks a closed one that scored higher, and the closed one is marked", () => {
+		// The bug this fixes: the old decision scores best on text relevance and
+		// comes back first, unlabelled, with nothing pointing at what replaced it.
+		const dir = fixtureVault();
+		try {
+			const hits = [hit("myvault/brain/Old Decision.md", { score: 0.97 }), hit("myvault/brain/Decisions.md", { score: 0.81 })];
+			const r = scopeResults(hits, BRAIN, 5, vaultLifecycleReader(dir));
+			const liveAt = r.text.indexOf("brain/Decisions.md");
+			const closedAt = r.text.indexOf("brain/Old Decision.md");
+			assert.ok(liveAt >= 0 && closedAt >= 0, `both notes must be listed:\n${r.text}`);
+			assert.ok(liveAt < closedAt, `the live note must be listed first:\n${r.text}`);
+			assert.match(r.text, /\(status: superseded\)/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a dated note with no status is NOT demoted", () => {
+		// `isHistoricalNote` would call this historical because of its name. That
+		// is right for the correction sweep and wrong here: dated captures are
+		// often exactly what a query is looking for.
+		const dir = fixtureVault();
+		try {
+			const hits = [hit("myvault/brain/2026-07-26 Capture.md", { score: 0.9 }), hit("myvault/brain/Old Decision.md", { score: 0.4 })];
+			const r = scopeResults(hits, BRAIN, 5, vaultLifecycleReader(dir));
+			assert.ok(
+				r.text.indexOf("2026-07-26 Capture.md") < r.text.indexOf("Old Decision.md"),
+				`the capture keeps its rank ahead of a closed note:\n${r.text}`,
+			);
+			assert.ok(
+				!/\[1\][^\n]*2026-07-26 Capture\.md[^\n]*\(status:/.test(r.text),
+				`and the capture itself carries no marker:\n${r.text}`,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("`superseded_by` alone marks and demotes, and names what replaced it", () => {
+		const dir = fixtureVault();
+		try {
+			const hits = [hit("myvault/brain/Reversed.md", { score: 0.95 }), hit("myvault/brain/Decisions.md", { score: 0.6 })];
+			const r = scopeResults(hits, BRAIN, 5, vaultLifecycleReader(dir));
+			assert.match(r.text, /\(superseded by: New Decision\)/);
+			assert.ok(
+				r.text.indexOf("brain/Decisions.md") < r.text.indexOf("brain/Reversed.md"),
+				`a superseded note must sort after a live one:\n${r.text}`,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("relevance still decides the order INSIDE the live and closed groups", () => {
+		const dir = fixtureVault();
+		try {
+			const hits = [
+				hit("myvault/brain/Old Decision.md", { score: 0.95 }),
+				hit("myvault/brain/Reversed.md", { score: 0.55 }),
+				hit("myvault/brain/Decisions.md", { score: 0.9 }),
+			];
+			const r = scopeResults(hits, BRAIN, 5, vaultLifecycleReader(dir));
+			assert.ok(
+				r.text.indexOf("Decisions.md") < r.text.indexOf("Old Decision.md") &&
+					r.text.indexOf("Old Decision.md") < r.text.indexOf("Reversed.md"),
+				`stable partition, relevance preserved within each group:\n${r.text}`,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a note the policy does not serve is never opened", () => {
+		// The reader is how the search path starts touching the filesystem. It
+		// must not become a way to read a note `search` would not have returned.
+		const opened: string[] = [];
+		const reader: LifecycleReader = (relPath) => {
+			opened.push(relPath);
+			return null;
+		};
+		scopeResults([hit("myvault/people/Someone.md"), hit("myvault/brain/Gotchas.md")], ALLOWED, 5, reader);
+		assert.deepEqual(opened, ["brain/Gotchas.md"]);
+	});
+
+	test("a closed note beyond the cut is neither promoted into the set nor dropped from it", () => {
+		// The partition runs AFTER `limit`, so it reorders what was already
+		// chosen and cannot change which notes were chosen.
+		const dir = fixtureVault();
+		try {
+			const hits = [hit("myvault/brain/Old Decision.md", { score: 0.99 }), hit("myvault/brain/Decisions.md", { score: 0.8 })];
+			const r = scopeResults(hits, BRAIN, 1, vaultLifecycleReader(dir));
+			assert.ok(!r.text.includes("brain/Decisions.md"), `limit must still be one hit:\n${r.text}`);
+			assert.match(r.text, /brain\/Old Decision\.md/);
+			assert.match(r.text, /\(status: superseded\)/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("without a reader the rendering is unchanged", () => {
+		const r = scopeResults([hit("myvault/brain/Gotchas.md")], ALLOWED);
+		assert.equal(r.text.includes("status:"), false);
 	});
 });
 
