@@ -559,22 +559,26 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			);
 			if (duplicates.length) {
 				const d = duplicates[0]!;
-				// When the caller DID pass supersedes and none of them resolved,
+				// When the caller DID pass supersedes and NONE of them resolved,
 				// repeating "pass supersedes" is an instruction they already followed
 				// and cannot follow successfully — the title they named does not exist.
 				// Say which ones did not resolve, and point at the exact-match rule,
 				// instead of sending them round the loop a second time.
-				const advice = supers.unmatched.length
-					? [
-							"If this genuinely differs, pass force: true.",
-							"",
-							`Supersedes did not match any memory: ${supers.unmatched.join(", ")}.`,
-							"Titles are matched exactly, case-insensitively — check the spelling against a recall result.",
-						]
-					: [
-							"If this genuinely differs, pass force: true. If it CORRECTS that memory,",
-							"pass supersedes: [\"<its exact title>\"] instead — the old one is kept and back-linked.",
-						];
+				// If at least one title DID match, keep the original "pass supersedes"
+				// advice for the colliding memory — a typo among several targets must
+				// not hide the hint that still applies to the collision.
+				const advice =
+					supers.unmatched.length && supers.matched.length === 0
+						? [
+								"If this genuinely differs, pass force: true.",
+								"",
+								`Supersedes did not match any memory: ${supers.unmatched.join(", ")}.`,
+								"Titles are matched exactly, case-insensitively — check the spelling against a recall result.",
+							]
+						: [
+								"If this genuinely differs, pass force: true. If it CORRECTS that memory,",
+								"pass supersedes: [\"<its exact title>\"] instead — the old one is kept and back-linked.",
+							];
 				return [
 					`Not recorded: a near-identical memory already exists (${Math.round(d.score * 100)}% similar).`,
 					`  ${d.entry.title}`,
