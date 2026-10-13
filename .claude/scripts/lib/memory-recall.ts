@@ -303,6 +303,17 @@ export function supersededOutOfReach(
 }
 
 /**
+ * Whether `a` was provably written before `b`: by date, then by the write's
+ * session timestamp within a day. A side with no date, or a same-day pair
+ * missing a timestamp, is not provably older, so it is never ruled out.
+ */
+function olderThan(a: Facets, b: Facets): boolean {
+	if (!a.date || !b.date) return false;
+	if (a.date !== b.date) return a.date < b.date;
+	return !!a.session && !!b.session && a.session < b.session;
+}
+
+/**
  * The rels that survive both filters, resolved together rather than in sequence.
  *
  * Asking only whether a replacement is *scope-visible* is one link short of the
@@ -343,7 +354,14 @@ export function servedAfterSupersession(
 	const replacements = new Map<string, string[]>();
 	for (const entry of corpus) {
 		if (entry.facets.superseded_by.length === 0) continue;
-		const { matched } = resolveSupersedes(entry.facets.superseded_by, corpus);
+		// A correction that keeps its title makes the claim name the memory
+		// itself, and anything older under that title (#364). Neither replaces
+		// it: the memory itself is always served, so counting it would never
+		// withhold the stale copy, and an older one would let two retired copies
+		// keep each other served.
+		const matched = resolveSupersedes(entry.facets.superseded_by, corpus).matched.filter(
+			(m) => m !== entry && !olderThan(m.facets, entry.facets),
+		);
 		// Unresolvable claims leave the memory alone, per the rule above, so they
 		// are never entered here and can never be withheld.
 		if (matched.length === 0) continue;

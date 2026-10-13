@@ -143,14 +143,17 @@ export function resolveSupersedes<T extends Titled>(
 	claims: unknown,
 	existing: readonly T[],
 ): { matched: T[]; unmatched: string[] } {
-	const matched: T[] = [];
+	// Every memory carrying the title, not the first (#364): a correction that
+	// keeps its title is the normal path, so a title can name several, and the
+	// first in listing order is an accident of the listing.
+	const matched = new Set<T>();
 	const unmatched: string[] = [];
 	for (const claim of Array.isArray(claims) ? claims : []) {
 		const needle = String(claim ?? "").trim().toLowerCase();
 		if (!needle) continue;
-		const hit = existing.find((e) => String(e.title ?? "").trim().toLowerCase() === needle);
-		if (hit) matched.push(hit);
-		else unmatched.push(String(claim));
+		const hits = existing.filter((e) => String(e.title ?? "").trim().toLowerCase() === needle);
+		for (const hit of hits) matched.add(hit);
+		if (hits.length === 0) unmatched.push(String(claim));
 	}
-	return { matched, unmatched };
+	return { matched: [...matched], unmatched };
 }
