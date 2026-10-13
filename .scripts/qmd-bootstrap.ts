@@ -105,7 +105,10 @@ export function spawnQmd(
 	spawn: typeof spawnSync = spawnSync,
 ): SpawnOutcome {
 	const { cmd, args, shell } = buildQmdCommand(entry, subcommandArgs);
-	const r = spawn(cmd, args as string[], { shell, encoding: "utf-8" });
+	// windowsHide: session-start starts this bootstrap detached, so it has no
+	// console, and on Windows a console program started from it without the
+	// flag opens a console window of its own (#381).
+	const r = spawn(cmd, args as string[], { shell, encoding: "utf-8", windowsHide: true });
 	return {
 		status: r.status,
 		signal: r.signal,
