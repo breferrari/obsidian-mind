@@ -109,7 +109,7 @@ shardmind install github:breferrari/obsidian-mind
 
 1. Open the installed folder as an **Obsidian vault**
 2. Enable the **Obsidian CLI** in Settings → General (requires Obsidian 1.12+)
-3. Run your agent in the vault directory: **`claude`**, **`codex`**, or **`gemini`**
+3. Run your agent in the vault directory: **`claude`**, **`codex`**, or **`gemini`**. Codex runs the vault's hooks only once the folder is trusted and each hook approved: see [Using with Other Agents](#-using-with-other-agents).
 4. Start talking about work
 
 [ShardMind](https://github.com/breferrari/shardmind) is the package manager for Obsidian vault templates. The install adds a `.shardmind/` sidecar that powers the wizard, optional modules (skip what you don't use), and three-way-merge upgrades. With every value at its default the install is byte-equivalent to `git clone` — clone-UX is preserved exactly. Delete `.shardmind/` and `shard-values.yaml` from the installed vault and it keeps working: ShardMind is additive, not load-bearing.
@@ -264,7 +264,7 @@ Observed with scratch vaults as of 2026-10-06 (Claude Code 2.1.291, Codex CLI 0.
 
 Codex runs a project's hooks only once two kinds of trust are in place (observed with Codex CLI 0.160.0 as of 2026-10-13, [#345](https://github.com/breferrari/obsidian-mind/issues/345)):
 - **The vault folder is trusted.** Codex records this in `~/.codex/config.toml` under `[projects.'<path>']`. On Windows the key is the `\\?\`-prefixed path, e.g. `[projects.'\\?\C:\path\to\vault']`.
-- **Each hook is approved.** Approve them in an interactive `codex` session. Codex stores each approval as a `trusted_hash` under `[hooks.state]`.
+- **Each hook is approved.** Codex stores each approval as a `trusted_hash` under `[hooks.state]`. Approving them in an interactive `codex` session is expected to write these (inferred: the #345 check stood in for them with `--dangerously-bypass-hook-trust`, a flag for one non-interactive run).
 
 Until both are in place, Codex runs no hook, and the session gets no vault context.
 

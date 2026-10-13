@@ -110,7 +110,7 @@ shardmind install github:breferrari/obsidian-mind
 
 1. インストールされたフォルダを**Obsidianボールト**として開く
 2. 設定 → 一般で**Obsidian CLI**を有効化（Obsidian 1.12以上が必要）
-3. ボールトディレクトリでエージェントを実行：**`claude`**、**`codex`**、または**`gemini`**
+3. ボールトディレクトリでエージェントを実行：**`claude`**、**`codex`**、または**`gemini`**。Codex はフォルダーが信頼され、各フックが承認されるまでボールトのフックを実行しません：[他のエージェントでの利用](#-他のエージェントでの利用)を参照。
 4. 仕事について話し始める
 
 [ShardMind](https://github.com/breferrari/shardmind)はObsidianボールトテンプレートのパッケージマネージャーです。インストール時に`.shardmind/`サイドカーが追加され、ウィザード、オプションのモジュール（不要なものはスキップ可能）、3-wayマージのアップグレードを実現します。すべての値がデフォルトの場合、インストール結果は`git clone`とバイト等価 — クローン体験はそのまま保たれます。インストール済みボールトから`.shardmind/`と`shard-values.yaml`を削除しても動作し続けます：ShardMindは追加機能であり、必須ではありません。
@@ -247,7 +247,7 @@ obsidian-mindはClaude Code、Codex CLI、Gemini CLIで動作します。`CLAUDE
 
 Codex がプロジェクトのフックを実行するには、2 つの信頼が必要です（Codex CLI 0.160.0 で確認、2026-10-13 時点、[#345](https://github.com/breferrari/obsidian-mind/issues/345)）。
 - **ボールトのフォルダーが信頼されていること。** Codex は `~/.codex/config.toml` の `[projects.'<path>']` に記録します。Windows ではキーが `\\?\` 付きのパスになります（例: `[projects.'\\?\C:\path\to\vault']`）。
-- **各フックが承認されていること。** 対話型の `codex` セッションで承認します。Codex は各承認を `[hooks.state]` の `trusted_hash` として保存します。
+- **各フックが承認されていること。** Codex は各承認を `[hooks.state]` の `trusted_hash` として保存します。対話型の `codex` セッションで承認するとこれが書き込まれるはずです（推測：#345 の確認では、1 回の非対話実行用のフラグ `--dangerously-bypass-hook-trust` で代用しました）。
 
 両方が揃うまで Codex はフックを一切実行せず、セッションにボールトのコンテキストは届きません。
 

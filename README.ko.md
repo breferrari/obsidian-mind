@@ -110,7 +110,7 @@ shardmind install github:breferrari/obsidian-mind
 
 1. 설치된 폴더를 **Obsidian 볼트**로 엽니다
 2. 설정 → 일반에서 **Obsidian CLI**를 활성화합니다 (Obsidian 1.12+ 필요)
-3. 볼트 디렉토리에서 에이전트를 실행합니다: **`claude`**, **`codex`**, 또는 **`gemini`**
+3. 볼트 디렉토리에서 에이전트를 실행합니다: **`claude`**, **`codex`**, 또는 **`gemini`**. Codex는 폴더가 신뢰되고 각 훅이 승인되기 전까지 볼트의 훅을 실행하지 않습니다: [다른 에이전트와 사용하기](#-다른-에이전트와-사용하기) 참고.
 4. 업무에 대해 이야기를 시작하세요
 
 [ShardMind](https://github.com/breferrari/shardmind)는 Obsidian 볼트 템플릿의 패키지 매니저입니다. 설치 시 `.shardmind/` 사이드카가 추가되어 마법사, 선택적 모듈 (사용하지 않는 것은 건너뛰기), 3-way 머지 업그레이드를 제공합니다. 모든 값이 기본값일 때 설치 결과는 `git clone`과 바이트 단위로 동일합니다 — 클론 경험이 그대로 보존됩니다. 설치된 볼트에서 `.shardmind/`와 `shard-values.yaml`을 삭제해도 계속 작동합니다: ShardMind는 추가 기능이며, 필수 요소가 아닙니다.
@@ -247,7 +247,7 @@ obsidian-mind는 Claude Code, Codex CLI, Gemini CLI에서 작동합니다. `CLAU
 
 Codex가 프로젝트의 훅을 실행하려면 두 가지 신뢰가 필요합니다(Codex CLI 0.160.0으로 확인, 2026-10-13 기준, [#345](https://github.com/breferrari/obsidian-mind/issues/345)).
 - **볼트 폴더가 신뢰되어 있어야 합니다.** Codex는 이를 `~/.codex/config.toml`의 `[projects.'<path>']`에 기록합니다. Windows에서는 키가 `\\?\` 접두사가 붙은 경로입니다(예: `[projects.'\\?\C:\path\to\vault']`).
-- **각 훅이 승인되어 있어야 합니다.** 대화형 `codex` 세션에서 승인하세요. Codex는 각 승인을 `[hooks.state]` 아래 `trusted_hash`로 저장합니다.
+- **각 훅이 승인되어 있어야 합니다.** Codex는 각 승인을 `[hooks.state]` 아래 `trusted_hash`로 저장합니다. 대화형 `codex` 세션에서 승인하면 이것이 기록될 것으로 예상됩니다(추정: #345의 확인에서는 한 번의 비대화형 실행용 플래그 `--dangerously-bypass-hook-trust`로 대신했습니다).
 
 둘 다 갖춰지기 전에는 Codex가 어떤 훅도 실행하지 않으며, 세션에 볼트 컨텍스트가 전달되지 않습니다.
 

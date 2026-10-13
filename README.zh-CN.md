@@ -110,7 +110,7 @@ shardmind install github:breferrari/obsidian-mind
 
 1. 将已安装的文件夹作为 **Obsidian 仓库** 打开
 2. 在 设置 → 通用 中启用 **Obsidian CLI**（需要 Obsidian 1.12+）
-3. 在仓库目录中运行你的 Agent：**`claude`**、**`codex`** 或 **`gemini`**
+3. 在仓库目录中运行你的 Agent：**`claude`**、**`codex`** 或 **`gemini`**。Codex 只有在文件夹被信任、且每个钩子都被批准后才会运行 vault 的钩子：见[与其他 Agent 配合使用](#-与其他-agent-配合使用)。
 4. 开始谈论工作
 
 [ShardMind](https://github.com/breferrari/shardmind) 是 Obsidian 仓库模板的包管理器。安装时会添加 `.shardmind/` 旁挂目录，提供向导、可选模块（不需要的可以跳过）和三方合并升级。所有值采用默认值时，安装结果与 `git clone` 字节等价——克隆体验完全保留。从已安装的仓库中删除 `.shardmind/` 和 `shard-values.yaml`，仓库仍可正常工作：ShardMind 是附加功能，并非必需。
@@ -247,7 +247,7 @@ obsidian-mind 支持 Claude Code、Codex CLI 和 Gemini CLI。`CLAUDE.md` 中的
 
 Codex 只有在两种信任都具备时才会运行项目的钩子（使用 Codex CLI 0.160.0 观察，截至 2026-10-13，[#345](https://github.com/breferrari/obsidian-mind/issues/345)）：
 - **vault 文件夹已被信任。** Codex 将其记录在 `~/.codex/config.toml` 的 `[projects.'<path>']` 下。在 Windows 上，键是带 `\\?\` 前缀的路径，例如 `[projects.'\\?\C:\path\to\vault']`。
-- **每个钩子已被批准。** 在交互式 `codex` 会话中批准。Codex 将每次批准作为 `trusted_hash` 存储在 `[hooks.state]` 下。
+- **每个钩子已被批准。** Codex 将每次批准作为 `trusted_hash` 存储在 `[hooks.state]` 下。在交互式 `codex` 会话中批准预计会写入这些条目（推断：#345 的检查用仅适用于单次非交互运行的标志 `--dangerously-bypass-hook-trust` 代替了它们）。
 
 两者都具备之前，Codex 不会运行任何钩子，会话也得不到 vault 上下文。
 
