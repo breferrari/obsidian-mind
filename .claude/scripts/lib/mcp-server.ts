@@ -551,11 +551,13 @@ export function createHandlers(deps: ServerDeps): Handlers {
 		const superseded = new Set(supers.matched.map((m) => m.rel));
 
 		// Near-duplicate suppression, facet-gated so two projects can each hold
-		// their own copy of the same lesson.
+		// their own copy of the same lesson. Only against what recall serves this
+		// caller (#375): another project's copy isn't this caller's duplicate, and
+		// a refusal naming it would show a memory recall never would.
 		if (args.force !== true) {
 			const { duplicates } = findSimilar(
 				v.value,
-				digests.filter((d) => !superseded.has(d.rel)),
+				digests.filter((d) => served.has(d.rel) && !superseded.has(d.rel)),
 			);
 			if (duplicates.length) {
 				const d = duplicates[0]!;
