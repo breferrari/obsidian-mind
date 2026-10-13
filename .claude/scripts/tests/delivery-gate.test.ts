@@ -33,6 +33,7 @@ import {
 	DEFAULT_MODEL,
 	modelsRan,
 	modelNote,
+	ranAsAsked,
 	subagentReport,
 	SUBAGENT_TASK,
 	type Step,
@@ -557,5 +558,12 @@ describe("the gate's model", () => {
 		assert.equal(modelNote("claude-opus-5-5", ["claude-opus-5-5"]), "Model that answered: claude-opus-5-5.");
 		assert.match(modelNote("opus", ["claude-sonnet-5"]), /Asked for opus, but the sessions ran claude-sonnet-5: these verdicts are for claude-sonnet-5/);
 		assert.match(modelNote("claude-opus-5-5", []), /Could not tell which model answered/);
+	});
+
+	test("ranAsAsked: a run that can't show it ran the model asked for can't be judged", () => {
+		assert.equal(ranAsAsked("claude-opus-5-5", ["claude-opus-5-5"]), true);
+		assert.equal(ranAsAsked("opus", ["claude-sonnet-5"]), false);
+		assert.equal(ranAsAsked("claude-opus-5-5", ["claude-opus-5-5", "claude-sonnet-5"]), false);
+		assert.equal(ranAsAsked("claude-opus-5-5", []), false, "no model reported");
 	});
 });

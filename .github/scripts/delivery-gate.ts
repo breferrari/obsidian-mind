@@ -95,8 +95,6 @@ const TURN_TIMEOUT_MS = 5 * 60_000;
  * (#346). Update it when a newer model ships.
  */
 export const DEFAULT_MODEL = "claude-opus-5-5";
-/** Every model a session of this run reported, so the run can say what actually answered. */
-const modelsSeen = new Set<string>();
 
 /** What a checkpoint's answer must contain: the context's last line, and the middle marker when the context carries one. */
 export type Expected = { readonly line: string; readonly marker: string | null };
@@ -286,6 +284,7 @@ type StreamEvent = {
 	tool_use_result?: { content?: unknown; totalToolUseCount?: number; agentType?: string };
 	is_error?: boolean;
 	result?: string;
+	model?: string;
 };
 
 const textOf = (content: unknown): string =>
@@ -304,7 +303,6 @@ export function subagentReport(handedBack: string): string {
 	return (end < 0 ? body : body.slice(0, end)).trim();
 }
 
-/** Split a stream-json transcript into turns, one per `result` event. Events before the first result belong to the first turn. */
 /**
  * The models a session's stream says ran: the `model` of each `system`/`init`
  * event, once each, in order. Read so the gate can say what actually answered:
@@ -314,7 +312,7 @@ export function subagentReport(handedBack: string): string {
 export function modelsRan(streamJson: string): string[] {
 	const seen: string[] = [];
 	for (const line of streamJson.split("\n")) {
-		let event: { type?: string; subtype?: string; model?: unknown };
+		let event: StreamEvent;
 		try {
 			event = JSON.parse(line);
 		} catch {
@@ -327,6 +325,11 @@ export function modelsRan(streamJson: string): string[] {
 	return seen;
 }
 
+/** Whether every session reported running the model asked for. */
+export function ranAsAsked(asked: string, ran: readonly string[]): boolean {
+	return ran.length > 0 && ran.every((m) => m === asked);
+}
+
 /** The line that says which model answered, and flags one that isn't the model asked for. */
 export function modelNote(asked: string, ran: readonly string[]): string {
 	if (ran.length === 0) return `Could not tell which model answered (asked for ${asked}).`;
@@ -336,6 +339,7 @@ export function modelNote(asked: string, ran: readonly string[]): string {
 		: `⚠️  Asked for ${asked}, but the sessions ran ${ran.join(", ")}: these verdicts are for ${other.join(", ")}.`;
 }
 
+/** Split a stream-json transcript into turns, one per `result` event. Events before the first result belong to the first turn. */
 export function parseTurns(streamJson: string): Turn[] {
 	const turns: Turn[] = [];
 	const fresh = () => ({
@@ -798,7 +802,11 @@ function session(
 }
 
 /** One fresh fixture per session, checked before any turn is spent on it. */
-async function runSession(steps: readonly Step[], breakage: Breakage, options: SessionOptions): Promise<Verdict[]> {
+async function runSession(
+	steps: readonly Step[],
+	breakage: Breakage,
+	options: SessionOptions,
+): Promise<{ verdicts: Verdict[]; models: string[] }> {
 	const marker = newMarker();
 	const vault = buildFixture(breakage, { marker, trustedDir: options.trustedDir, withMod: options.withMod });
 	try {
@@ -822,14 +830,14 @@ async function runSession(steps: readonly Step[], breakage: Breakage, options: S
 		const { transcript, ending } = await session(vault, steps, options, (step, index) => {
 			expectedByStep[index] = expectFor(step);
 		});
-		for (const model of modelsRan(transcript)) modelsSeen.add(model);
 		// Steps never sent (the session stopped early) are INVALID whatever their expectation.
-		return judge(
+		const verdicts = judge(
 			steps,
 			parseTurns(transcript),
 			steps.map((_, i) => expectedByStep[i] ?? ""),
 			{ withMod: options.withMod, ending },
 		);
+		return { verdicts, models: modelsRan(transcript) };
 	} finally {
 		removeFixture(vault);
 	}
@@ -907,6 +915,12 @@ async function main(): Promise<void> {
 		for (const vault of [...fixtures.keys()]) removeFixture(vault);
 		process.exit(130);
 	});
+	const modelsSeen = new Set<string>();
+	const run = async (steps: readonly Step[], breakage: Breakage, withMod: boolean): Promise<Verdict[]> => {
+		const r = await runSession(steps, breakage, { ...base, withMod });
+		for (const model of r.models) modelsSeen.add(model);
+		return r.verdicts;
+	};
 	const loading = trustedDir ? `found in the trusted folder ${resolve(trustedDir)}` : "loaded with --plugin-dir";
 	console.log(`Delivery gate · ${version} · ${base.model} · ${hooksOnly ? "settings hooks only" : `the mod ${loading}`}${selfTest ? " · SELF-TEST" : ""}\n`);
 
@@ -914,20 +928,20 @@ async function main(): Promise<void> {
 		const runs: Array<{ breakage: Breakage; verdicts: Verdict[] }> = [];
 		for (const breakage of ["cut", "startup-only"] as const) {
 			const verdicts: Verdict[] = [];
-			for (const steps of plan(true)) verdicts.push(...(await runSession(steps, breakage, { ...base, withMod: true })));
+			for (const steps of plan(true)) verdicts.push(...(await run(steps, breakage, true)));
 			print(` [${breakage}]`, verdicts);
 			runs.push({ breakage, verdicts });
 		}
 		const { exitCode, message } = selfTestOutcome(runs);
 		console.log(`\n${message}`);
 		console.log(modelNote(base.model, [...modelsSeen]));
-		process.exitCode = exitCode;
+		process.exitCode = ranAsAsked(base.model, [...modelsSeen]) ? exitCode : 2;
 		return;
 	}
 
 	const verdicts: Verdict[] = [];
-	if (!hooksOnly) for (const steps of plan(true)) verdicts.push(...(await runSession(steps, "none", { ...base, withMod: true })));
-	for (const steps of plan(false)) verdicts.push(...(await runSession(steps, "none", { ...base, withMod: false })));
+	if (!hooksOnly) for (const steps of plan(true)) verdicts.push(...(await run(steps, "none", true)));
+	for (const steps of plan(false)) verdicts.push(...(await run(steps, "none", false)));
 	print("", verdicts);
 	console.log(`\n${modelNote(base.model, [...modelsSeen])}`);
 	const invalid = verdicts.filter((v) => v.outcome === "INVALID").length;
@@ -945,7 +959,8 @@ async function main(): Promise<void> {
 		console.log(filed.status === 0 ? `\nFiled: ${filed.stdout.trim()}` : `\nCould not file the issue: ${filed.stderr.trim()}`);
 	}
 	// A FAIL needs nothing else to be judged: it wins over an INVALID elsewhere.
-	process.exitCode = failed > 0 ? 1 : invalid > 0 ? 2 : 0;
+	// A run that can't show it ran the model asked for can't be judged either (#346).
+	process.exitCode = failed > 0 ? 1 : invalid > 0 || !ranAsAsked(base.model, [...modelsSeen]) ? 2 : 0;
 }
 
 if (isMainModule(import.meta.url)) {
