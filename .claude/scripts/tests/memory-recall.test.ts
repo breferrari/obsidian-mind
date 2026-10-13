@@ -536,6 +536,70 @@ describe("a superseded memory reaches only where its successor reaches", () => {
 });
 
 /**
+ * A correction that keeps its title (#364). The claim on the old memory names
+ * a title the old memory itself carries, so resolving it by first match could
+ * land on the memory itself, which is always served, and the stale copy was
+ * never withheld. Which way it went depended on listing order.
+ */
+describe("a correction that keeps the corrected memory's title (#364)", () => {
+	const TITLE = "tokens expire after one hour";
+	const dated = (fm: Record<string, unknown>, title: string = TITLE, slug: string = String(fm["date"])): MemoryEntry => ({
+		rel: `memories/${slug} ${title}.md`,
+		full: `/nowhere/${slug}.md`,
+		facets: facetsOf({ source: MEMORY_SOURCE, ...fm }),
+		title,
+		body: "b",
+	});
+	const OLD = dated({ scope: "project", projects: ["atlas", "beta"], date: "2026-06-01", superseded_by: [TITLE] });
+	const NEW = dated({ scope: "project", projects: ["atlas"], date: "2026-07-26" });
+	const beta = { project: "beta", platforms: [] };
+	const atlas = { project: "atlas", platforms: [] };
+
+	for (const [order, corpus] of [["old first", [OLD, NEW]], ["correction first", [NEW, OLD]]] as const) {
+		test(`the caller the correction excludes gets neither copy (${order})`, () => {
+			assert.deepEqual(recallFrom(corpus, beta).map((m) => m.rel), []);
+		});
+		test(`the caller it keeps gets the correction first, the old copy sunk (${order})`, () => {
+			assert.deepEqual(recallFrom(corpus, atlas).map((m) => m.rel), [NEW.rel, OLD.rel]);
+		});
+	}
+
+	test("a three-link same-title chain retires back to its head", () => {
+		const a = dated({ scope: "general", date: "2026-06-01", superseded_by: [TITLE] });
+		const b = dated({ scope: "general", date: "2026-07-01", superseded_by: [TITLE] });
+		const c = dated({ scope: "project", projects: ["atlas"], date: "2026-08-01" });
+		for (const corpus of [[a, b, c], [c, b, a], [b, a, c]]) {
+			assert.deepEqual(recallFrom(corpus, beta).map((m) => m.rel), []);
+			const served = recallFrom(corpus, atlas).map((m) => m.rel);
+			assert.equal(served[0], c.rel, "the live correction ranks first");
+			assert.deepEqual([...served].sort(), [a.rel, b.rel, c.rel].sort());
+		}
+	});
+
+	test("a claim whose only match is the memory itself is unresolvable, so the memory stays", () => {
+		const alone = dated({ scope: "general", date: "2026-06-01", superseded_by: [TITLE] });
+		assert.deepEqual(recallFrom([alone], beta).map((m) => m.rel), [alone.rel]);
+	});
+
+	test("on the same day, the write's session time decides which copy is newer", () => {
+		const old = dated({ scope: "general", date: "2026-07-26", session: "2026-07-26T09:00:00Z", superseded_by: [TITLE] }, TITLE, "a");
+		const fix = dated({ scope: "project", projects: ["atlas"], date: "2026-07-26", session: "2026-07-26T17:00:00Z" }, TITLE, "b");
+		assert.deepEqual(recallFrom([old, fix], beta).map((m) => m.rel), []);
+		assert.deepEqual(recallFrom([fix, old], beta).map((m) => m.rel), []);
+	});
+
+	test("the title matches whatever its case and surrounding space", () => {
+		const old = dated({ scope: "general", date: "2026-06-01", superseded_by: ["  Tokens Expire After One Hour "] });
+		assert.deepEqual(recallFrom([old, NEW], beta).map((m) => m.rel), []);
+	});
+
+	test("an undated side is never ruled out as older, so the rule still applies", () => {
+		const undated = dated({ scope: "project", projects: ["atlas"] }, TITLE, "undated");
+		assert.deepEqual(recallFrom([OLD, undated], beta).map((m) => m.rel), []);
+	});
+});
+
+/**
  * A capture the tool refused still has to reach someone.
  *
  * A tool call can be refused for a reason the caller cannot repair by
