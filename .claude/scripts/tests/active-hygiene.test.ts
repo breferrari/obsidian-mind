@@ -875,9 +875,11 @@ describe("stripJsonComments, as strip-json-comments 3.1.1", () => {
 	});
 
 	test("one pass: an unterminated string of escaped quotes stays linear", () => {
-		const text = '{ "a": "' + '\\"'.repeat(20_000);
+		// The regex form took 61.6 ms at 8,000 and grows with the square, so about
+		// 10 s here; the scan takes a few ms, so the bound holds on a slow runner.
+		const text = '{ "a": "' + '\\"'.repeat(100_000);
 		const start = performance.now();
 		assert.equal(stripJsonComments(text), text);
-		assert.ok(performance.now() - start < 200, "the regex form took ~60 ms at 8,000 and grows quadratically");
+		assert.ok(performance.now() - start < 500);
 	});
 });
