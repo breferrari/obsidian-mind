@@ -70,6 +70,13 @@ export function shouldRefreshForPath(filePath: unknown): boolean {
 }
 
 /**
+ * Whether a write to `filePath` should refresh this vault's index (#366).
+ */
+export function refreshesVaultIndex(filePath: unknown, _vaultRoot: string): boolean {
+	return shouldRefreshForPath(filePath);
+}
+
+/**
  * Return true when a previous refresh ran recently enough that this one
  * should be skipped. `sentinelMtimeMs` is the mtime of the debounce
  * sentinel (or null when it doesn't exist yet); `nowMs` is Date.now();

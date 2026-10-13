@@ -34,8 +34,8 @@ import {
 	newNoteClusterCandidate,
 } from "./lib/active-hygiene.ts";
 import {
+	refreshesVaultIndex,
 	sentinelPathFrom,
-	shouldRefreshForPath,
 	triggerDebouncedRefresh,
 } from "./lib/qmd-refresh.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
@@ -75,7 +75,7 @@ const DEBOUNCE_MS = 30_000;
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SENTINEL_PATH = sentinelPathFrom(process.env, SCRIPT_DIR);
 const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
-if (refreshed.some(shouldRefreshForPath)) {
+if (refreshed.some((path) => refreshesVaultIndex(path, vaultRoot))) {
 	triggerDebouncedRefresh({
 		sentinelPath: SENTINEL_PATH,
 		workerPath: WORKER_PATH,
