@@ -8,8 +8,6 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import {
 	buildCollectionAddArgs,
@@ -328,22 +326,14 @@ describe("isUnknownSubcommandFailure", () => {
 	});
 });
 
-/**
- * session-start starts the bootstrap detached, so it has no console, and on
- * Windows every console program it then starts without windowsHide opens a
- * console window of its own (#381). Checked through the spawn seam, so no qmd
- * starts here.
- */
+// Through the spawn seam, so no qmd starts here.
 describe("spawnQmd", () => {
-	test("starts qmd with windowsHide, so a console-less bootstrap opens no window", () => {
-		const seen: Array<Record<string, unknown>> = [];
-		const fake = ((_cmd: string, _args: readonly string[], options: Record<string, unknown>) => {
-			seen.push(options);
-			return { status: 0, signal: null, stdout: "", stderr: "", pid: 0, output: [] };
-		}) as unknown as typeof import("node:child_process").spawnSync;
-		spawnQmd(join(tmpdir(), "qmd.js"), ["--version"], fake);
-		spawnQmd(null, ["--version"], fake);
-		assert.equal(seen.length, 2);
-		for (const options of seen) assert.equal(options["windowsHide"], true);
+	test("starts qmd with windowsHide, so a console-less bootstrap opens no window (#381)", () => {
+		let hidden: boolean | undefined;
+		spawnQmd("qmd.js", ["--version"], (_cmd, _args, options) => {
+			hidden = options.windowsHide;
+			return { status: 0, signal: null, stdout: "", stderr: "" };
+		});
+		assert.equal(hidden, true);
 	});
 });

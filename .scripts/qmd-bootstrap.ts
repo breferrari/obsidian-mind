@@ -28,7 +28,7 @@
  *   node --experimental-strip-types .scripts/qmd-bootstrap.ts
  */
 
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding, type SpawnSyncReturns } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { warn } from "../.claude/scripts/lib/hook-io.ts";
@@ -102,7 +102,11 @@ type SpawnOutcome = {
 export function spawnQmd(
 	entry: string | null,
 	subcommandArgs: readonly string[],
-	spawn: typeof spawnSync = spawnSync,
+	spawn: (
+		cmd: string,
+		args: string[],
+		options: SpawnSyncOptionsWithStringEncoding,
+	) => Pick<SpawnSyncReturns<string>, "status" | "signal" | "stdout" | "stderr"> = spawnSync,
 ): SpawnOutcome {
 	const { cmd, args, shell } = buildQmdCommand(entry, subcommandArgs);
 	// windowsHide: session-start starts this bootstrap detached, so it has no
