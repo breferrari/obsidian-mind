@@ -26,8 +26,9 @@
  *      reorders. The blast radius of a bug here is one extra line.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+
+import { rewriteIfUnchanged } from "./atomic-write.ts";
 
 import { MEMORY_SOURCE } from "./memory-write.ts";
 
@@ -110,26 +111,32 @@ function frontmatterScalar(md: string, key: string): string | null {
  */
 export function markSuperseded(vaultRoot: string, rel: string, supersedingTitle: string): SupersedeResult {
 	const full = join(vaultRoot, rel);
-	let md: string;
+	let reason = "";
 	try {
-		md = readFileSync(full, "utf8");
-	} catch {
+		const outcome = rewriteIfUnchanged(full, (current) => {
+			// Re-checked on every attempt: the file may have been replaced between
+			// our read and our write, and a note we no longer own is never touched.
+			if (frontmatterScalar(current, "source") !== OWNED_BY_SERVER) {
+				throw new SupersedeRefused(
+					`refusing to modify ${rel}: not an agent-written memory (source is not ${OWNED_BY_SERVER})`,
+				);
+			}
+			const result = addToFrontmatterList(current, "superseded_by", supersedingTitle);
+			reason = result.reason;
+			return result.changed ? result.text : null;
+		});
+		if (outcome === "contended") {
+			return { ok: false, reason: `could not mark ${rel} superseded: file kept changing under concurrent writers` };
+		}
+		return { ok: true, changed: outcome === "written", reason };
+	} catch (err) {
+		if (err instanceof SupersedeRefused) return { ok: false, reason: err.message };
 		return { ok: false, reason: `cannot read ${rel}` };
 	}
-
-	if (frontmatterScalar(md, "source") !== OWNED_BY_SERVER) {
-		return {
-			ok: false,
-			reason: `refusing to modify ${rel}: not an agent-written memory (source is not ${OWNED_BY_SERVER})`,
-		};
-	}
-
-	const result = addToFrontmatterList(md, "superseded_by", supersedingTitle);
-	if (!result.changed) return { ok: true, changed: false, reason: result.reason };
-
-	writeFileSync(full, result.text, "utf8");
-	return { ok: true, changed: true, reason: result.reason };
 }
+
+/** A refusal surfaced from inside the guarded rewrite. Never a write. */
+class SupersedeRefused extends Error {}
 
 /**
  * Resolve the memories a capture claims to supersede.
