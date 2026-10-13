@@ -143,6 +143,7 @@ export function resolveSupersedes<T extends Titled>(
 	claims: unknown,
 	existing: readonly T[],
 ): { matched: T[]; unmatched: string[] } {
+	// Every memory a claim's title names, not the first: see supersedeResolver.
 	return supersedeResolver(existing)(claims);
 }
 

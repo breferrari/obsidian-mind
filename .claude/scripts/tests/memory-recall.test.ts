@@ -597,6 +597,11 @@ describe("a correction that keeps the corrected memory's title (#364)", () => {
 		const undated = dated({ scope: "project", projects: ["atlas"] }, "undated");
 		assert.deepEqual(recallFrom([OLD, undated], beta).map((m) => m.rel), []);
 	});
+
+	test("explain names supersession, not scope, for the withheld old copy", () => {
+		const { withheld } = recallFrom([OLD, NEW], beta, { explain: true });
+		assert.ok(withheld.find((m) => m.rel === OLD.rel)?.why?.startsWith(SUPERSEDED_OUT_OF_REACH));
+	});
 });
 
 /**

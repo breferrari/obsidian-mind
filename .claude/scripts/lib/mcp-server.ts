@@ -568,7 +568,8 @@ export function createHandlers(deps: ServerDeps): Handlers {
 			if (markSuperseded(ctx.vaultRoot, m.rel, v.value.title).ok) {
 				// The file, not just the title: a title can name several memories
 				// (#364), and every one is marked, so a caller who meant one of two
-				// that share a title by coincidence sees both and can re-file.
+				// that share a title by coincidence sees both, rather than one being
+				// retired silently.
 				retired.push(`${m.title} (${m.rel})`);
 				// Rewritten in place, and the new frontmatter is what makes it sink.
 				memoryIndex.invalidate(m.rel);
