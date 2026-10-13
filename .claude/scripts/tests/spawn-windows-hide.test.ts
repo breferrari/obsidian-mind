@@ -37,7 +37,19 @@ const ALLOWED: ReadonlyArray<{ readonly file: string; readonly call: string; rea
 	},
 ];
 
-const SPAWN = /(?<![.\w])(spawnSync|spawn|execSync|execFileSync|execFile)\(/g;
+const SPAWN_NAMES = ["spawnSync", "spawn", "execSync", "execFileSync", "execFile"];
+
+/**
+ * The calls that start a process in `code`: node's spawn functions, called bare
+ * or through a namespace (`cp.spawn(`), and any seam parameter typed as one of
+ * them (`spawnChild: typeof spawn`), which is how a spawn reaches a test.
+ */
+function spawnPattern(code: string): RegExp {
+	const seams = [...code.matchAll(new RegExp(`(\\w+)\\s*:\\s*typeof\\s+(?:${SPAWN_NAMES.join("|")})\\b`, "g"))].map(
+		(m) => m[1]!,
+	);
+	return new RegExp(`(?<![\\w$])(?:\\w+\\.)?(${[...SPAWN_NAMES, ...seams].join("|")})\\(`, "g");
+}
 
 function sources(dir: string): string[] {
 	const out: string[] = [];
@@ -71,7 +83,7 @@ test("every spawn in .claude/scripts and .scripts passes windowsHide, or is allo
 			.split("\n")
 			.map((line) => (/^\s*(\/\/|\*|\/\*)/.test(line) ? "" : line))
 			.join("\n");
-		for (const m of code.matchAll(SPAWN)) {
+		for (const m of code.matchAll(spawnPattern(code))) {
 			const call = callText(code, m.index! + m[0].length - 1);
 			if (/windowsHide/.test(call)) continue;
 			const allowed = ALLOWED.find((a) => a.file === rel && call.includes(a.call));

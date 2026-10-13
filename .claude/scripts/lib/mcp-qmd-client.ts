@@ -420,6 +420,7 @@ export function createQmdClient(vaultRoot: string, launcherPath: string | null, 
 	const child: ChildProcess = spawnChild(process.execPath, [launcher], {
 		stdio: ["pipe", "pipe", "ignore"],
 		env: { ...process.env, CLAUDE_PROJECT_DIR: vaultRoot },
+		windowsHide: true,
 	});
 
 	const pending = new Map<number, Pending>();
