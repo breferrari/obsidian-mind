@@ -60,6 +60,7 @@ import {
 	writeSystemMessage,
 } from "./lib/hook-io.ts";
 import { readOmMod } from "./lib/om-mod.ts";
+import { envPath } from "./lib/env-path.ts";
 import { sentinelPathFrom, triggerDebouncedRefresh } from "./lib/qmd-refresh.ts";
 import { HANDOFF_DIR, pruneHandoffs, writeHandoff } from "./lib/stop-handoff.ts";
 import { AGENT_PREFACE, FEEDBACK_PREFACE, FEEDBACK_TRAILER, MOD_PREFACE, stopSummary } from "./lib/stop-report.ts";
@@ -85,9 +86,7 @@ const WORKER_PATH = resolvePath(SCRIPT_DIR, "qmd-refresh-run.ts");
 // The last report each session was shown (lib/hint-state.ts, the same
 // self-pruning, fail-open store as the classifier's hint dedupe, #107).
 // STOP_CHECKLIST_STATE routes it to a tmp path for tests.
-const STATE_PATH =
-	process.env["STOP_CHECKLIST_STATE"] ??
-	join(SCRIPT_DIR, ".checklist-state.json");
+const STATE_PATH = envPath(process.env, "STOP_CHECKLIST_STATE", join(SCRIPT_DIR, ".checklist-state.json"));
 
 type HookInput = {
 	readonly hook_event_name?: unknown;

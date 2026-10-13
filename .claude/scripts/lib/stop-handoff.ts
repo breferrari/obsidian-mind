@@ -29,14 +29,14 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeFileAtomic } from "./atomic-write.ts";
+import { envPath } from "./env-path.ts";
 
 /**
  * Where a Stop report waits for the next prompt: one place for the writer
  * (stop-checklist) and the reader (classify-message), so they cannot drift
  * apart. STOP_HANDOFF_DIR routes it to a tmp path for tests.
  */
-export const HANDOFF_DIR =
-	process.env["STOP_HANDOFF_DIR"] ?? join(dirname(fileURLToPath(import.meta.url)), "..", ".stop-handoff");
+export const HANDOFF_DIR = envPath(process.env, "STOP_HANDOFF_DIR", join(dirname(fileURLToPath(import.meta.url)), "..", ".stop-handoff"));
 
 /** Reports nobody picked up are removed after this long. */
 export const HANDOFF_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;

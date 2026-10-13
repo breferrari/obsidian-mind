@@ -15,13 +15,13 @@ import { fileURLToPath } from "node:url";
 import { debug, readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
 import { classify } from "./lib/matcher.ts";
 import { claimUnseen } from "./lib/hint-state.ts";
+import { envPath } from "./lib/env-path.ts";
 import { HANDOFF_DIR, takeHandoff } from "./lib/stop-handoff.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 // CLASSIFY_HINT_STATE routes the state file into a tmp path for tests
 // (mirrors the QMD_REFRESH_SENTINEL pattern). Production never sets it.
-const STATE_PATH =
-	process.env["CLASSIFY_HINT_STATE"] ?? join(SCRIPT_DIR, ".hint-state.json");
+const STATE_PATH = envPath(process.env, "CLASSIFY_HINT_STATE", join(SCRIPT_DIR, ".hint-state.json"));
 
 type HookInput = {
 	readonly prompt?: unknown;
