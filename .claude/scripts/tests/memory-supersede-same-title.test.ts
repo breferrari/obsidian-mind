@@ -1,5 +1,6 @@
 /**
- * Supersession under a shared title (#364).
+ * What `remember` may mark, compare and name, and for which caller: supersession
+ * under a shared title (#364), and the near-duplicate check's reach (#375).
  *
  * A correction that keeps its title is the normal path, so a title can name
  * several memories. Resolving a `supersedes` claim to the first of them marked
@@ -9,8 +10,8 @@
  * coincidence is visible to the caller rather than retired silently.
  *
  * Driven through the real `tools/call` dispatch, as mcp-refusal-audit does.
- * Every call passes `force: true`: the near-duplicate check is not what these
- * tests are about.
+ * Calls pass `force: true` by default, so only the near-duplicate tests, which
+ * pass `force: false`, meet that check.
  */
 
 import { test, describe } from "node:test";
@@ -189,35 +190,92 @@ describe("remember marks every memory a shared title names", () => {
 });
 
 /**
- * The near-duplicate check compares only against what recall serves the
- * caller (#375). A memory scoped to another project is not this caller's
- * duplicate, and naming it in a refusal would show the caller a memory recall
- * never would.
+ * The near-duplicate check judges a duplicate by where the NEW memory would be
+ * read, in the caller's reach or not, and reach decides only what the refusal
+ * names (#375). Comparing only against the caller's reach let a caller file a
+ * second copy into a project it can't see, or restate a claim whose
+ * correction it can't see and so undo that correction.
  */
-describe("remember's near-duplicate check stays in reach", () => {
-	test("a near-identical memory in another project's scope neither refuses the write nor is named", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "neardup-reach-"));
+describe("remember's near-duplicate check: compared where it would be read, named only in reach", () => {
+	const RESTATED = `${BODY} Restated.`;
+
+	test("a general write duplicating another project's memory is refused, without naming it", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "neardup-general-"));
 		try {
 			const { remember } = harness(dir);
 			const theirs = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
-			const full = join(dir, theirs);
-			scopeToHarbor(full);
+			scopeToHarbor(join(dir, theirs));
 
 			const reply = await remember(new Date(2026, 6, 1), { scope: "general", force: false });
+			assert.match(reply, /^Not recorded: a near-identical memory already exists where this one would be read/m);
 			assert.ok(!reply.includes(theirs), "the reply does not name a memory outside the caller's reach");
-			assert.match(reply, /^Recorded: /m, "another project's copy is not this caller's duplicate");
+			assert.ok(!reply.includes(TITLE), "nor its title");
 		} finally {
 			rmTemp(dir);
 		}
 	});
 
-	test("a near-identical memory the caller can see still refuses the write (the control)", async () => {
+	test("a write scoped into another project is compared there, so it can't add a second copy", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "neardup-into-"));
+		try {
+			const { remember } = harness(dir);
+			const theirs = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
+			scopeToHarbor(join(dir, theirs));
+
+			const reply = await remember(new Date(2026, 6, 1), { scope: "project", projects: ["harbor"], force: false });
+			assert.match(reply, /^Not recorded: a near-identical memory already exists where this one would be read/m);
+			assert.ok(!reply.includes(theirs));
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("restating a claim whose correction is out of reach is refused, so the correction holds", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "neardup-retired-"));
+		try {
+			const { remember } = harness(dir);
+			// A, general, corrected by a harbor-only memory: withheld from atlas.
+			const retired = recorded(await remember(new Date(2026, 5, 1), { scope: "general", body: RESTATED }));
+			const fix = recorded(
+				await remember(new Date(2026, 5, 2), { scope: "general", title: "tokens expire after one hour (harbor)" }),
+			);
+			scopeToHarbor(join(dir, fix));
+			const full = join(dir, retired);
+			writeFileSync(
+				full,
+				readFileSync(full, "utf8").replace(/^scope: general$/m, 'scope: general\nsuperseded_by: ["tokens expire after one hour (harbor)"]'),
+			);
+
+			const reply = await remember(new Date(2026, 6, 1), { scope: "general", body: RESTATED, force: false });
+			assert.match(reply, /^Not recorded: a near-identical memory already exists where this one would be read/m);
+			assert.ok(!reply.includes(retired), "the withheld memory is not named either");
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a write whose facets another project's copy doesn't share is recorded: two projects may each hold one", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "neardup-own-"));
+		try {
+			const { remember } = harness(dir);
+			const theirs = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
+			scopeToHarbor(join(dir, theirs));
+
+			const reply = await remember(new Date(2026, 6, 1), { scope: "project", projects: ["atlas"], force: false });
+			assert.match(reply, /^Recorded: /m);
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("a near-identical memory the caller can see still refuses the write, and is named (the control)", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "neardup-control-"));
 		try {
 			const { remember } = harness(dir);
-			await remember(new Date(2026, 5, 1), { scope: "general" });
+			const mine = recorded(await remember(new Date(2026, 5, 1), { scope: "general" }));
 			const reply = await remember(new Date(2026, 6, 1), { scope: "general", force: false });
 			assert.match(reply, /near-identical/);
+			assert.ok(reply.includes(mine), "a memory in reach is named");
 		} finally {
 			rmTemp(dir);
 		}
