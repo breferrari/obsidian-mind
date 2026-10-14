@@ -342,6 +342,12 @@ for (const [label, npmGlobalRoot] of [
 			assert.equal(posix({}, auth), join(nodeDir, "lib", "node_modules"));
 		});
 
+		test("3: a key ini would cut or reshape asks npm: ; or #, brackets, a backslash, inner whitespace", () => {
+			for (const line of ["prefix#moved=/opt/g", "globalconfig;x=/etc/g", "prefix[]=/opt/g", "pre\\fix=/opt/g", "pre fix=/opt/g"]) {
+				assert.equal(posix({}, { [userNpmrc]: line }), null, line);
+			}
+		});
+
 		test("3: a key npm would build from ${...} asks npm", () => {
 			assert.equal(posix({}, { [userNpmrc]: "${NPMKEY}=/opt/g" }), null);
 		});
@@ -401,8 +407,10 @@ for (const [label, npmGlobalRoot] of [
 			);
 		});
 
-		// The property that matters: a root worked out here is the root npm
-		// would give, qmd or not. A null only costs the spawn it would save.
+		// A detector, not a law: a worked-out root models the npm beside this
+		// Node, and PATH's npm can differ (globalQmdEntry asks npm on a miss
+		// for that reason). On a stock install, CI's included, the two agree;
+		// a leg where they don't fails here rather than silently.
 		test("a root worked out on this machine is the one npm gives", (t) => {
 			// Without the npm_config_* that `npm test` exports, or rule 1 only echoes npm back.
 			const ours = npmGlobalRoot({ env: withoutNpmConfig() });

@@ -151,8 +151,9 @@ function readTextOrNull(path) {
  *    ask npm.
  * 3. ~/.npmrc (HOME before the OS home) or `<node prefix>/etc/npmrc` has a
  *    line setting `prefix` or `globalconfig`, sections included, or a key
- *    npm's ini would rewrite (quoted, which it unquotes, escapes and all, or
- *    built from `${…}`) → ask npm. An npmrc with only auth or
+ *    npm's ini would rewrite (quoted, which it unquotes, escapes and all;
+ *    built from `${…}`; or holding `;` or `#`, which cut it, brackets, a
+ *    backslash or whitespace) → ask npm. An npmrc with only auth or
  *    registry lines (or `save-prefix`) doesn't count.
  * 4. The builtin npmrc: on Windows, the installer's exact
  *    `prefix=${APPDATA}\npm` → %APPDATA%\npm. Any other line there setting
@@ -187,14 +188,14 @@ export function npmGlobalRoot(at = {}) {
 		(readText(file) ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !/^[;#]/.test(l));
 	// Rules 3 and 4: a line setting one of `keys`, or one whose key npm's
 	// ini would turn into something this can't read: quoted (unquoted and
-	// decoded), built from `${…}`, or holding brackets, a backslash or
-	// whitespace. Auth keys (`//host/path/:_authToken`, with % ~ +) are
+	// decoded), built from `${…}`, or holding `;` or `#` (ini cuts the key
+	// there), brackets, a backslash or whitespace. Auth keys (`//host/path/:_authToken`, with % ~ +) are
 	// plain. Section headers set nothing.
 	const settingLines = (file, keys = ["prefix", "globalconfig"]) =>
 		lines(file).filter((l) => {
 			if (l.startsWith("[")) return false;
-			const key = (l.split("=", 1)[0] ?? "").trim();
-			return keys.includes(key.toLowerCase()) || /^["']|\$\{|[\s[\]\\]/.test(key);
+			const key = l.split("=", 1)[0].trim();
+			return keys.includes(key.toLowerCase()) || /^["']|\$\{|[\s[\]\\;#]/.test(key);
 		});
 	// Absolute in npm's sense: on a Windows host, `\npm` is drive-relative.
 	// Padded values ask npm: how its path handling treats them is not read here.
@@ -290,7 +291,7 @@ function askNpmForRoot() {
 	// Guard against success-with-empty-stdout or a relative path — either would
 	// make join() produce a path anchored at cwd, and existsSync could then
 	// match a local folder by accident.
-	const root = npmRoot.stdout.trim();
+	const root = (npmRoot.stdout ?? "").trim();
 	return root === "" || !isAbsolute(root) ? null : root;
 }
 
