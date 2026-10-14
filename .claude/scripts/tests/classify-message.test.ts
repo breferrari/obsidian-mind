@@ -505,6 +505,30 @@ describe("classify-message — re-injects the session context after a Gemini com
 		});
 	});
 
+	test("a backup that throws doesn't cost the re-injection", () => {
+		withVault((env) => {
+			// A file where the backup folder goes, so its mkdir throws.
+			writeFileSync(join(env["CLAUDE_PROJECT_DIR"]!, "thinking"), "");
+			const transcript = join(env["CLAUDE_PROJECT_DIR"]!, "..", "transcript.jsonl");
+			writeFileSync(transcript, "{}\n");
+			assert.equal(compress(env, "gem-3", { transcript_path: transcript }).code, 0);
+			const first = spawnHook(SCRIPT, { hook_event_name: "BeforeAgent", session_id: "gem-3", prompt: "hello world" }, env);
+			assert.match(parseHookContext(first.stdout, "BeforeAgent"), /### Date/);
+		});
+	});
+
+	test("the re-injection build starts no detached qmd update; an ordinary startup does", () => {
+		withVault((env) => {
+			const debugEnv = { ...env, HOOK_DEBUG: "1" };
+			const spawnLine = "session-start: qmd refresh off";
+			const startup = spawnHook(SESSION_START, { hook_event_name: "SessionStart", source: "startup" }, debugEnv);
+			assert.ok(startup.stderr.includes(spawnLine), "the line this test watches for is logged by an ordinary startup");
+			const build = spawnHook(SESSION_START, { hook_event_name: "SessionStart", source: "startup", om_reinject: true }, debugEnv);
+			assert.equal(build.code, 0);
+			assert.equal(build.stderr.includes(spawnLine), false, "PreCompress already started a refresh");
+		});
+	});
+
 	test("Claude Code's PreCompact stores nothing: it re-injects on SessionStart compact", () => {
 		withVault((env) => {
 			spawnHook(PRE_COMPACT, { hook_event_name: "PreCompact", session_id: "cc-1", trigger: "auto" }, env);
