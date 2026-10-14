@@ -84,6 +84,7 @@ describe("sessionStartContext", () => {
 		assert.equal(context, "## Session Context");
 		assert.equal(asked[0]?.["source"], "startup", "the full context: the compression summarised it away");
 		assert.equal("session_id" in (asked[0] ?? {}), false);
+		assert.equal(asked[0]?.["om_reinject"], true, "flagged, so it skips the qmd work startup already did");
 	});
 
 	test("a failed or empty run gives nothing", () => {
