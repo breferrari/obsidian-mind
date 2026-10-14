@@ -284,7 +284,7 @@ for (const [label, npmGlobalRoot] of [
 		test("1: env values are read as npm reads them: empty skipped, the last winning, nothing trimmed", () => {
 			const a = join(tmpdir(), "a");
 			const b = join(tmpdir(), "b");
-			// npm's loadEnv skips only "" and keeps the value as given (@npmcli/config, npm 10.9.2).
+			// npm's loadEnv skips only "" and keeps the value as given (@npmcli/config, npm 10.9.2, read 2026-10-14).
 			assert.equal(posix({ npm_config_prefix: `${a} ` }), null, "padded: npm doesn't trim it, so ask npm");
 			assert.equal(posix({ npm_config_prefix: " " }), null, "whitespace is set for npm, not unset");
 			assert.equal(posix({ npm_config_userconfig: " " }), null);

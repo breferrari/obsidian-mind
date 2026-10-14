@@ -162,7 +162,7 @@ function readTextOrNull(path) {
  * 4 and 5 hold only when npm sits beside this Node; where it doesn't
  * (Homebrew, Debian's packaged npm), ask npm. Env values are read as npm
  * reads them: only "" skipped, nothing trimmed, the last of several winning
- * (@npmcli/config's loadEnv, read in npm 10.9.2). Rule 3 needs a home: when
+ * (@npmcli/config's loadEnv, read in npm 10.9.2 on 2026-10-14). Rule 3 needs a home: when
  * the OS can't name one (a UID with no passwd entry), ask npm.
  *
  * Packages sit in `<prefix>\node_modules` on Windows and
@@ -251,12 +251,12 @@ function qmdEntryUnder(root) {
  * the one npm would give, so it is the answer whether or not qmd is there
  * (#399); only without one is npm asked.
  */
-export function globalQmdEntry(computed = npmGlobalRoot(), askNpm = npmRootFromNpm) {
+export function globalQmdEntry(computed = npmGlobalRoot(), askNpm = askNpmForRoot) {
 	const root = computed ?? askNpm();
 	return root === null ? null : qmdEntryUnder(root);
 }
 
-function npmRootFromNpm() {
+function askNpmForRoot() {
 	// Fallback for global npm installs that aren't on this package's resolution
 	// path — ask npm directly where global packages live. Bounded timeout so a
 	// hung npm process can't block MCP server startup indefinitely.
