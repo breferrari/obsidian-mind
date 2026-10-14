@@ -320,7 +320,7 @@ export function workerCwd(temp: string = tmpdir()): string {
  */
 export function spawnDetachedWorker(workerPath: string, logPrefix: string, workerArgs: readonly string[] = []): void {
 	const args = ["--disable-warning=ExperimentalWarning", "--experimental-strip-types", workerPath, ...workerArgs];
-	spawnDetachedQmd({ cmd: process.execPath, args, shell: false }, logPrefix, workerCwd());
+	spawnDetachedQmd({ cmd: process.execPath, args, shell: false }, logPrefix, process.cwd());
 }
 
 /**
