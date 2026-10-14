@@ -51,15 +51,25 @@ export function handoffPath(dir: string, sessionId: string): string {
 	return sessionFile(dir, sessionId, "txt");
 }
 
+/** Save `text` in the session's `extension` file, replacing any unread one. Throws if it cannot. */
+export function writeSessionFile(dir: string, sessionId: string, extension: string, text: string): void {
+	mkdirSync(dir, { recursive: true });
+	writeFileAtomic(sessionFile(dir, sessionId, extension), text);
+}
+
 /** Save `text` for the session's next prompt, replacing any unread report. Throws if it cannot. */
 export function writeHandoff(dir: string, sessionId: string, text: string): void {
-	mkdirSync(dir, { recursive: true });
-	writeFileAtomic(handoffPath(dir, sessionId), text);
+	writeSessionFile(dir, sessionId, "txt", text);
 }
 
 /** Take the session's report, once. Null when there is none or it cannot be claimed. */
 export function takeHandoff(dir: string, sessionId: string): string | null {
-	const target = handoffPath(dir, sessionId);
+	return claimSessionFile(dir, sessionId, "txt");
+}
+
+/** Take the session's `extension` file, once: its text, or null when there is none or it cannot be claimed. */
+export function claimSessionFile(dir: string, sessionId: string, extension: string): string | null {
+	const target = sessionFile(dir, sessionId, extension);
 	const claimed = `${target}.${process.pid}.claimed`;
 	try {
 		renameSync(target, claimed);

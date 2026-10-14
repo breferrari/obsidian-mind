@@ -17,7 +17,7 @@ import { classify } from "./lib/matcher.ts";
 import { claimUnseen } from "./lib/hint-state.ts";
 import { envPath } from "./lib/env-path.ts";
 import { HANDOFF_DIR, takeHandoff } from "./lib/stop-handoff.ts";
-import { reinjectContext } from "./lib/reinject.ts";
+import { takeReinject } from "./lib/reinject.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 // CLASSIFY_HINT_STATE routes the state file into a tmp path for tests
@@ -39,8 +39,8 @@ if (!input) {
 // The previous turn's Stop report, if one is waiting (lib/stop-handoff.ts).
 // Taken before anything about the prompt is checked: it rides with this
 // prompt whatever the prompt holds.
-const sessionId = input.session_id;
-const stopReport = typeof sessionId === "string" && sessionId ? takeHandoff(HANDOFF_DIR, sessionId) : null;
+const sessionId = typeof input.session_id === "string" && input.session_id ? input.session_id : null;
+const stopReport = sessionId !== null ? takeHandoff(HANDOFF_DIR, sessionId) : null;
 
 const prompt = input.prompt;
 const usable = typeof prompt === "string" && prompt !== "";
@@ -52,7 +52,7 @@ debug(`classify: matched ${signals.length} signal(s)`);
 // a self-pruning state file (7-day age + 200-session cap). Missing/invalid
 // session_id fails OPEN — every hint emits, matching today's behavior.
 let toEmit = signals;
-if (typeof sessionId === "string" && sessionId && signals.length > 0) {
+if (sessionId !== null && signals.length > 0) {
 	toEmit = claimUnseen(STATE_PATH, sessionId, signals);
 	debug(
 		`classify: ${signals.length - toEmit.length} signal(s) already fired this session`,
@@ -72,7 +72,7 @@ if (stopReport !== null) parts.push(stopReport);
 // After a Gemini compression, the session context once (#357). Last: if the
 // output cap cuts anything, it cuts the end of the context, not the hints
 // claimUnseen has already marked as fired.
-const reinjected = typeof sessionId === "string" && sessionId ? reinjectContext(HANDOFF_DIR, sessionId) : null;
+const reinjected = sessionId !== null ? takeReinject(HANDOFF_DIR, sessionId) : null;
 if (reinjected !== null) parts.push(reinjected);
 
 if (parts.length > 0) {

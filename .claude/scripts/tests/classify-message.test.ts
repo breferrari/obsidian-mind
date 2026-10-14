@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { parseHookContext } from "../lib/hook-io.ts";
 import { takeHandoff, writeHandoff } from "../lib/stop-handoff.ts";
 import { SIGNALS } from "../lib/signals.ts";
 import { classify } from "../lib/matcher.ts";
@@ -446,12 +447,13 @@ describe("classify — the Stop report handoff", () => {
 });
 
 /**
- * After a Gemini compression (#357): Gemini's PreCompress marks the session,
- * and the next BeforeAgent hands over the session context once. Spawns
- * session-start through classify-message, so it runs on CI.
+ * After a Gemini compression (#357): Gemini's PreCompress stores the session
+ * context, and the next BeforeAgent hands it over once. Spawns session-start
+ * through pre-compact, so it runs on CI.
  */
 describe("classify-message — re-injects the session context after a Gemini compression (#357)", () => {
 	const PRE_COMPACT = resolve(dirname(fileURLToPath(import.meta.url)), "../pre-compact.ts");
+	const SESSION_START = resolve(dirname(fileURLToPath(import.meta.url)), "../session-start.ts");
 
 	/** An empty vault and a handoff folder, both temporary: session-start never reads the real repo. */
 	const withVault = (run: (env: Record<string, string>) => void): void => {
@@ -464,39 +466,35 @@ describe("classify-message — re-injects the session context after a Gemini com
 			rmTemp(root);
 		}
 	};
+	// PreCompress runs session-start itself, so it gets the longer budget.
 	const compress = (env: Record<string, string>, sessionId: string) =>
-		spawnHook(PRE_COMPACT, { hook_event_name: "PreCompress", session_id: sessionId, trigger: "auto" }, env);
+		spawnHook(PRE_COMPACT, { hook_event_name: "PreCompress", session_id: sessionId, trigger: "auto" }, env, { timeoutMs: 60_000 });
 
-	test("PreCompress marks the session; the next prompt gets the context, the one after does not", () => {
+	test("PreCompress stores the context; the next prompt gets it, the one after does not", () => {
 		withVault((env) => {
 			assert.equal(compress(env, "gem-1").code, 0);
 
 			const prompt = { hook_event_name: "BeforeAgent", session_id: "gem-1", prompt: "hello world" };
-			const first = spawnHook(SCRIPT, prompt, env, { timeoutMs: 60_000 });
+			const first = spawnHook(SCRIPT, prompt, env);
 			assert.equal(first.code, 0);
-			const context = (JSON.parse(first.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput
-				.additionalContext;
-			assert.match(context, /### Date/, "session-start's context, re-injected");
+			assert.match(parseHookContext(first.stdout, "BeforeAgent"), /### Date/, "session-start's context, re-injected");
 
 			const second = spawnHook(SCRIPT, prompt, env);
 			assert.equal(second.stdout, "", "once: the next prompt gets nothing");
 		});
 	});
 
-	test("a resume after the compression takes the mark: it injects the context itself", () => {
+	test("a resume after the compression injects the full context itself, and the next prompt gets no second copy", () => {
 		withVault((env) => {
-			compress(env, "gem-2");
-			const SESSION_START = resolve(dirname(fileURLToPath(import.meta.url)), "../session-start.ts");
-			assert.equal(spawnHook(SESSION_START, { hook_event_name: "SessionStart", source: "resume", session_id: "gem-2" }, env).code, 0);
-			const after = spawnHook(SCRIPT, { hook_event_name: "BeforeAgent", session_id: "gem-2", prompt: "hello world" }, env);
-			assert.equal(after.stdout, "", "no second copy of the context");
-		});
-	});
+			const resume = { hook_event_name: "SessionStart", source: "resume", session_id: "gem-2" };
+			const plain = spawnHook(SESSION_START, resume, env);
+			assert.match(parseHookContext(plain.stdout, "SessionStart"), /### Context Pointer/, "a plain resume is the compact form");
 
-	test("Claude Code's PreCompact marks nothing: it re-injects on SessionStart compact", () => {
-		withVault((env) => {
-			spawnHook(PRE_COMPACT, { hook_event_name: "PreCompact", session_id: "cc-1", trigger: "auto" }, env);
-			const after = spawnHook(SCRIPT, { hook_event_name: "UserPromptSubmit", session_id: "cc-1", prompt: "hello world" }, env);
+			compress(env, "gem-2");
+			const resumed = spawnHook(SESSION_START, resume, env);
+			assert.equal(resumed.code, 0);
+			assert.doesNotMatch(parseHookContext(resumed.stdout, "SessionStart"), /### Context Pointer/, "the full form after a compression");
+			const after = spawnHook(SCRIPT, { hook_event_name: "BeforeAgent", session_id: "gem-2", prompt: "hello world" }, env);
 			assert.equal(after.stdout, "");
 		});
 	});

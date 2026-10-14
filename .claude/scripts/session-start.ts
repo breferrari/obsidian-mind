@@ -119,11 +119,11 @@ async function readHookInput(): Promise<HookInput | null> {
 	return result;
 }
 const hookInput = await readHookInput();
-// A Gemini session marked for re-injection after a compression (#357) that is
-// resumed or cleared before its next prompt gets its context here instead.
-if ((hookInput?.source === "resume" || hookInput?.source === "clear") && typeof hookInput.session_id === "string") {
-	takeReinject(HANDOFF_DIR, hookInput.session_id);
-}
+// A Gemini session compressed since its context was injected (#357) gets it
+// here instead of on its next prompt, and in full whatever the source: the
+// compression summarised away the sections the compact form points at.
+const compressed =
+	typeof hookInput?.session_id === "string" && hookInput.session_id !== "" && takeReinject(HANDOFF_DIR, hookInput.session_id) !== null;
 
 function readManifestRaw(): string | null {
 	try {
@@ -160,7 +160,7 @@ if (envFile) {
 const omMod = readOmMod(hookInput);
 if (omMod === "standdown") process.exit(0);
 const delivering = omMod === "deliver";
-const mode = delivering ? "full" : injectionMode(hookInput?.source);
+const mode = delivering || compressed ? "full" : injectionMode(hookInput?.source);
 
 process.chdir(cwd);
 
