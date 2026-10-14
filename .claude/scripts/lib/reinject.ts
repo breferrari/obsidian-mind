@@ -40,18 +40,21 @@ export function reinjectSession(input: { readonly hook_event_name?: unknown; rea
 }
 
 /**
- * Store `context` for the session's next prompt. Throws if it cannot. Prunes
- * old handoffs first: Gemini runs its checklist on SessionEnd, which never
- * prunes, so a session that ends right after compressing would otherwise
- * leave its context behind for good.
+ * Store `context` for the session's next prompt, stamped with when it was
+ * built: the prompt can come hours later, and the dated sections are as of
+ * the compression. An empty context stores nothing. Throws if it cannot
+ * write. Prunes old handoffs first: Gemini runs its checklist on SessionEnd,
+ * which never prunes, so a session that ends right after compressing would
+ * otherwise leave its context behind for good.
  */
-export function storeReinject(dir: string, sessionId: string, context: string): void {
-	pruneHandoffs(dir, Date.now());
-	writeSessionFile(dir, sessionId, EXTENSION, context);
+export function storeReinject(dir: string, sessionId: string, context: string, now: Date = new Date()): void {
+	if (context.trim() === "") return;
+	pruneHandoffs(dir, now.getTime());
+	const stamp = `(Session context rebuilt ${now.toISOString()}, when the conversation was compressed.)`;
+	writeSessionFile(dir, sessionId, EXTENSION, `${stamp}\n\n${context}`);
 }
 
-/** Take the session's stored context, once: null when none is waiting, or it is empty. */
+/** Take the session's stored context, once: null when none is waiting. */
 export function takeReinject(dir: string, sessionId: string): string | null {
-	const context = claimSessionFile(dir, sessionId, EXTENSION);
-	return context?.trim() ? context : null;
+	return claimSessionFile(dir, sessionId, EXTENSION);
 }

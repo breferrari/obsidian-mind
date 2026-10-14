@@ -92,7 +92,7 @@ import { debug, envelopedLimit, fitWithMeter, type OutputLimit, readStdinJson, w
 import { readOmMod } from "./lib/om-mod.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
-type HookInput = { readonly source?: unknown; readonly session_id?: unknown };
+type HookInput = { readonly source?: unknown; readonly session_id?: unknown; readonly om_reinject?: unknown };
 
 // The SessionStart payload carries `source` (startup/clear/resume/compact).
 // Missing or unparseable stdin fails open to full mode. stdin is OPTIONAL
@@ -184,7 +184,10 @@ const infraRootFilenames = parseInfraRootFilenames(manifestJson);
 // Route through `buildQmdCommand` so the shim-bypass logic that fixes
 // the MCP wrapper applies here too.
 const qmdIndex = resolveQmdIndex(manifestJson, cwd);
-const qmdEntry = resolveQmdEntry();
+// Gemini's PreCompress builds the context to re-inject (lib/session-start-run.ts,
+// #357): the qmd probes, self-heal and version check already ran at startup,
+// and a 20 s rebuild here would spend that run's whole budget.
+const qmdEntry = hookInput?.om_reinject === true ? null : resolveQmdEntry();
 
 // qmd is OPTIONAL in this template: every self-heal path below is gated on
 // a resolvable install (`qmdEntry !== null`). A machine without qmd gets no

@@ -490,7 +490,7 @@ describe("classify-message — re-injects the session context after a Gemini com
 			const plain = spawnHook(SESSION_START, resume, env);
 			assert.match(parseHookContext(plain.stdout, "SessionStart"), /### Context Pointer/, "a plain resume is the compact form");
 
-			compress(env, "gem-2");
+			assert.equal(compress(env, "gem-2").code, 0);
 			const resumed = spawnHook(SESSION_START, resume, env);
 			assert.equal(resumed.code, 0);
 			assert.doesNotMatch(parseHookContext(resumed.stdout, "SessionStart"), /### Context Pointer/, "the full form after a compression");

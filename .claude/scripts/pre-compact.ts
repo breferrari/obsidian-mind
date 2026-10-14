@@ -85,9 +85,12 @@ if (isMainModule(import.meta.url)) {
 		});
 	}
 
+	// The backup first: it is this hook's own job, and the re-injection below
+	// can take most of Gemini's PreCompress budget.
+	backupTranscript(input);
+
 	// Gemini fires no SessionStart after compressing, so store the context for
-	// the next BeforeAgent to re-inject (lib/reinject.ts, #357). Before the
-	// backup, which can exit early.
+	// the next BeforeAgent to re-inject (lib/reinject.ts, #357).
 	const reinjectFor = reinjectSession(input);
 	if (reinjectFor !== null) {
 		const context = sessionStartContext();
@@ -97,7 +100,11 @@ if (isMainModule(import.meta.url)) {
 			debug(`pre-compact: could not store the re-injection: ${(err as Error).message}`);
 		}
 	}
+	process.exit(0);
+}
 
+/** Copy the transcript into thinking/session-logs and prune old copies. Best effort. */
+function backupTranscript(input: HookInput): void {
 	const transcriptPath =
 		typeof input.transcript_path === "string" ? input.transcript_path : "";
 	const trigger =
@@ -105,7 +112,7 @@ if (isMainModule(import.meta.url)) {
 
 	if (!transcriptPath) {
 		debug("pre-compact: no transcript_path in input");
-		process.exit(0);
+		return;
 	}
 
 	const projectDir = resolveProjectDir(process.cwd());
@@ -130,9 +137,8 @@ if (isMainModule(import.meta.url)) {
 		} else {
 			debug(`pre-compact: copy failed: ${(err as Error).message}`);
 		}
-		process.exit(0);
+		return;
 	}
 
 	pruneBackups(backupDir, BACKUP_RETAIN);
-	process.exit(0);
 }

@@ -44,16 +44,19 @@ describe("reinjectSession", () => {
 });
 
 describe("the stored context", () => {
-	test("is taken once, by its own session", () => {
+	test("is taken once, by its own session, stamped with when it was built", () => {
 		withDir((dir) => {
-			storeReinject(dir, "s1", "## Session Context\nvolatile");
+			storeReinject(dir, "s1", "## Session Context\nvolatile", new Date("2026-10-14T09:30:00Z"));
 			assert.equal(takeReinject(dir, "s2"), null, "another session's context is not this one's");
-			assert.equal(takeReinject(dir, "s1"), "## Session Context\nvolatile");
+			assert.equal(
+				takeReinject(dir, "s1"),
+				"(Session context rebuilt 2026-10-14T09:30:00.000Z, when the conversation was compressed.)\n\n## Session Context\nvolatile",
+			);
 			assert.equal(takeReinject(dir, "s1"), null, "once");
 		});
 	});
 
-	test("an empty one gives nothing", () => {
+	test("an empty one is not stored", () => {
 		withDir((dir) => {
 			storeReinject(dir, "s1", "  \n");
 			assert.equal(takeReinject(dir, "s1"), null);
@@ -66,7 +69,7 @@ describe("the stored context", () => {
 			const dir = join(root, "markers");
 			storeReinject(dir, "../escape", "x");
 			assert.equal(existsSync(join(root, "escape.reinject")), false);
-			assert.equal(takeReinject(dir, "../escape"), "x");
+			assert.match(takeReinject(dir, "../escape") ?? "", /\n\nx$/);
 		});
 	});
 });

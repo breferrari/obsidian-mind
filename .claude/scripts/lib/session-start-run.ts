@@ -36,19 +36,21 @@ export const runSessionStart: SessionStartRun = (stdin) => {
 
 /**
  * session-start's full context, or null when the run failed or gave nothing.
- * Asked as a startup, the form that carries every section; no session id, so
- * the run never takes a stored context itself.
+ * Asked as a startup, the form that carries every section, flagged so it
+ * skips the qmd work startup already did; no session id, so the run never
+ * takes a stored context itself.
  */
 export function sessionStartContext(run: SessionStartRun = runSessionStart): string | null {
-	const r = run({ hook_event_name: "SessionStart", source: "startup" });
+	const r = run({ hook_event_name: "SessionStart", source: "startup", om_reinject: true });
 	if (r.status !== 0) {
 		debug(`session-start run: exited ${r.status ?? "on a signal or timeout"}`);
 		return null;
 	}
 	try {
 		const context = parseHookContext(r.stdout, "SessionStart");
-		if (context.trim() === "") debug("session-start run: empty context");
-		return context.trim() === "" ? null : context;
+		if (context.trim() !== "") return context;
+		debug("session-start run: empty context");
+		return null;
 	} catch (err) {
 		debug(`session-start run: unreadable output: ${(err as Error).message}`);
 		return null;
