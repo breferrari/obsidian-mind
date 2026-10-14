@@ -53,9 +53,11 @@ describe("the marker", () => {
 	});
 
 	test("a session id is reduced to a safe file name", () => {
-		withDir((dir) => {
+		withDir((root) => {
+			// One level down, so even an escaping write stays inside the temp folder and is cleaned up.
+			const dir = join(root, "markers");
 			markReinject(dir, "../escape");
-			assert.equal(existsSync(join(dir, "..", "escape.reinject")), false);
+			assert.equal(existsSync(join(root, "escape.reinject")), false);
 			assert.equal(takeReinject(dir, "../escape"), true);
 		});
 	});
