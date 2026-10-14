@@ -40,6 +40,7 @@ import {
 import { tmpdir } from "node:os";
 import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
 import { resolveQmdEntry } from "../lib/qmd.ts";
+import { REFRESH_SWITCH } from "../lib/qmd.ts";
 import { spawnDetachedWorker } from "../lib/qmd-refresh.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -289,27 +290,29 @@ describe("validate-write refresh trigger — eligible .md path", () => {
 });
 
 /**
- * The detached worker runs from the OS temp folder (#404): on Windows its cwd
- * would hold the vault open for as long as it sleeps and waits on qmd. A stub
- * worker records its cwd; spawning it is why this lives with the
- * integration tests.
+ * The detached worker runs from the OS temp folder (#404). A stub worker
+ * records its cwd; spawning it is why this lives with the integration tests.
  */
 describe("qmd-refresh — the detached worker runs outside the vault (#404)", () => {
 	test("a worker spawned from inside a folder records the temp folder as its cwd", () => {
 		const root = mkdtempSync(join(tmpdir(), "refresh-worker-cwd-"));
 		const previous = process.cwd();
+		// The stub is not a qmd worker: let the one detached spawner start it.
+		const refresh = process.env[REFRESH_SWITCH];
+		delete process.env[REFRESH_SWITCH];
 		try {
 			const stub = join(root, "stub-worker.mjs");
 			const out = join(root, "cwd.txt");
 			writeFileSync(stub, 'import { writeFileSync } from "node:fs";\nwriteFileSync(process.argv[2], process.cwd());\n');
 			process.chdir(root); // the hook's cwd: the folder the worker must not hold
 			spawnDetachedWorker(stub, "test", [out]);
-			process.chdir(previous);
+			const tick = new Int32Array(new SharedArrayBuffer(4));
 			const deadline = Date.now() + 20_000;
-			while (!existsSync(out) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+			while (!existsSync(out) && Date.now() < deadline) Atomics.wait(tick, 0, 0, 100);
 			assert.ok(existsSync(out), "the stub worker never wrote its cwd");
 			assert.equal(realpathSync.native(readFileSync(out, "utf8")), realpathSync.native(tmpdir()));
 		} finally {
+			if (refresh !== undefined) process.env[REFRESH_SWITCH] = refresh;
 			process.chdir(previous);
 			rmTemp(root);
 		}

@@ -1,25 +1,27 @@
 /**
- * The qmd refresh never holds the vault open (#404). On Windows a process's
- * cwd locks its folder, and the refresh worker plus its qmd steps can last
- * minutes, so a rename or delete of the vault failed with EBUSY. They run
- * from the OS temp folder instead, told the vault-relative paths qmd would
- * have read against the vault. Ported from mindframe#144's `qmd-cwd.ts`.
+ * The qmd refresh never holds the vault open (lib/qmd-cwd.ts, #404).
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { localQmdConfigAt, qmdCwdFor, qmdPathsAgainst } from "../lib/qmd-cwd.ts";
-import { sentinelPathFrom, workerSpawnOptions } from "../lib/qmd-refresh.ts";
+import { workerCwd } from "../lib/qmd-refresh.ts";
 import { rmTemp } from "./_helpers.ts";
 
-const withRoot = (run: (root: string) => void): void => {
+const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** A temp root holding an empty `vault` and `temp` folder. */
+const withVaultAndTemp = (run: (vault: string, temp: string, root: string) => void): void => {
 	const root = mkdtempSync(join(tmpdir(), "qmd-cwd-"));
 	try {
-		run(root);
+		mkdirSync(join(root, "vault"));
+		mkdirSync(join(root, "temp"));
+		run(join(root, "vault"), join(root, "temp"), root);
 	} finally {
 		rmTemp(root);
 	}
@@ -27,48 +29,34 @@ const withRoot = (run: (root: string) => void): void => {
 
 describe("qmdCwdFor", () => {
 	test("with an index name, the temp folder: qmd reads nothing else against its cwd", () => {
-		withRoot((root) => {
-			const vault = join(root, "vault");
-			const temp = join(root, "temp");
-			mkdirSync(vault);
-			mkdirSync(temp);
-			assert.equal(qmdCwdFor(vault, "my-vault", temp), temp);
-		});
+		withVaultAndTemp((vault, temp) => assert.equal(qmdCwdFor(vault, "my-vault", temp), temp));
 	});
 
 	test("a temp folder that doesn't exist keeps the vault", () => {
-		withRoot((root) => {
-			assert.equal(qmdCwdFor(root, "my-vault", join(root, "missing")), root);
-		});
+		withVaultAndTemp((vault, _temp, root) => assert.equal(qmdCwdFor(vault, "my-vault", join(root, "missing")), vault));
 	});
 
 	test("without an index, the vault whenever the temp folder would find a different local config", () => {
-		withRoot((root) => {
-			const vault = join(root, "vault");
-			const temp = join(root, "temp");
-			mkdirSync(join(vault, ".qmd"), { recursive: true });
-			mkdirSync(temp);
+		withVaultAndTemp((vault, temp) => {
+			mkdirSync(join(vault, ".qmd"));
 			writeFileSync(join(vault, ".qmd", "index.yml"), "");
 			assert.equal(qmdCwdFor(vault, null, temp), vault, "the vault's own config");
+			assert.equal(qmdCwdFor(vault, null, temp, "win32"), vault, "walked as given on Windows too");
 		});
 	});
 
 	test("without an index, the temp folder when both find the same config, or none", () => {
-		withRoot((root) => {
-			const vault = join(root, "vault");
-			const temp = join(root, "temp");
-			mkdirSync(vault);
-			mkdirSync(temp);
-			// A config above both, or none at all: the same either way.
+		withVaultAndTemp((vault, temp) => {
 			assert.equal(qmdCwdFor(vault, null, temp), temp);
+			assert.equal(qmdCwdFor(vault, null, temp, "win32"), temp);
 		});
 	});
 });
 
 describe("localQmdConfigAt", () => {
 	test("walks up for .qmd/index.yaml, then .qmd/index.yml", () => {
-		withRoot((root) => {
-			const deep = join(root, "a", "b");
+		withVaultAndTemp((vault, _temp, root) => {
+			const deep = join(vault, "a", "b");
 			mkdirSync(deep, { recursive: true });
 			mkdirSync(join(root, ".qmd"));
 			writeFileSync(join(root, ".qmd", "index.yml"), "");
@@ -98,21 +86,38 @@ describe("qmdPathsAgainst", () => {
 	});
 });
 
-describe("the refresh worker spawn (#404)", () => {
-	test("runs from the temp folder, not the hook's cwd", () => {
-		withRoot((temp) => {
-			assert.equal(workerSpawnOptions(temp).cwd, temp);
-			assert.equal(workerSpawnOptions(temp).windowsHide, true);
+describe("workerCwd", () => {
+	test("the temp folder, or the hook's cwd when there is none", () => {
+		withVaultAndTemp((_vault, temp, root) => {
+			assert.equal(workerCwd(temp), temp);
+			assert.equal(workerCwd(join(root, "missing")), process.cwd());
 		});
 	});
+});
 
-	test("a missing temp folder falls back to the hook's cwd", () => {
-		assert.equal(workerSpawnOptions(join(tmpdir(), "no-such-temp-404")).cwd, process.cwd());
+/**
+ * The wiring, which the pure tests above can't reach: the worker's qmd steps
+ * and session start's detached update take their cwd and env from these
+ * helpers (a top-level script and a hook, so read as source).
+ */
+describe("each long qmd spawn takes its cwd and env from lib/qmd-cwd.ts", () => {
+	const source = (file: string) => readFileSync(join(SCRIPTS, file), "utf8");
+
+	test("the refresh worker's steps", () => {
+		const worker = source("qmd-refresh-run.ts");
+		assert.match(worker, /const cwd = qmdCwdFor\(VAULT_ROOT, qmdIndex\);/);
+		assert.match(worker, /const env = qmdPathsAgainst\(VAULT_ROOT, process\.env\);/);
+		assert.match(worker, /spawnSync\(inv\.cmd[\s\S]*?\bcwd,\s*env,\s*\}\);/);
 	});
 
-	test("a relative QMD_REFRESH_SENTINEL is made absolute: the worker gets it from another cwd", () => {
-		const got = sentinelPathFrom({ QMD_REFRESH_SENTINEL: "rel/sentinel" }, tmpdir());
-		assert.ok(isAbsolute(got));
-		assert.equal(got, resolve("rel/sentinel"));
+	test("the refresh worker itself", () => {
+		assert.match(source("lib/qmd-refresh.ts"), /spawnDetachedQmd\(\{ cmd: process\.execPath, args, shell: false \}, logPrefix, workerCwd\(\)\);/);
+	});
+
+	test("session start's detached update", () => {
+		const start = source("session-start.ts");
+		assert.match(start, /: qmdCwdFor\(cwd, qmdIndex\);/);
+		assert.match(start, /: qmdPathsAgainst\(cwd, process\.env\);/);
+		assert.match(start, /spawnDetachedQmd\(qmdUpdate, "session-start", qmdCwd, qmdEnv\)/);
 	});
 });

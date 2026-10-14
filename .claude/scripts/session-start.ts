@@ -26,7 +26,7 @@ import {
 	type Dirent,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
 	take,
@@ -79,6 +79,7 @@ import {
 	resolveQmdEntry,
 	spawnDetachedQmd,
 } from "./lib/qmd.ts";
+import { qmdCwdFor, qmdPathsAgainst } from "./lib/qmd-cwd.ts";
 import {
 	formatActiveHygiene,
 	parseMemoryRoot,
@@ -284,18 +285,17 @@ const qmdUpdate = bootstrapNeeded
 		}
 	: buildQmdCommand(qmdEntry, qmdArgsWithIndex(qmdIndex, ["update"]));
 // Bootstrap resolves the script + vault-manifest.json relative to the vault
-// cwd; the update path pins cwd to tmpdir. `cwd: tmpdir()` keeps the
-// detached child from holding the vault dir as its working directory —
-// `qmd update --index <name>` reads collection paths from YAML, so cwd is
-// irrelevant to the work, and pinning it to the OS tmpdir means `rm -rf`
-// of the vault (or a test cleanup) never races a stale qmd handle on
-// Windows.
-const qmdCwd = bootstrapNeeded ? cwd : tmpdir();
+// cwd. The update runs where the refresh worker's qmd steps run, by the same
+// rule (lib/qmd-cwd.ts, #404): the OS temp folder, so the detached child
+// never holds the vault open on Windows, unless qmd would find a different
+// local config there, with its cwd-relative paths read against the vault.
+const qmdCwd = bootstrapNeeded ? cwd : qmdCwdFor(cwd, qmdIndex);
+const qmdEnv = bootstrapNeeded ? undefined : qmdPathsAgainst(cwd, process.env);
 // VAULT_QMD_REFRESH=off (every test process carries it) stops this detached
 // update too, the same as the write-time refresh worker (#337): a test's
 // session-start would otherwise leave a qmd update or bootstrap running
 // against its temp vault after the run.
-if (!reinjectBuild) spawnDetachedQmd(qmdUpdate, "session-start", qmdCwd);
+if (!reinjectBuild) spawnDetachedQmd(qmdUpdate, "session-start", qmdCwd, qmdEnv);
 
 type CmdResult =
 	| { readonly kind: "ok"; readonly stdout: string }

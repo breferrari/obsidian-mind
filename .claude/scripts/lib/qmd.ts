@@ -331,6 +331,7 @@ export function spawnDetachedQmd(
 	command: { readonly cmd: string; readonly args: readonly string[]; readonly shell: boolean },
 	label: string,
 	cwd?: string,
+	env?: NodeJS.ProcessEnv,
 ): boolean {
 	if (refreshDisabled()) {
 		debug(`${label}: qmd refresh off (${REFRESH_SWITCH}=off); nothing spawned`);
@@ -342,6 +343,7 @@ export function spawnDetachedQmd(
 		detached: true,
 		windowsHide: true,
 		...(cwd !== undefined ? { cwd } : {}),
+		...(env !== undefined ? { env } : {}),
 	});
 	child.on("error", (err) => debug(`${label}: detached qmd failed to start: ${err.message}`));
 	child.unref();

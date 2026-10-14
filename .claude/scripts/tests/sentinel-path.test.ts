@@ -41,6 +41,10 @@ describe("sentinelPathFrom", () => {
 		const dir = join("scripts", "dir");
 		assert.equal(sentinelPathFrom({ QMD_REFRESH_SENTINEL: "" }, dir), resolve(dir, ".qmd-refresh-sentinel"));
 	});
+
+	test("a relative QMD_REFRESH_SENTINEL is made absolute: the worker reads it from another cwd (#404)", () => {
+		assert.equal(sentinelPathFrom({ QMD_REFRESH_SENTINEL: "rel/sentinel" }, "scripts"), resolve("rel/sentinel"));
+	});
 });
 
 // Every one of these is read through envPath, never with a bare `??` again.
