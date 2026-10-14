@@ -86,11 +86,13 @@ import {
 	scanActiveHygiene,
 } from "./lib/active-hygiene.ts";
 
+import { takeReinject } from "./lib/reinject.ts";
+import { HANDOFF_DIR } from "./lib/stop-handoff.ts";
 import { debug, envelopedLimit, fitWithMeter, type OutputLimit, readStdinJson, writeHookOutput } from "./lib/hook-io.ts";
 import { readOmMod } from "./lib/om-mod.ts";
 import { resolveProjectDir } from "./lib/project-dir.ts";
 
-type HookInput = { readonly source?: unknown };
+type HookInput = { readonly source?: unknown; readonly session_id?: unknown };
 
 // The SessionStart payload carries `source` (startup/clear/resume/compact).
 // Missing or unparseable stdin fails open to full mode. stdin is OPTIONAL
@@ -117,6 +119,11 @@ async function readHookInput(): Promise<HookInput | null> {
 	return result;
 }
 const hookInput = await readHookInput();
+// A Gemini session marked for re-injection after a compression (#357) that is
+// resumed or cleared before its next prompt gets its context here instead.
+if ((hookInput?.source === "resume" || hookInput?.source === "clear") && typeof hookInput.session_id === "string") {
+	takeReinject(HANDOFF_DIR, hookInput.session_id);
+}
 
 function readManifestRaw(): string | null {
 	try {

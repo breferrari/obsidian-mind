@@ -7,7 +7,7 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { takeHandoff, writeHandoff } from "../lib/stop-handoff.ts";
 import { SIGNALS } from "../lib/signals.ts";
@@ -451,15 +451,25 @@ describe("classify — the Stop report handoff", () => {
  * session-start through classify-message, so it runs on CI.
  */
 describe("classify-message — re-injects the session context after a Gemini compression (#357)", () => {
-	const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 	const PRE_COMPACT = resolve(dirname(fileURLToPath(import.meta.url)), "../pre-compact.ts");
 
-	test("PreCompress marks the session; the next prompt gets the context, the one after does not", () => {
-		const dir = mkdtempSync(join(tmpdir(), "reinject-hook-"));
+	/** An empty vault and a handoff folder, both temporary: session-start never reads the real repo. */
+	const withVault = (run: (env: Record<string, string>) => void): void => {
+		const root = mkdtempSync(join(tmpdir(), "reinject-hook-"));
 		try {
-			const env = { STOP_HANDOFF_DIR: dir, CLAUDE_PROJECT_DIR: REPO };
-			const marked = spawnHook(PRE_COMPACT, { hook_event_name: "PreCompress", session_id: "gem-1", trigger: "auto" }, env);
-			assert.equal(marked.code, 0);
+			const vault = join(root, "vault");
+			mkdirSync(vault);
+			run({ STOP_HANDOFF_DIR: join(root, "handoff"), CLAUDE_PROJECT_DIR: vault });
+		} finally {
+			rmTemp(root);
+		}
+	};
+	const compress = (env: Record<string, string>, sessionId: string) =>
+		spawnHook(PRE_COMPACT, { hook_event_name: "PreCompress", session_id: sessionId, trigger: "auto" }, env);
+
+	test("PreCompress marks the session; the next prompt gets the context, the one after does not", () => {
+		withVault((env) => {
+			assert.equal(compress(env, "gem-1").code, 0);
 
 			const prompt = { hook_event_name: "BeforeAgent", session_id: "gem-1", prompt: "hello world" };
 			const first = spawnHook(SCRIPT, prompt, env, { timeoutMs: 60_000 });
@@ -470,20 +480,24 @@ describe("classify-message — re-injects the session context after a Gemini com
 
 			const second = spawnHook(SCRIPT, prompt, env);
 			assert.equal(second.stdout, "", "once: the next prompt gets nothing");
-		} finally {
-			rmTemp(dir);
-		}
+		});
+	});
+
+	test("a resume after the compression takes the mark: it injects the context itself", () => {
+		withVault((env) => {
+			compress(env, "gem-2");
+			const SESSION_START = resolve(dirname(fileURLToPath(import.meta.url)), "../session-start.ts");
+			assert.equal(spawnHook(SESSION_START, { hook_event_name: "SessionStart", source: "resume", session_id: "gem-2" }, env).code, 0);
+			const after = spawnHook(SCRIPT, { hook_event_name: "BeforeAgent", session_id: "gem-2", prompt: "hello world" }, env);
+			assert.equal(after.stdout, "", "no second copy of the context");
+		});
 	});
 
 	test("Claude Code's PreCompact marks nothing: it re-injects on SessionStart compact", () => {
-		const dir = mkdtempSync(join(tmpdir(), "reinject-hook-claude-"));
-		try {
-			const env = { STOP_HANDOFF_DIR: dir, CLAUDE_PROJECT_DIR: REPO };
+		withVault((env) => {
 			spawnHook(PRE_COMPACT, { hook_event_name: "PreCompact", session_id: "cc-1", trigger: "auto" }, env);
 			const after = spawnHook(SCRIPT, { hook_event_name: "UserPromptSubmit", session_id: "cc-1", prompt: "hello world" }, env);
 			assert.equal(after.stdout, "");
-		} finally {
-			rmTemp(dir);
-		}
+		});
 	});
 });

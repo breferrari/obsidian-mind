@@ -41,9 +41,14 @@ export const HANDOFF_DIR = envPath(process.env, "STOP_HANDOFF_DIR", join(dirname
 /** Reports nobody picked up are removed after this long. */
 export const HANDOFF_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** The session's handoff file. Session ids are reduced to a safe filename. */
+/** A per-session file in `dir`, the session id reduced to a safe filename. */
+export function sessionFile(dir: string, sessionId: string, extension: string): string {
+	return join(dir, `${sessionId.replace(/[^A-Za-z0-9_-]/g, "_")}.${extension}`);
+}
+
+/** The session's handoff file. */
 export function handoffPath(dir: string, sessionId: string): string {
-	return join(dir, `${sessionId.replace(/[^A-Za-z0-9_-]/g, "_")}.txt`);
+	return sessionFile(dir, sessionId, "txt");
 }
 
 /** Save `text` for the session's next prompt, replacing any unread report. Throws if it cannot. */

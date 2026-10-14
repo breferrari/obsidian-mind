@@ -76,7 +76,7 @@ describe("reinjectContext", () => {
 			};
 			markReinject(dir, "s1");
 			assert.equal(reinjectContext(dir, "s1", run), "## Session Context\nvolatile");
-			assert.equal(asked[0]?.["source"], "compact", "the compact form: only what changes");
+			assert.equal(asked[0]?.["source"], "startup", "the full context: the compression summarised it away");
 			assert.equal(asked[0]?.["session_id"], "s1");
 			assert.equal(reinjectContext(dir, "s1", run), null, "the next prompt gets nothing");
 			assert.equal(asked.length, 1, "session-start ran once");
