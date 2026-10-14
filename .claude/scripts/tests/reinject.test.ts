@@ -92,7 +92,7 @@ describe("reinjectContext", () => {
 	test("a failed or empty run gives nothing, and the mark is spent rather than retried every prompt", () => {
 		withDir((dir) => {
 			markReinject(dir, "s1");
-			assert.equal(reinjectContext(dir, "s1", () => ({ status: 1, stdout: "" })), null);
+			assert.equal(reinjectContext(dir, "s1", () => ({ status: 1, stdout: envelope("a run that failed after printing") })), null);
 			markReinject(dir, "s1");
 			assert.equal(reinjectContext(dir, "s1", () => ({ status: 0, stdout: "not json" })), null);
 			markReinject(dir, "s1");
