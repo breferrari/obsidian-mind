@@ -10,12 +10,13 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import {
 	buildQmdCommand,
+	globalQmdEntry as globalQmdEntryTs,
 	isRunnableQmdEntry,
 	npmGlobalRoot as npmGlobalRootTs,
 	parseVersionTriple,
@@ -24,6 +25,7 @@ import {
 	resolveQmdEntry,
 } from "../lib/qmd.ts";
 import {
+	globalQmdEntry as globalQmdEntryMjs,
 	isRunnableQmdEntry as isRunnableQmdEntryMjs,
 	npmGlobalRoot as npmGlobalRootMjs,
 	pickQmdEntry as pickQmdEntryMjs,
@@ -222,11 +224,15 @@ describe("qmdVersionAtLeast", () => {
 // rest. Both copies of the resolver run the same cases; the last checks the
 // real npm on this machine.
 
+/** This process's env without the npm_config_* that `npm test` exports. */
+const withoutNpmConfig = (): Record<string, string | undefined> =>
+	Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^npm_config_/i.test(name)));
+
 /** The real npm's answer on this machine, asked at most once for both copies; null without npm. */
 let npmAsked: string | null | undefined;
 const npmAnswer = (): string | null => {
 	if (npmAsked === undefined) {
-		const npm = spawnSync("npm root -g", { shell: true, encoding: "utf8", timeout: 15_000 });
+		const npm = spawnSync("npm root -g", { shell: true, encoding: "utf8", timeout: 15_000, env: withoutNpmConfig() });
 		const asked = (npm.stdout ?? "").trim();
 		npmAsked = npm.status === 0 && asked !== "" ? asked : null;
 	}
@@ -271,10 +277,13 @@ for (const [label, npmGlobalRoot] of [
 			assert.equal(posix({ npm_config_prefix: join(tmpdir(), "${NAME}") }), null);
 		});
 
-		test("1: env values are read as npm reads them: trimmed, empty skipped, the last winning", () => {
+		test("1: env values are read as npm reads them: empty skipped, the last winning, nothing trimmed", () => {
 			const a = join(tmpdir(), "a");
 			const b = join(tmpdir(), "b");
-			assert.equal(posix({ npm_config_prefix: `${a} ` }), join(a, "lib", "node_modules"));
+			// npm's loadEnv skips only "" and keeps the value as given (@npmcli/config, npm 10.9.2).
+			assert.equal(posix({ npm_config_prefix: `${a} ` }), null, "padded: npm doesn't trim it, so ask npm");
+			assert.equal(posix({ npm_config_prefix: " " }), null, "whitespace is set for npm, not unset");
+			assert.equal(posix({ npm_config_userconfig: " " }), null);
 			assert.equal(posix({ npm_config_prefix: "" }), join(nodeDir, "lib", "node_modules"), "empty is unset");
 			assert.equal(posix({ npm_config_prefix: a, NPM_CONFIG_PREFIX: b }), join(b, "lib", "node_modules"));
 		});
@@ -304,6 +313,23 @@ for (const [label, npmGlobalRoot] of [
 					"registry=https://registry.example.com/\n//registry.example.com/:_authToken=abc\nsave-prefix=~\n; prefix=/commented\n# ${NPMKEY}=/commented\n",
 			};
 			assert.equal(posix({}, auth), join(nodeDir, "lib", "node_modules"));
+		});
+
+		test("3 and 4: a quoted key asks npm: npm's ini unquotes keys", () => {
+			assert.equal(posix({}, { [userNpmrc]: '"prefix" = /opt/npm' }), null);
+			assert.equal(posix({}, { [userNpmrc]: "'globalconfig'=/opt/g" }), null);
+			assert.equal(posix({}, { [userNpmrc]: '"pre\\u0066ix"=/opt/npm' }), null, "escapes too");
+			assert.equal(posix({}, { [posixBuiltin]: '"prefix"=/opt/homebrew' }), null);
+		});
+
+		test("3: a home the OS can't name (a UID with no passwd entry) asks npm instead of throwing", () => {
+			const noHome = () => {
+				throw new Error("uv_os_homedir returned ENOENT");
+			};
+			assert.equal(
+				npmGlobalRoot({ env: {}, platform: "linux", execPath: join(nodeDir, "bin", "node"), readText: files({}), osHome: noHome }),
+				null,
+			);
 		});
 
 		test("3: a key npm would build from ${...} asks npm", () => {
@@ -368,13 +394,45 @@ for (const [label, npmGlobalRoot] of [
 		// The property that matters: a root worked out here that holds qmd is
 		// the root npm would give. A null only costs the spawn it would save.
 		test("where it finds qmd on this machine, npm agrees", (t) => {
-			const ours = npmGlobalRoot();
+			// Without the npm_config_* that `npm test` exports, or rule 1 only echoes npm back.
+			const ours = npmGlobalRoot({ env: withoutNpmConfig() });
 			if (ours === null || !existsSync(join(ours, "@tobilu", "qmd", "dist", "cli", "qmd.js"))) {
 				return t.skip("no qmd under a worked-out root here; the caller asks npm");
 			}
 			const answer = npmAnswer();
 			if (answer === null) return t.skip("npm is not available here");
 			assert.equal(resolve(ours).toLowerCase(), resolve(answer).toLowerCase());
+		});
+	});
+}
+
+for (const [label, globalQmdEntry] of [
+	["lib/qmd.ts", globalQmdEntryTs],
+	["qmd-mcp.mjs", globalQmdEntryMjs],
+] as const) {
+	describe(`${label} globalQmdEntry`, () => {
+		test("a worked-out root without qmd is the answer: npm would give the same root", () => {
+			const root = mkdtempSync(join(tmpdir(), "npm-root-"));
+			try {
+				let asked = false;
+				const askNpm = () => ((asked = true), null);
+				assert.equal(globalQmdEntry(root, askNpm), null);
+				assert.equal(asked, false, "no npm root -g spawn");
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		test("no worked-out root asks npm, and finds qmd under its answer", () => {
+			const root = mkdtempSync(join(tmpdir(), "npm-root-"));
+			try {
+				const entry = join(root, "@tobilu", "qmd", "dist", "cli", "qmd.js");
+				mkdirSync(dirname(entry), { recursive: true });
+				writeFileSync(entry, "");
+				assert.equal(globalQmdEntry(null, () => root), entry);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
 		});
 	});
 }
