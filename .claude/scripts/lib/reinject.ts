@@ -25,7 +25,9 @@
  * prompt gets it again; a compression partway through a long turn gets the
  * context back only on the next prompt; and a resume after that prompt gets
  * the compact form, whether or not Gemini's saved history kept the
- * re-injected context (TBC).
+ * re-injected context (TBC). And the re-injected context leaves out the qmd
+ * self-heal and version warnings: its build skips the qmd work, so a warning
+ * given at startup is lost with the compressed turn.
  */
 
 import { claimSessionFile, pruneHandoffs, writeSessionFile } from "./stop-handoff.ts";
@@ -42,19 +44,26 @@ export function reinjectSession(input: { readonly hook_event_name?: unknown; rea
 /**
  * Store `context` for the session's next prompt, stamped with when it was
  * built: the prompt can come hours later, and the dated sections are as of
- * the compression. An empty context stores nothing. Throws if it cannot
- * write. Prunes old handoffs first: Gemini runs its checklist on SessionEnd,
- * which never prunes, so a session that ends right after compressing would
- * otherwise leave its context behind for good.
+ * then. A null or empty context stores nothing. Throws if it cannot write.
+ * Prunes old handoffs whatever the context: Gemini runs its checklist on
+ * SessionEnd, which never prunes, so this is the one prune Gemini's handoffs
+ * get.
  */
-export function storeReinject(dir: string, sessionId: string, context: string, now: Date = new Date()): void {
-	if (context.trim() === "") return;
+export function storeReinject(dir: string, sessionId: string, context: string | null, now: Date = new Date()): void {
 	pruneHandoffs(dir, now.getTime());
-	const stamp = `(Session context rebuilt ${now.toISOString()}, when the conversation was compressed.)`;
+	if (context === null || context.trim() === "") return;
+	const stamp = `(Session context rebuilt ${localTime(now)}, when the conversation was about to be compressed.)`;
 	writeSessionFile(dir, sessionId, EXTENSION, `${stamp}\n\n${context}`);
 }
 
-/** Take the session's stored context, once: null when none is waiting. */
+/** `YYYY-MM-DD HH:MM` in local time, the clock the context's Date section uses. */
+function localTime(d: Date): string {
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Take the session's stored context, once: null when none is waiting, or it is empty. */
 export function takeReinject(dir: string, sessionId: string): string | null {
-	return claimSessionFile(dir, sessionId, EXTENSION);
+	const context = claimSessionFile(dir, sessionId, EXTENSION);
+	return context?.trim() ? context : null;
 }

@@ -17,9 +17,9 @@ export type SessionStartRun = (stdin: Record<string, unknown>) => { readonly sta
 const SESSION_START = join(dirname(dirname(fileURLToPath(import.meta.url))), "session-start.ts");
 
 /**
- * The child, hidden on Windows (#390). Bounded at 20 s, under the 30 s that
- * .gemini/settings.json gives PreCompress, which leaves the transcript backup
- * its share: a session-start run took 5-12 s on Windows CI (measured
+ * The child, hidden on Windows (#390). Bounded at 20 s: PreCompress gets 30 s
+ * in .gemini/settings.json, and the transcript backup has already run in it
+ * by then. A session-start run took 5-12 s on Windows CI (measured
  * 2026-10-13, #349). The refresh is off in the child: PreCompress already
  * started one.
  */

@@ -11,12 +11,13 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { reinjectSession, storeReinject, takeReinject } from "../lib/reinject.ts";
 import { sessionStartContext } from "../lib/session-start-run.ts";
+import { HANDOFF_MAX_AGE_MS, writeSessionFile } from "../lib/stop-handoff.ts";
 import { rmTemp } from "./_helpers.ts";
 
 const withDir = (run: (dir: string) => void): void => {
@@ -46,19 +47,32 @@ describe("reinjectSession", () => {
 describe("the stored context", () => {
 	test("is taken once, by its own session, stamped with when it was built", () => {
 		withDir((dir) => {
-			storeReinject(dir, "s1", "## Session Context\nvolatile", new Date("2026-10-14T09:30:00Z"));
+			storeReinject(dir, "s1", "## Session Context\nvolatile", new Date(2026, 9, 14, 9, 5));
 			assert.equal(takeReinject(dir, "s2"), null, "another session's context is not this one's");
 			assert.equal(
 				takeReinject(dir, "s1"),
-				"(Session context rebuilt 2026-10-14T09:30:00.000Z, when the conversation was compressed.)\n\n## Session Context\nvolatile",
+				"(Session context rebuilt 2026-10-14 09:05, when the conversation was about to be compressed.)\n\n## Session Context\nvolatile",
+				"in local time, the clock the Date section uses",
 			);
 			assert.equal(takeReinject(dir, "s1"), null, "once");
 		});
 	});
 
-	test("an empty one is not stored", () => {
+	test("an empty one, or none, is not stored, and old handoffs are pruned either way", () => {
 		withDir((dir) => {
+			writeSessionFile(dir, "old", "txt", "a week-old report");
+			const old = new Date(Date.now() - HANDOFF_MAX_AGE_MS - 60_000);
+			utimesSync(join(dir, "old.txt"), old, old);
+			storeReinject(dir, "s1", null);
+			assert.equal(existsSync(join(dir, "old.txt")), false, "Gemini's one prune runs even when the build failed");
 			storeReinject(dir, "s1", "  \n");
+			assert.equal(takeReinject(dir, "s1"), null);
+		});
+	});
+
+	test("an empty file left behind gives nothing", () => {
+		withDir((dir) => {
+			writeSessionFile(dir, "s1", "reinject", " \n");
 			assert.equal(takeReinject(dir, "s1"), null);
 		});
 	});

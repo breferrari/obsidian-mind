@@ -7,7 +7,7 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { parseHookContext } from "../lib/hook-io.ts";
 import { takeHandoff, writeHandoff } from "../lib/stop-handoff.ts";
@@ -467,12 +467,18 @@ describe("classify-message — re-injects the session context after a Gemini com
 		}
 	};
 	// PreCompress runs session-start itself, so it gets the longer budget.
-	const compress = (env: Record<string, string>, sessionId: string) =>
-		spawnHook(PRE_COMPACT, { hook_event_name: "PreCompress", session_id: sessionId, trigger: "auto" }, env, { timeoutMs: 60_000 });
+	const compress = (env: Record<string, string>, sessionId: string, extra: Record<string, unknown> = {}) =>
+		spawnHook(PRE_COMPACT, { hook_event_name: "PreCompress", session_id: sessionId, trigger: "auto", ...extra }, env, {
+			timeoutMs: 60_000,
+		});
 
-	test("PreCompress stores the context; the next prompt gets it, the one after does not", () => {
+	test("PreCompress backs up the transcript and stores the context; the next prompt gets it, the one after does not", () => {
 		withVault((env) => {
-			assert.equal(compress(env, "gem-1").code, 0);
+			const transcript = join(env["CLAUDE_PROJECT_DIR"]!, "..", "transcript.jsonl");
+			writeFileSync(transcript, "{}\n");
+			assert.equal(compress(env, "gem-1", { transcript_path: transcript }).code, 0);
+			const logs = join(env["CLAUDE_PROJECT_DIR"]!, "thinking", "session-logs");
+			assert.equal(existsSync(logs) ? readdirSync(logs).length : 0, 1, "the backup still lands");
 
 			const prompt = { hook_event_name: "BeforeAgent", session_id: "gem-1", prompt: "hello world" };
 			const first = spawnHook(SCRIPT, prompt, env);

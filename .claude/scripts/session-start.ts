@@ -185,9 +185,11 @@ const infraRootFilenames = parseInfraRootFilenames(manifestJson);
 // the MCP wrapper applies here too.
 const qmdIndex = resolveQmdIndex(manifestJson, cwd);
 // Gemini's PreCompress builds the context to re-inject (lib/session-start-run.ts,
-// #357): the qmd probes, self-heal and version check already ran at startup,
-// and a 20 s rebuild here would spend that run's whole budget.
-const qmdEntry = hookInput?.om_reinject === true ? null : resolveQmdEntry();
+// #357): no qmd work in that run. The probes, self-heal and version check ran
+// at startup, a 20 s rebuild here would spend the run's whole budget, and
+// PreCompress started its own refresh.
+const reinjectBuild = hookInput?.om_reinject === true;
+const qmdEntry = reinjectBuild ? null : resolveQmdEntry();
 
 // qmd is OPTIONAL in this template: every self-heal path below is gated on
 // a resolvable install (`qmdEntry !== null`). A machine without qmd gets no
@@ -293,7 +295,7 @@ const qmdCwd = bootstrapNeeded ? cwd : tmpdir();
 // update too, the same as the write-time refresh worker (#337): a test's
 // session-start would otherwise leave a qmd update or bootstrap running
 // against its temp vault after the run.
-spawnDetachedQmd(qmdUpdate, "session-start", qmdCwd);
+if (!reinjectBuild) spawnDetachedQmd(qmdUpdate, "session-start", qmdCwd);
 
 type CmdResult =
 	| { readonly kind: "ok"; readonly stdout: string }
