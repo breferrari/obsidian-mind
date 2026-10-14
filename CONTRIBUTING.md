@@ -122,6 +122,7 @@ The release pipeline handles these automatically — **do not include in your PR
 - [ ] A code change comes with a test that fails on `main` and passes with it
 - [ ] Counts match everywhere (commands, agents) if you added/removed any
 - [ ] New command/agent appears in ALL doc tables (README + Skills.md, and `.claude/rules/subagents.md` for an agent)
+- [ ] New, renamed or removed command: its Gemini wrapper is regenerated (`node --experimental-strip-types .scripts/gemini-commands.ts`)
 - [ ] Translations flagged if you changed README.md (maintainer can handle these)
 - [ ] Tests pass: `cd .claude/scripts && npm test`
 - [ ] Any NEW guard, check, or config constraint has [demonstrated a red](#new-guards-must-demonstrate-a-red), recorded in the PR
