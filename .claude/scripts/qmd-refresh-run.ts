@@ -23,7 +23,9 @@
  * hook fires from a drifted shell cwd without CLAUDE_PROJECT_DIR set —
  * without that anchor, the manifest read failed silently and the
  * worker updated QMD's default global collection instead of the
- * vault's named one.
+ * vault's named one. Its qmd steps run from the OS temp folder, so a
+ * worker that lasts minutes doesn't hold the vault open on Windows
+ * (#404), unless qmd would find a different local config from there.
  *
  * Multi-platform: delegates the spawn shape to `lib/qmd.ts`, which
  * routes through `process.execPath qmd.js` on every OS, bypassing the
@@ -37,6 +39,7 @@ import { fileURLToPath } from "node:url";
 import { debug } from "./lib/hook-io.ts";
 import { resolveQmdIndex } from "./lib/session-start.ts";
 import { resolveQmdEntry } from "./lib/qmd.ts";
+import { qmdCwdFor, qmdPathsAgainst } from "./lib/qmd-cwd.ts";
 import {
 	claimTrailingFlush,
 	composeWorkerInvocations,
@@ -74,6 +77,10 @@ if (trailing !== null) {
 
 const qmdIndex = resolveQmdIndex(readManifestRaw(), VAULT_ROOT);
 const invocations = composeWorkerInvocations(qmdIndex, resolveQmdEntry());
+// From the temp folder unless qmd would find a different local config there,
+// with its cwd-relative paths read against the vault (lib/qmd-cwd.ts, #404).
+const cwd = qmdCwdFor(VAULT_ROOT, qmdIndex);
+const env = qmdPathsAgainst(VAULT_ROOT, process.env);
 
 for (const inv of invocations) {
 	const result = spawnSync(inv.cmd, inv.args as string[], {
@@ -81,7 +88,8 @@ for (const inv of invocations) {
 		timeout: inv.timeoutMs,
 		shell: inv.shell,
 		windowsHide: true,
-		cwd: VAULT_ROOT,
+		cwd,
+		env,
 	});
 	if (result.error) {
 		debug(`qmd-refresh-run: ${inv.args.join(" ")} — ${result.error.message}`);

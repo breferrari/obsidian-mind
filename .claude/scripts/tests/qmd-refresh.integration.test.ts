@@ -28,7 +28,10 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import {
+	existsSync,
 	mkdtempSync,
+	readFileSync,
+	realpathSync,
 	rmSync,
 	statSync,
 	utimesSync,
@@ -37,6 +40,7 @@ import {
 import { tmpdir } from "node:os";
 import { runScript as spawnHook, rmTemp } from "./_helpers.ts";
 import { resolveQmdEntry } from "../lib/qmd.ts";
+import { spawnDetachedWorker } from "../lib/qmd-refresh.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(SCRIPT_DIR, "../validate-write.ts");
@@ -280,6 +284,34 @@ describe("validate-write refresh trigger — eligible .md path", () => {
 			);
 		} else {
 			assert.equal(after, before);
+		}
+	});
+});
+
+/**
+ * The detached worker runs from the OS temp folder (#404): on Windows its cwd
+ * would hold the vault open for as long as it sleeps and waits on qmd. A stub
+ * worker records its cwd; spawning it is why this lives with the
+ * integration tests.
+ */
+describe("qmd-refresh — the detached worker runs outside the vault (#404)", () => {
+	test("a worker spawned from inside a folder records the temp folder as its cwd", () => {
+		const root = mkdtempSync(join(tmpdir(), "refresh-worker-cwd-"));
+		const previous = process.cwd();
+		try {
+			const stub = join(root, "stub-worker.mjs");
+			const out = join(root, "cwd.txt");
+			writeFileSync(stub, 'import { writeFileSync } from "node:fs";\nwriteFileSync(process.argv[2], process.cwd());\n');
+			process.chdir(root); // the hook's cwd: the folder the worker must not hold
+			spawnDetachedWorker(stub, "test", [out]);
+			process.chdir(previous);
+			const deadline = Date.now() + 20_000;
+			while (!existsSync(out) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+			assert.ok(existsSync(out), "the stub worker never wrote its cwd");
+			assert.equal(realpathSync.native(readFileSync(out, "utf8")), realpathSync.native(tmpdir()));
+		} finally {
+			process.chdir(previous);
+			rmTemp(root);
 		}
 	});
 });

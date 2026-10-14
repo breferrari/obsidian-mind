@@ -15,7 +15,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 import { buildQmdCommand, REFRESH_SWITCH, refreshDisabled, resolveQmdEntry } from "./qmd.ts";
 import { envPath } from "./env-path.ts";
@@ -40,9 +41,11 @@ const SKIP_SEGMENTS: readonly string[] = [
  * Where the debounce sentinel lives: QMD_REFRESH_SENTINEL when set (tests point
  * it at a temp file so parallel workers don't race on the shared one), else
  * beside the hook scripts. Empty counts as unset (lib/env-path.ts, #360).
+ * Absolute, against this hook's cwd: the worker it is handed to runs from
+ * another (#404).
  */
 export function sentinelPathFrom(env: Readonly<Record<string, string | undefined>>, scriptDir: string): string {
-	return envPath(env, "QMD_REFRESH_SENTINEL", join(scriptDir, ".qmd-refresh-sentinel"));
+	return resolvePath(envPath(env, "QMD_REFRESH_SENTINEL", join(scriptDir, ".qmd-refresh-sentinel")));
 }
 
 /**
@@ -304,13 +307,29 @@ function touchSentinel(sentinelPath: string): void {
 export { REFRESH_SWITCH, refreshDisabled } from "./qmd.ts";
 
 /**
- * Spawn the detached worker. `stdio: 'ignore'` + `.unref()` + `detached`
- * survive parent exit without leaving file descriptors open, and
- * `windowsHide: true` suppresses the transient console window that a
- * naked `spawn` creates on Windows. Errors are logged under HOOK_DEBUG
- * only — production is silent per the hook protocol.
+ * The detached worker's spawn options. `stdio: 'ignore'` + `.unref()` +
+ * `detached` survive parent exit without leaving file descriptors open, and
+ * `windowsHide: true` suppresses the transient console window that a naked
+ * `spawn` creates on Windows. It runs from the OS temp folder: a worker that
+ * sleeps out a trailing flush and waits on qmd can last minutes, and on
+ * Windows its cwd would hold the vault open (#404). The worker finds the vault
+ * from its own path, so it needs no cwd there.
  */
-function spawnDetachedWorker(
+export function workerSpawnOptions(temp: string = tmpdir()): {
+	readonly detached: true;
+	readonly stdio: "ignore";
+	readonly windowsHide: true;
+	readonly cwd: string;
+} {
+	return { detached: true, stdio: "ignore", windowsHide: true, cwd: existsSync(temp) ? temp : process.cwd() };
+}
+
+/**
+ * Spawn the detached worker. Errors are logged under HOOK_DEBUG only —
+ * production is silent per the hook protocol. Exported for its spawning
+ * test, which runs a stub worker through it.
+ */
+export function spawnDetachedWorker(
 	workerPath: string,
 	logPrefix: string,
 	workerArgs: readonly string[] = [],
@@ -323,12 +342,7 @@ function spawnDetachedWorker(
 			workerPath,
 			...workerArgs,
 		],
-		{
-			detached: true,
-			stdio: "ignore",
-			windowsHide: true,
-			cwd: process.cwd(),
-		},
+		workerSpawnOptions(),
 	);
 	child.on("error", (err) => {
 		debug(`${logPrefix}: worker spawn error: ${err.message}`);

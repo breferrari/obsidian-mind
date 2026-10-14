@@ -10,7 +10,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { envPath } from "../lib/env-path.ts";
@@ -39,7 +39,7 @@ describe("envPath", () => {
 describe("sentinelPathFrom", () => {
 	test("an empty QMD_REFRESH_SENTINEL is the default path beside the scripts", () => {
 		const dir = join("scripts", "dir");
-		assert.equal(sentinelPathFrom({ QMD_REFRESH_SENTINEL: "" }, dir), join(dir, ".qmd-refresh-sentinel"));
+		assert.equal(sentinelPathFrom({ QMD_REFRESH_SENTINEL: "" }, dir), resolve(dir, ".qmd-refresh-sentinel"));
 	});
 });
 
