@@ -28,6 +28,8 @@ export function isRunnableQmdEntry(entry: string): boolean;
  * "no global npm".
  */
 export function npmGlobalRoot(at?: import("./lib/qmd.ts").NpmLocation): string | null;
+/** qmd's entry under npm's global root: a worked-out root is the answer; npm is asked only without one. */
+export function globalQmdEntry(computed?: string | null, askNpm?: () => string | null): string | null;
 
 /**
  * Resolve the vault root directory from a `file://` URL and optional env.

@@ -102,6 +102,8 @@ export interface NpmLocation {
 	readonly platform?: string;
 	readonly execPath?: string;
 	readonly home?: string;
+	/** The OS home lookup; it throws for a UID with no passwd entry. */
+	readonly osHome?: () => string;
 	/** A file's text, or null when it can't be read. */
 	readonly readText?: (path: string) => string | null;
 }
@@ -122,11 +124,12 @@ function readTextOrNull(path: string): string | null {
  * caller asks npm, which gives its exact answer at the old cost.
  *
  * 1. npm_config_prefix in the env (any case): use it if it's an absolute path
- *    with no `${`, else ask npm.
+ *    with no `${` and no surrounding whitespace, else ask npm.
  * 2. PREFIX, DESTDIR, npm_config_userconfig or npm_config_globalconfig set →
  *    ask npm.
  * 3. ~/.npmrc (HOME before the OS home) or `<node prefix>/etc/npmrc` has a
- *    line setting `prefix` or `globalconfig`, sections included, or a key
+ *    line setting `prefix` or `globalconfig`, sections included, a quoted key
+ *    (npm's ini unquotes keys, escapes and all), or a key
  *    built from `${…}` → ask npm. An npmrc with only auth or registry lines
  *    (or `save-prefix`) doesn't count.
  * 4. The builtin npmrc: on Windows, the installer's exact
@@ -137,7 +140,10 @@ function readTextOrNull(path: string): string | null {
  *
  * 4 and 5 hold only when npm sits beside this Node; where it doesn't
  * (Homebrew, Debian's packaged npm), ask npm. Env values are read as npm
- * reads them: trimmed, empty ones skipped, the last of several winning.
+ * reads them: only "" skipped, nothing trimmed, the last of several winning
+ * (@npmcli/config's loadEnv, read in npm 10.9.2). With no home to read
+ * ~/.npmrc from (the OS lookup throws for a UID with no passwd entry), ask
+ * npm.
  *
  * Packages sit in `<prefix>\node_modules` on Windows and
  * `<prefix>/lib/node_modules` elsewhere.
@@ -146,23 +152,29 @@ export function npmGlobalRoot(at: NpmLocation = {}): string | null {
 	const vars = at.env ?? process.env;
 	const win = (at.platform ?? process.platform) === "win32";
 	const execPath = at.execPath ?? process.execPath;
-	const home = at.home ?? (vars["HOME"] || homedir());
+	let home: string;
+	try {
+		home = at.home ?? (vars["HOME"] || (at.osHome ?? homedir)());
+	} catch {
+		return null; // no home to find ~/.npmrc in (a UID with no passwd entry): ask npm
+	}
 	const readText = at.readText ?? readTextOrNull;
-	// As npm's loadEnv reads it: any case, trimmed, empty skipped, the last one winning.
+	// As npm's loadEnv reads it: any case, only "" skipped, untrimmed, the last one winning.
 	const npmConfig = (key: string): string | undefined => {
 		const want = `npm_config_${key}`;
 		let found: string | undefined;
 		for (const [name, value] of Object.entries(vars)) {
-			if (name.toLowerCase() === want && value?.trim()) found = value.trim();
+			if (name.toLowerCase() === want && value !== undefined && value !== "") found = value;
 		}
 		return found;
 	};
 	const lines = (file: string): string[] =>
 		(readText(file) ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !/^[;#]/.test(l));
-	// A line setting prefix or globalconfig, sections included, or one whose
-	// key npm would expand from the environment and so can't be read here.
+	// A line setting prefix or globalconfig, sections included, one with a
+	// quoted key (npm's ini unquotes it), or one whose key npm would expand
+	// from the environment and so can't be read here.
 	const settingLines = (file: string): string[] =>
-		lines(file).filter((l) => /^(prefix|globalconfig)\s*=/i.test(l) || /\$\{[^=]*=/.test(l));
+		lines(file).filter((l) => /^(prefix|globalconfig)\s*=/i.test(l) || /^["']/.test(l) || /\$\{[^=]*=/.test(l));
 	// Absolute in npm's sense: on a Windows host, `\npm` is drive-relative.
 	const exactPath = (value: string): boolean =>
 		isAbsolute(value) && !value.includes("${") && (process.platform !== "win32" || !/^[\\/](?![\\/])/.test(value));
@@ -170,7 +182,7 @@ export function npmGlobalRoot(at: NpmLocation = {}): string | null {
 
 	// 1.
 	const fromEnv = npmConfig("prefix");
-	if (fromEnv !== undefined) return exactPath(fromEnv) ? layout(fromEnv) : null;
+	if (fromEnv !== undefined) return fromEnv === fromEnv.trim() && exactPath(fromEnv) ? layout(fromEnv) : null;
 
 	// 2.
 	if (vars["PREFIX"] || vars["DESTDIR"] || npmConfig("userconfig") !== undefined || npmConfig("globalconfig") !== undefined) {
@@ -190,7 +202,7 @@ export function npmGlobalRoot(at: NpmLocation = {}): string | null {
 
 	// 4.
 	const builtin = lines(join(npmDir, "npmrc")).filter(
-		(l) => /^(prefix|globalconfig|userconfig)\s*=/i.test(l) || /\$\{[^=]*=/.test(l),
+		(l) => /^(prefix|globalconfig|userconfig)\s*=/i.test(l) || /^["']/.test(l) || /\$\{[^=]*=/.test(l),
 	);
 	if (builtin.length === 0) return layout(nodePrefix); // 5.
 	const appdata = vars["APPDATA"];
@@ -208,12 +220,18 @@ function qmdEntryUnder(root: string): string | null {
 	return existsSync(entry) ? entry : null;
 }
 
-function globalQmdEntry(): string | null {
-	// Where npm would put a global install, without spawning npm (#349).
-	const computed = npmGlobalRoot();
-	const known = computed === null ? null : qmdEntryUnder(computed);
-	if (known !== null) return known;
+/**
+ * qmd's entry under npm's global root. A root `npmGlobalRoot` worked out is
+ * the one npm would give, so it is the answer whether or not qmd is there
+ * (#399); only without one is npm asked.
+ */
+export function globalQmdEntry(computed: string | null = npmGlobalRoot(), askNpm: () => string | null = npmRootFromNpm): string | null {
+	if (computed !== null) return qmdEntryUnder(computed);
+	const root = askNpm();
+	return root === null ? null : qmdEntryUnder(root);
+}
 
+function npmRootFromNpm(): string | null {
 	// Fallback for global npm installs that aren't on this package's resolution
 	// path — ask npm directly where global packages live. Bounded timeout so a
 	// hung npm process can't block a fire-and-forget hook indefinitely.
@@ -236,8 +254,7 @@ function globalQmdEntry(): string | null {
 	}
 
 	const root = (npmRoot.stdout ?? "").trim();
-	if (root === "" || !isAbsolute(root)) return null;
-	return qmdEntryUnder(root);
+	return root === "" || !isAbsolute(root) ? null : root;
 }
 
 /**
