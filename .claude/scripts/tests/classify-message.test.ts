@@ -444,3 +444,46 @@ describe("classify — the Stop report handoff", () => {
 		assert.equal(takeHandoff(join(dir, "handoff"), "s-other"), "NOT-YOURS", "left for its own session");
 	});
 });
+
+/**
+ * After a Gemini compression (#357): Gemini's PreCompress marks the session,
+ * and the next BeforeAgent hands over the session context once. Spawns
+ * session-start through classify-message, so it runs on CI.
+ */
+describe("classify-message — re-injects the session context after a Gemini compression (#357)", () => {
+	const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+	const PRE_COMPACT = resolve(dirname(fileURLToPath(import.meta.url)), "../pre-compact.ts");
+
+	test("PreCompress marks the session; the next prompt gets the context, the one after does not", () => {
+		const dir = mkdtempSync(join(tmpdir(), "reinject-hook-"));
+		try {
+			const env = { STOP_HANDOFF_DIR: dir, CLAUDE_PROJECT_DIR: REPO };
+			const marked = spawnHook(PRE_COMPACT, { hook_event_name: "PreCompress", session_id: "gem-1", trigger: "auto" }, env);
+			assert.equal(marked.code, 0);
+
+			const prompt = { hook_event_name: "BeforeAgent", session_id: "gem-1", prompt: "hello world" };
+			const first = spawnHook(SCRIPT, prompt, env, { timeoutMs: 60_000 });
+			assert.equal(first.code, 0);
+			const context = (JSON.parse(first.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput
+				.additionalContext;
+			assert.match(context, /### Date/, "session-start's context, re-injected");
+
+			const second = spawnHook(SCRIPT, prompt, env);
+			assert.equal(second.stdout, "", "once: the next prompt gets nothing");
+		} finally {
+			rmTemp(dir);
+		}
+	});
+
+	test("Claude Code's PreCompact marks nothing: it re-injects on SessionStart compact", () => {
+		const dir = mkdtempSync(join(tmpdir(), "reinject-hook-claude-"));
+		try {
+			const env = { STOP_HANDOFF_DIR: dir, CLAUDE_PROJECT_DIR: REPO };
+			spawnHook(PRE_COMPACT, { hook_event_name: "PreCompact", session_id: "cc-1", trigger: "auto" }, env);
+			const after = spawnHook(SCRIPT, { hook_event_name: "UserPromptSubmit", session_id: "cc-1", prompt: "hello world" }, env);
+			assert.equal(after.stdout, "");
+		} finally {
+			rmTemp(dir);
+		}
+	});
+});
