@@ -149,22 +149,21 @@ function readTextOrNull(path) {
  * 2. PREFIX, DESTDIR, npm_config_userconfig or npm_config_globalconfig set →
  *    ask npm.
  * 3. ~/.npmrc (HOME before the OS home) or `<node prefix>/etc/npmrc` has a
- *    line setting `prefix` or `globalconfig`, sections included, a quoted key
- *    (npm's ini unquotes keys, escapes and all), or a key
- *    built from `${…}` → ask npm. An npmrc with only auth or registry lines
- *    (or `save-prefix`) doesn't count.
+ *    line setting `prefix` or `globalconfig`, sections included, or a key
+ *    that isn't a plain word (quoted, which npm's ini unquotes, escapes and
+ *    all, or built from `${…}`) → ask npm. An npmrc with only auth or
+ *    registry lines (or `save-prefix`) doesn't count.
  * 4. The builtin npmrc: on Windows, the installer's exact
  *    `prefix=${APPDATA}\npm` → %APPDATA%\npm. Any other line there setting
  *    `prefix`, `globalconfig` or `userconfig` (which moves the user npmrc),
- *    or a key built from `${…}` → ask npm.
+ *    or a key that isn't a plain word → ask npm.
  * 5. Otherwise Node's own prefix.
  *
  * 4 and 5 hold only when npm sits beside this Node; where it doesn't
  * (Homebrew, Debian's packaged npm), ask npm. Env values are read as npm
  * reads them: only "" skipped, nothing trimmed, the last of several winning
- * (@npmcli/config's loadEnv, read in npm 10.9.2). With no home to read
- * ~/.npmrc from (the OS lookup throws for a UID with no passwd entry), ask
- * npm.
+ * (@npmcli/config's loadEnv, read in npm 10.9.2). Rule 3 needs a home: when
+ * the OS can't name one (a UID with no passwd entry), ask npm.
  *
  * Packages sit in `<prefix>\node_modules` on Windows and
  * `<prefix>/lib/node_modules` elsewhere.
@@ -173,37 +172,39 @@ export function npmGlobalRoot(at = {}) {
 	const vars = at.env ?? process.env;
 	const win = (at.platform ?? process.platform) === "win32";
 	const execPath = at.execPath ?? process.execPath;
-	let home;
-	try {
-		home = at.home ?? (vars["HOME"] || (at.osHome ?? homedir)());
-	} catch {
-		return null; // no home to find ~/.npmrc in (a UID with no passwd entry): ask npm
-	}
 	const readText = at.readText ?? readTextOrNull;
-	// As npm's loadEnv reads it: any case, only "" skipped, untrimmed, the last one winning.
+	// Rule 1's env reading: the last non-empty value, untrimmed.
 	const npmConfig = (key) => {
 		const want = `npm_config_${key}`;
 		let found;
 		for (const [name, value] of Object.entries(vars)) {
-			if (name.toLowerCase() === want && value !== undefined && value !== "") found = value;
+			if (name.toLowerCase() === want && value) found = value;
 		}
 		return found;
 	};
 	const lines = (file) =>
 		(readText(file) ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !/^[;#]/.test(l));
-	// A line setting prefix or globalconfig, sections included, one with a
-	// quoted key (npm's ini unquotes it), or one whose key npm would expand
-	// from the environment and so can't be read here.
-	const settingLines = (file) =>
-		lines(file).filter((l) => /^(prefix|globalconfig)\s*=/i.test(l) || /^["']/.test(l) || /\$\{[^=]*=/.test(l));
+	// Rules 3 and 4: a line setting one of `keys`, or one whose key isn't a
+	// plain word, which npm's ini would unquote or expand into something this
+	// can't read. Section headers set nothing.
+	const settingLines = (file, keys = ["prefix", "globalconfig"]) =>
+		lines(file).filter((l) => {
+			if (l.startsWith("[")) return false;
+			const key = (l.includes("=") ? l.slice(0, l.indexOf("=")) : l).trim();
+			return keys.includes(key.toLowerCase()) || !/^[\w.:/@-]+$/.test(key);
+		});
 	// Absolute in npm's sense: on a Windows host, `\npm` is drive-relative.
+	// Padded values ask npm: how its path handling treats them is not read here.
 	const exactPath = (value) =>
-		isAbsolute(value) && !value.includes("${") && (process.platform !== "win32" || !/^[\\/](?![\\/])/.test(value));
+		value === value.trim() &&
+		isAbsolute(value) &&
+		!value.includes("${") &&
+		(process.platform !== "win32" || !/^[\\/](?![\\/])/.test(value));
 	const layout = (prefix) => (win ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules"));
 
 	// 1.
 	const fromEnv = npmConfig("prefix");
-	if (fromEnv !== undefined) return fromEnv === fromEnv.trim() && exactPath(fromEnv) ? layout(fromEnv) : null;
+	if (fromEnv !== undefined) return exactPath(fromEnv) ? layout(fromEnv) : null;
 
 	// 2.
 	if (vars["PREFIX"] || vars["DESTDIR"] || npmConfig("userconfig") !== undefined || npmConfig("globalconfig") !== undefined) {
@@ -211,6 +212,12 @@ export function npmGlobalRoot(at = {}) {
 	}
 
 	// 3.
+	let home;
+	try {
+		home = at.home ?? (vars["HOME"] || (at.osHome ?? homedir)());
+	} catch {
+		return null; // no home to find ~/.npmrc in (a UID with no passwd entry)
+	}
 	const nodePrefix = win ? dirname(execPath) : dirname(dirname(execPath));
 	if (settingLines(join(home, ".npmrc")).length > 0 || settingLines(join(nodePrefix, "etc", "npmrc")).length > 0) {
 		return null;
@@ -222,9 +229,7 @@ export function npmGlobalRoot(at = {}) {
 	if (readText(join(npmDir, "package.json")) === null) return null;
 
 	// 4.
-	const builtin = lines(join(npmDir, "npmrc")).filter(
-		(l) => /^(prefix|globalconfig|userconfig)\s*=/i.test(l) || /^["']/.test(l) || /\$\{[^=]*=/.test(l),
-	);
+	const builtin = settingLines(join(npmDir, "npmrc"), ["prefix", "globalconfig", "userconfig"]);
 	if (builtin.length === 0) return layout(nodePrefix); // 5.
 	const appdata = vars["APPDATA"];
 	if (!win || builtin.length !== 1 || builtin[0] !== "prefix=${APPDATA}\\npm" || !appdata || !exactPath(appdata)) {
@@ -247,8 +252,7 @@ function qmdEntryUnder(root) {
  * (#399); only without one is npm asked.
  */
 export function globalQmdEntry(computed = npmGlobalRoot(), askNpm = npmRootFromNpm) {
-	if (computed !== null) return qmdEntryUnder(computed);
-	const root = askNpm();
+	const root = computed ?? askNpm();
 	return root === null ? null : qmdEntryUnder(root);
 }
 
