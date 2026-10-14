@@ -23,6 +23,10 @@
  * collected: the next prompt arrives under a new session id. Nothing is lost
  * with it. The dedupe is per session, so the new session's first Stop reports
  * the same findings again, and the prune removes the orphan after a week.
+ *
+ * The same per-session files, claim and prune also carry Gemini's stored
+ * session context after a compression (lib/reinject.ts, #357), under their
+ * own extension.
  */
 
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
@@ -34,7 +38,9 @@ import { envPath } from "./env-path.ts";
 /**
  * Where a Stop report waits for the next prompt: one place for the writer
  * (stop-checklist) and the reader (classify-message), so they cannot drift
- * apart. STOP_HANDOFF_DIR routes it to a tmp path for tests.
+ * apart; Gemini's stored context (pre-compact, read by classify-message and
+ * session-start) waits beside it. STOP_HANDOFF_DIR routes it to a tmp path
+ * for tests.
  */
 export const HANDOFF_DIR = envPath(process.env, "STOP_HANDOFF_DIR", join(dirname(fileURLToPath(import.meta.url)), "..", ".stop-handoff"));
 

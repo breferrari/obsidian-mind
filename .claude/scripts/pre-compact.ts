@@ -93,7 +93,6 @@ if (isMainModule(import.meta.url)) {
 		const context = sessionStartContext();
 		try {
 			if (context !== null) storeReinject(HANDOFF_DIR, reinjectFor, context);
-			else debug("pre-compact: session-start gave no context to re-inject");
 		} catch (err) {
 			debug(`pre-compact: could not store the re-injection: ${(err as Error).message}`);
 		}

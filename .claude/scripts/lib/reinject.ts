@@ -22,8 +22,10 @@
  *
  * Not covered (inferred from gemini-cli's flow, not observed): a PreCompress
  * whose compression then does nothing still stores the context, so the next
- * prompt gets it again; and a compression partway through a long turn gets
- * the context back only on the next prompt.
+ * prompt gets it again; a compression partway through a long turn gets the
+ * context back only on the next prompt; and a resume after that prompt gets
+ * the compact form, whether or not Gemini's saved history kept the
+ * re-injected context (TBC).
  */
 
 import { claimSessionFile, pruneHandoffs, writeSessionFile } from "./stop-handoff.ts";

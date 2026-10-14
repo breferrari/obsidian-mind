@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseHookContext } from "./hook-io.ts";
+import { debug, parseHookContext } from "./hook-io.ts";
 import { REFRESH_SWITCH } from "./qmd.ts";
 
 /** Runs session-start with `stdin` as its hook input and returns its exit status and stdout. */
@@ -18,8 +18,9 @@ const SESSION_START = join(dirname(dirname(fileURLToPath(import.meta.url))), "se
 
 /**
  * The child, hidden on Windows (#390). Bounded at 20 s, under the 30 s that
- * .gemini/settings.json gives PreCompress: a session-start run took 5-12 s on
- * Windows CI (#349). The refresh is off in the child: PreCompress already
+ * .gemini/settings.json gives PreCompress, which leaves the transcript backup
+ * its share: a session-start run took 5-12 s on Windows CI (measured
+ * 2026-10-13, #349). The refresh is off in the child: PreCompress already
  * started one.
  */
 export const runSessionStart: SessionStartRun = (stdin) => {
@@ -40,11 +41,16 @@ export const runSessionStart: SessionStartRun = (stdin) => {
  */
 export function sessionStartContext(run: SessionStartRun = runSessionStart): string | null {
 	const r = run({ hook_event_name: "SessionStart", source: "startup" });
-	if (r.status !== 0) return null;
+	if (r.status !== 0) {
+		debug(`session-start run: exited ${r.status ?? "on a signal or timeout"}`);
+		return null;
+	}
 	try {
 		const context = parseHookContext(r.stdout, "SessionStart");
+		if (context.trim() === "") debug("session-start run: empty context");
 		return context.trim() === "" ? null : context;
-	} catch {
+	} catch (err) {
+		debug(`session-start run: unreadable output: ${(err as Error).message}`);
 		return null;
 	}
 }

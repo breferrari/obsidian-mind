@@ -498,4 +498,12 @@ describe("classify-message — re-injects the session context after a Gemini com
 			assert.equal(after.stdout, "");
 		});
 	});
+
+	test("Claude Code's PreCompact stores nothing: it re-injects on SessionStart compact", () => {
+		withVault((env) => {
+			spawnHook(PRE_COMPACT, { hook_event_name: "PreCompact", session_id: "cc-1", trigger: "auto" }, env);
+			const after = spawnHook(SCRIPT, { hook_event_name: "UserPromptSubmit", session_id: "cc-1", prompt: "hello world" }, env);
+			assert.equal(after.stdout, "");
+		});
+	});
 });
