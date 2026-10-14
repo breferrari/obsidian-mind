@@ -295,7 +295,7 @@ const qmdCwd = bootstrapNeeded ? cwd : tmpdir();
 // update too, the same as the write-time refresh worker (#337): a test's
 // session-start would otherwise leave a qmd update or bootstrap running
 // against its temp vault after the run.
-if (!reinjectBuild) spawnDetachedQmd(qmdUpdate, "session-start", qmdCwd);
+spawnDetachedQmd(qmdUpdate, "session-start", qmdCwd);
 
 type CmdResult =
 	| { readonly kind: "ok"; readonly stdout: string }

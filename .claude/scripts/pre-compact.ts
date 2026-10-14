@@ -88,11 +88,7 @@ if (isMainModule(import.meta.url)) {
 	// The backup first: it is this hook's own job, and the re-injection below
 	// can take most of Gemini's PreCompress budget. Best effort, so a backup
 	// that throws never costs the re-injection.
-	try {
-		backupTranscript(input);
-	} catch (err) {
-		debug(`pre-compact: backup failed: ${(err as Error).message}`);
-	}
+	backupTranscript(input);
 
 	// Gemini fires no SessionStart after compressing, so store the context for
 	// the next BeforeAgent to re-inject (lib/reinject.ts, #357).
