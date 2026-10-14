@@ -135,7 +135,8 @@ function readTextOrNull(path) {
 }
 
 /**
- * The duplicate of lib/qmd.ts's npmGlobalRoot, kept in step by hand: change
+ * The duplicate of lib/qmd.ts's npmGlobalRoot (and, below, globalQmdEntry and
+ * askNpmForRoot), kept in step by hand: change
  * that one first, then carry the change here with the types removed.
  *
  * Where npm keeps global packages, without spawning it (#349): `npm root -g`
@@ -150,13 +151,13 @@ function readTextOrNull(path) {
  *    ask npm.
  * 3. ~/.npmrc (HOME before the OS home) or `<node prefix>/etc/npmrc` has a
  *    line setting `prefix` or `globalconfig`, sections included, or a key
- *    that isn't a plain word (quoted, which npm's ini unquotes, escapes and
- *    all, or built from `${…}`) → ask npm. An npmrc with only auth or
+ *    npm's ini would rewrite (quoted, which it unquotes, escapes and all, or
+ *    built from `${…}`) → ask npm. An npmrc with only auth or
  *    registry lines (or `save-prefix`) doesn't count.
  * 4. The builtin npmrc: on Windows, the installer's exact
  *    `prefix=${APPDATA}\npm` → %APPDATA%\npm. Any other line there setting
  *    `prefix`, `globalconfig` or `userconfig` (which moves the user npmrc),
- *    or a key that isn't a plain word → ask npm.
+ *    or a key npm's ini would rewrite → ask npm.
  * 5. Otherwise Node's own prefix.
  *
  * 4 and 5 hold only when npm sits beside this Node; where it doesn't
@@ -184,14 +185,16 @@ export function npmGlobalRoot(at = {}) {
 	};
 	const lines = (file) =>
 		(readText(file) ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !/^[;#]/.test(l));
-	// Rules 3 and 4: a line setting one of `keys`, or one whose key isn't a
-	// plain word, which npm's ini would unquote or expand into something this
-	// can't read. Section headers set nothing.
+	// Rules 3 and 4: a line setting one of `keys`, or one whose key npm's
+	// ini would turn into something this can't read: quoted (unquoted and
+	// decoded), built from `${…}`, or holding brackets, a backslash or
+	// whitespace. Auth keys (`//host/path/:_authToken`, with % ~ +) are
+	// plain. Section headers set nothing.
 	const settingLines = (file, keys = ["prefix", "globalconfig"]) =>
 		lines(file).filter((l) => {
 			if (l.startsWith("[")) return false;
-			const key = (l.includes("=") ? l.slice(0, l.indexOf("=")) : l).trim();
-			return keys.includes(key.toLowerCase()) || !/^[\w.:/@-]+$/.test(key);
+			const key = (l.split("=", 1)[0] ?? "").trim();
+			return keys.includes(key.toLowerCase()) || /^["']|\$\{|[\s[\]\\]/.test(key);
 		});
 	// Absolute in npm's sense: on a Windows host, `\npm` is drive-relative.
 	// Padded values ask npm: how its path handling treats them is not read here.
@@ -247,12 +250,16 @@ function qmdEntryUnder(root) {
 }
 
 /**
- * qmd's entry under npm's global root. A root `npmGlobalRoot` worked out is
- * the one npm would give, so it is the answer whether or not qmd is there
- * (#399); only without one is npm asked.
+ * qmd's entry under npm's global root: under the root `npmGlobalRoot` works
+ * out when qmd is there, else under npm's own answer. A worked-out root
+ * models the npm beside this Node, and the npm on PATH can differ (a
+ * self-upgraded npm on Windows, mixed installs; inferred), so a miss there
+ * still asks npm (#399, 2026-10-14).
  */
 export function globalQmdEntry(computed = npmGlobalRoot(), askNpm = askNpmForRoot) {
-	const root = computed ?? askNpm();
+	const known = computed === null ? null : qmdEntryUnder(computed);
+	if (known !== null) return known;
+	const root = askNpm();
 	return root === null ? null : qmdEntryUnder(root);
 }
 

@@ -337,6 +337,11 @@ for (const [label, npmGlobalRoot] of [
 			assert.equal(at({ NPM_CONFIG_PREFIX: p }), join(p, "lib", "node_modules"), "rule 1 needs no home");
 		});
 
+		test("3: auth keys with %, ~ or + are plain, not a reason to ask npm", () => {
+			const auth = { [userNpmrc]: "//registry.corp/npm/%40team/:_authToken=x\n//host/~user/:_auth=y\n//h/a+b/:always-auth=true" };
+			assert.equal(posix({}, auth), join(nodeDir, "lib", "node_modules"));
+		});
+
 		test("3: a key npm would build from ${...} asks npm", () => {
 			assert.equal(posix({}, { [userNpmrc]: "${NPMKEY}=/opt/g" }), null);
 		});
@@ -396,14 +401,12 @@ for (const [label, npmGlobalRoot] of [
 			);
 		});
 
-		// The property that matters: a root worked out here that holds qmd is
-		// the root npm would give. A null only costs the spawn it would save.
-		test("where it finds qmd on this machine, npm agrees", (t) => {
+		// The property that matters: a root worked out here is the root npm
+		// would give, qmd or not. A null only costs the spawn it would save.
+		test("a root worked out on this machine is the one npm gives", (t) => {
 			// Without the npm_config_* that `npm test` exports, or rule 1 only echoes npm back.
 			const ours = npmGlobalRoot({ env: withoutNpmConfig() });
-			if (ours === null || !existsSync(join(ours, QMD_ENTRY))) {
-				return t.skip("no qmd under a worked-out root here; the caller asks npm");
-			}
+			if (ours === null) return t.skip("no worked-out root here; the caller asks npm");
 			const answer = npmAnswer();
 			if (answer === null) return t.skip("npm is not available here");
 			assert.equal(resolve(ours).toLowerCase(), resolve(answer).toLowerCase());
@@ -425,11 +428,25 @@ for (const [label, globalQmdEntry] of [
 			}
 		};
 
-		test("a worked-out root without qmd is the answer: npm would give the same root", () => {
+		test("qmd under a worked-out root is found without asking npm", () => {
 			withRoot((root) => {
+				const entry = join(root, QMD_ENTRY);
+				mkdirSync(dirname(entry), { recursive: true });
+				writeFileSync(entry, "");
 				let asked = false;
-				assert.equal(globalQmdEntry(root, () => ((asked = true), null)), null);
+				assert.equal(globalQmdEntry(root, () => ((asked = true), null)), entry);
 				assert.equal(asked, false, "no npm root -g spawn");
+			});
+		});
+
+		test("a worked-out root without qmd still asks npm: the npm on PATH can differ", () => {
+			withRoot((computed) => {
+				withRoot((npms) => {
+					const entry = join(npms, QMD_ENTRY);
+					mkdirSync(dirname(entry), { recursive: true });
+					writeFileSync(entry, "");
+					assert.equal(globalQmdEntry(computed, () => npms), entry);
+				});
 			});
 		});
 

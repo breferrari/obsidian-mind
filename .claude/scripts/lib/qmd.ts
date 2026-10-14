@@ -17,7 +17,7 @@
  * copies are asserted independently: `tests/qmd.test.ts` locks this file's
  * `resolveQmdEntry` + `buildQmdCommand` shape, and `tests/qmd-mcp.test.ts`
  * locks the .mjs wrapper's equivalents; `tests/qmd.test.ts` also runs
- * `pickQmdEntry` and `npmGlobalRoot` against both copies. Drift between the
+ * `pickQmdEntry`, `npmGlobalRoot` and `globalQmdEntry` against both copies. Drift between the
  * two shows up as a test failure on the CI matrix rather than a silent
  * platform bug.
  */
@@ -129,13 +129,13 @@ function readTextOrNull(path: string): string | null {
  *    ask npm.
  * 3. ~/.npmrc (HOME before the OS home) or `<node prefix>/etc/npmrc` has a
  *    line setting `prefix` or `globalconfig`, sections included, or a key
- *    that isn't a plain word (quoted, which npm's ini unquotes, escapes and
- *    all, or built from `${…}`) → ask npm. An npmrc with only auth or
+ *    npm's ini would rewrite (quoted, which it unquotes, escapes and all, or
+ *    built from `${…}`) → ask npm. An npmrc with only auth or
  *    registry lines (or `save-prefix`) doesn't count.
  * 4. The builtin npmrc: on Windows, the installer's exact
  *    `prefix=${APPDATA}\npm` → %APPDATA%\npm. Any other line there setting
  *    `prefix`, `globalconfig` or `userconfig` (which moves the user npmrc),
- *    or a key that isn't a plain word → ask npm.
+ *    or a key npm's ini would rewrite → ask npm.
  * 5. Otherwise Node's own prefix.
  *
  * 4 and 5 hold only when npm sits beside this Node; where it doesn't
@@ -163,14 +163,16 @@ export function npmGlobalRoot(at: NpmLocation = {}): string | null {
 	};
 	const lines = (file: string): string[] =>
 		(readText(file) ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !/^[;#]/.test(l));
-	// Rules 3 and 4: a line setting one of `keys`, or one whose key isn't a
-	// plain word, which npm's ini would unquote or expand into something this
-	// can't read. Section headers set nothing.
+	// Rules 3 and 4: a line setting one of `keys`, or one whose key npm's
+	// ini would turn into something this can't read: quoted (unquoted and
+	// decoded), built from `${…}`, or holding brackets, a backslash or
+	// whitespace. Auth keys (`//host/path/:_authToken`, with % ~ +) are
+	// plain. Section headers set nothing.
 	const settingLines = (file: string, keys: readonly string[] = ["prefix", "globalconfig"]): string[] =>
 		lines(file).filter((l) => {
 			if (l.startsWith("[")) return false;
-			const key = (l.includes("=") ? l.slice(0, l.indexOf("=")) : l).trim();
-			return keys.includes(key.toLowerCase()) || !/^[\w.:/@-]+$/.test(key);
+			const key = (l.split("=", 1)[0] ?? "").trim();
+			return keys.includes(key.toLowerCase()) || /^["']|\$\{|[\s[\]\\]/.test(key);
 		});
 	// Absolute in npm's sense: on a Windows host, `\npm` is drive-relative.
 	// Padded values ask npm: how its path handling treats them is not read here.
@@ -226,12 +228,16 @@ function qmdEntryUnder(root: string): string | null {
 }
 
 /**
- * qmd's entry under npm's global root. A root `npmGlobalRoot` worked out is
- * the one npm would give, so it is the answer whether or not qmd is there
- * (#399); only without one is npm asked.
+ * qmd's entry under npm's global root: under the root `npmGlobalRoot` works
+ * out when qmd is there, else under npm's own answer. A worked-out root
+ * models the npm beside this Node, and the npm on PATH can differ (a
+ * self-upgraded npm on Windows, mixed installs; inferred), so a miss there
+ * still asks npm (#399, 2026-10-14).
  */
 export function globalQmdEntry(computed: string | null = npmGlobalRoot(), askNpm: () => string | null = askNpmForRoot): string | null {
-	const root = computed ?? askNpm();
+	const known = computed === null ? null : qmdEntryUnder(computed);
+	if (known !== null) return known;
+	const root = askNpm();
 	return root === null ? null : qmdEntryUnder(root);
 }
 
