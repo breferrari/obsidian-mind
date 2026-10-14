@@ -9,34 +9,20 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
-import { commandDescription, geminiCommand } from "../../../.scripts/gemini-commands.ts";
-
-const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const COMMANDS = join(REPO, ".claude", "commands");
-const WRAPPERS = join(REPO, ".gemini", "commands");
+import { WRAPPERS, commandDescription, expectedWrappers, geminiCommand, orphanedWrappers } from "../../../.scripts/gemini-commands.ts";
 
 test("every om command has its Gemini wrapper, as generated", () => {
-	const stale: string[] = [];
-	for (const file of readdirSync(COMMANDS).filter((f) => /^om-.+\.md$/.test(f))) {
-		const name = file.replace(/\.md$/, "");
-		const wrapper = join(WRAPPERS, `${name}.toml`);
-		const expected = geminiCommand(name, readFileSync(join(COMMANDS, file), "utf8"));
-		if (!existsSync(wrapper) || readFileSync(wrapper, "utf8") !== expected) stale.push(name);
-	}
+	const stale = [...expectedWrappers()]
+		.filter(([file, toml]) => !existsSync(join(WRAPPERS, file)) || readFileSync(join(WRAPPERS, file), "utf8") !== toml)
+		.map(([file]) => file);
 	assert.deepEqual(stale, [], "run: node --experimental-strip-types .scripts/gemini-commands.ts");
 });
 
 test("no wrapper outlives its command", () => {
-	const commands = new Set(readdirSync(COMMANDS).filter((f) => f.endsWith(".md")).map((f) => f.replace(/\.md$/, "")));
-	const orphans = (existsSync(WRAPPERS) ? readdirSync(WRAPPERS) : [])
-		.filter((f) => /^om-.+\.toml$/.test(f))
-		.map((f) => f.replace(/\.toml$/, ""))
-		.filter((name) => !commands.has(name));
-	assert.deepEqual(orphans, []);
+	assert.deepEqual(orphanedWrappers(expectedWrappers()), []);
 });
 
 test("a wrapper injects the command, passes the arguments, and maps $ARGUMENTS onto them", () => {

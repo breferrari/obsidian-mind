@@ -1,3 +1,7 @@
+---
+description: "Upgrade this vault to the latest template release through ShardMind, or import a source vault's content into this instance."
+---
+
 # Vault Upgrade
 
 Two jobs, picked by whether a source vault is given:

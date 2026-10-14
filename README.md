@@ -270,7 +270,7 @@ Codex runs a project's hooks only once two kinds of trust are in place (observed
 
 Until both are in place, Codex runs no hook, and the session gets no vault context.
 
-**Gemini CLI** — hook config at `.gemini/settings.json` maps Gemini's event names to the shared hook scripts, and its `context.fileName` setting points Gemini at `AGENTS.md`.
+**Gemini CLI** — hook config at `.gemini/settings.json` maps Gemini's event names to the shared hook scripts, and its `context.fileName` setting points Gemini at `AGENTS.md`. Gemini reads custom commands only as TOML, so `.gemini/commands/` holds a generated wrapper per command that injects the command's `.md` (`node --experimental-strip-types .scripts/gemini-commands.ts` regenerates them).
 
 **Antigravity** and **Grok** — read `AGENTS.md` for vault conventions. Their hook, skill and command layers are tracked in [#322](https://github.com/breferrari/obsidian-mind/issues/322) and [#323](https://github.com/breferrari/obsidian-mind/issues/323).
 

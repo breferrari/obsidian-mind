@@ -14,22 +14,21 @@
  * tests/gemini-commands.test.ts fails when a wrapper is missing or stale.
  */
 
-import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "../.claude/scripts/lib/main-guard.ts";
+import { parseFrontmatter } from "../.claude/scripts/lib/memory-recall.ts";
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
+const COMMANDS = join(REPO, ".claude", "commands");
+/** Where the wrappers live. */
+export const WRAPPERS = join(REPO, ".gemini", "commands");
 
 /** The command's description: its frontmatter `description`, else its first line of prose. */
 export function commandDescription(markdown: string): string {
-	const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1] ?? "";
-	const line = /^description:\s*(.*)$/m.exec(front)?.[1]?.trim() ?? "";
-	if (line) {
-		try {
-			return line.startsWith('"') ? (JSON.parse(line) as string) : line;
-		} catch {
-			return line.replace(/^["']|["']$/g, "");
-		}
-	}
+	const described = parseFrontmatter(markdown)["description"];
+	if (typeof described === "string" && described !== "") return described;
 	const body = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
 	return body.split(/\r?\n/).map((l) => l.trim()).find((l) => l !== "" && !l.startsWith("#")) ?? "";
 }
@@ -48,21 +47,27 @@ export function geminiCommand(name: string, markdown: string): string {
 	].join("\n");
 }
 
+/** Every wrapper there should be: file name → contents, one per om command. */
+export function expectedWrappers(): Map<string, string> {
+	const wrappers = new Map<string, string>();
+	for (const file of readdirSync(COMMANDS).filter((f) => /^om-.+\.md$/.test(f))) {
+		const name = file.replace(/\.md$/, "");
+		wrappers.set(`${name}.toml`, geminiCommand(name, readFileSync(join(COMMANDS, file), "utf8")));
+	}
+	return wrappers;
+}
+
+/** Wrapper files whose command is gone. */
+export function orphanedWrappers(expected: Map<string, string>): string[] {
+	return (existsSync(WRAPPERS) ? readdirSync(WRAPPERS) : []).filter((f) => /^om-.+\.toml$/.test(f) && !expected.has(f));
+}
+
 function main(): void {
-	const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
-	const commands = join(repo, ".claude", "commands");
-	const wrappers = join(repo, ".gemini", "commands");
-	mkdirSync(wrappers, { recursive: true });
-	const names = readdirSync(commands)
-		.filter((f) => /^om-.+\.md$/.test(f))
-		.map((f) => f.replace(/\.md$/, ""));
-	for (const name of names) {
-		writeFileSync(join(wrappers, `${name}.toml`), geminiCommand(name, readFileSync(join(commands, `${name}.md`), "utf8")));
-	}
-	for (const file of readdirSync(wrappers).filter((f) => /^om-.+\.toml$/.test(f))) {
-		if (!names.includes(file.replace(/\.toml$/, ""))) unlinkSync(join(wrappers, file));
-	}
-	console.log(`${names.length} Gemini command wrappers in .gemini/commands/`);
+	const expected = expectedWrappers();
+	mkdirSync(WRAPPERS, { recursive: true });
+	for (const [file, toml] of expected) writeFileSync(join(WRAPPERS, file), toml);
+	for (const file of orphanedWrappers(expected)) unlinkSync(join(WRAPPERS, file));
+	console.log(`${expected.size} Gemini command wrappers in .gemini/commands/`);
 }
 
 if (isMainModule(import.meta.url)) main();
