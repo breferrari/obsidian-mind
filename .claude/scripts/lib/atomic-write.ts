@@ -18,7 +18,7 @@
  * half-written note for the indexer to pick up.
  */
 
-import { writeFileSync, copyFileSync, renameSync, unlinkSync, constants } from "node:fs";
+import { writeFileSync, readFileSync, copyFileSync, renameSync, unlinkSync, constants } from "node:fs";
 import { join } from "node:path";
 
 /** Per-process counter, so two in-flight writes cannot share a temp name. */
@@ -99,4 +99,56 @@ export function writeFileAtomic(path: string, text: string): void {
 		}
 		throw err;
 	}
+}
+
+/** What a guarded rewrite ended up doing. */
+export type RewriteResult = "written" | "unchanged" | "contended";
+
+/**
+ * Rewrite an existing file only if it is unchanged since `transform` read it.
+ *
+ * WHY NOT just read, edit, writeFileAtomic
+ *
+ * That is a read-modify-write with nothing between the read and the write that
+ * notices the file changed. Two writers each read the original, each applies
+ * its own edit, and the second rename erases the first — both reported as
+ * written. markSuperseded lost 90 of 200 titles exactly this way (see its
+ * module header). `writeFileAtomic` makes each replacement invisible to
+ * readers; it does nothing about the lost-update between them.
+ *
+ * So: re-read just before replacing. If the file still holds what `transform`
+ * read, the rename lands. If anything else wrote in between, throw the temp
+ * away and re-apply the edit to the fresh content, a bounded number of times —
+ * the same shape as `claimFile`'s collision loop, pointed at content instead
+ * of names. `transform` returning null means there is nothing to change.
+ *
+ * The window is not zero — it shrinks from the whole edit to two filesystem
+ * calls, and a writer that loses now retries instead of overwriting silently.
+ * Closing it fully needs a lock file, which brings stale-lock handling with
+ * it; not worth it for a frontmatter list.
+ */
+export function rewriteIfUnchanged(
+	path: string,
+	transform: (current: string) => string | null,
+	attempts = 3,
+): RewriteResult {
+	for (let i = 0; i < attempts; i++) {
+		const before = readFileSync(path, "utf8");
+		const next = transform(before);
+		if (next === null || next === before) return "unchanged";
+		const tmp = `${path}.${process.pid}-${++tmpSeq}.tmp`;
+		writeFileSync(tmp, next, "utf8");
+		try {
+			if (readFileSync(path, "utf8") !== before) continue; // changed under us: retry on fresh content
+			renameSync(tmp, path);
+			return "written";
+		} finally {
+			try {
+				unlinkSync(tmp);
+			} catch {
+				/* already renamed, or nothing to clean up */
+			}
+		}
+	}
+	return "contended";
 }
